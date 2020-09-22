@@ -15,9 +15,9 @@ then
                     for D in 32 64 128 256;
                     do
                         tmp=1
-                        if [ "$( echo "(1024 / $embedding_dim) > 1" | bc -l )" ];
+                        if [ "$( echo "(1024 / $D) > 1" | bc -l )" ];
                         then
-                            tmp="$( echo "(1024 / $embedding_dim)" | bc -l )"
+                            tmp="$( echo "(1024 / $D)" | bc -l )"
                         fi
                         rows_per_block="$( echo "$tmp * 4 / 1" | bc )"
 
