@@ -91,3 +91,23 @@ then
         done
     done
 fi
+
+if [ ! -f memcpy_params.txt ];
+then
+    touch memcpy_params.txt
+    for batch_size in 1 64 128 256 512 1024 2048 4096;
+    do
+        for M in 64 128 256 512 1024 2048 4096 16384 32768 65536;
+        do
+            for N in 64 128 256 512 1024 2048 4096 16384 32768 65536;
+            do
+                A_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
+
+                if [ "$A_size" -lt "$GPU_memory" ];
+                then
+                    echo "$batch_size $M $N" >> memcpy_params.txt
+                fi
+            done
+        done
+    done
+fi

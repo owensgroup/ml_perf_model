@@ -57,8 +57,8 @@ elif [ "$op_type" == "cross_entropy" ];
 then
     header="kernel_name,batch_size"
     param_file_name="./bench_params/ce_params.txt"
-else
-    header="kernel_name,batch_size"
+else # memcpy
+    header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
 fi
 file_name="${file_prefix}_results.csv"
@@ -155,7 +155,7 @@ do
         python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters 1 >& /dev/null
     fi
 
-    ./get_kernel_names.sh
+    ./get_kernel_names.sh "$op_type"
     kernels=()
     while IFS= read -r line
     do

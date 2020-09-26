@@ -9,6 +9,7 @@ rm -f "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
 
 threshold="0.98"
 sum_runtime="0.0"
+op_type=$1
 while IFS= read -r line
 do
     line="${line/GPU activities: /}"
@@ -17,9 +18,12 @@ do
     kernel_name="${array[6]/<*/}"
     num_calls="${array[2]}"
 
-    if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "10" ];
+    if [ "$op_type" != "memcpy" ];
     then
-        continue
+        if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "10" ];
+        then
+            continue
+        fi
     fi
 
     sum_kernel="${array[1]}"
@@ -44,17 +48,23 @@ do
     line="${line/GPU activities: /}"
     IFS=', ' read -r -a array <<< "$line"
 
-    kernel_name="${array[6]/<*/}"
     num_calls="${array[2]}"
 
-    if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "10" ];
+    kernel_name="${array[6]/<*/}"
+    if [ "$op_type" != "memcpy" ];
     then
-        continue
-    fi
-
-    if [ "$kernel_name" == "void" ] || [ "$kernel_name" == "int" ] || [ "$kernel_name" == "float" ];
-    then
-        kernel_name="${array[7]/<*/}"
+        if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "10" ];
+        then
+            continue
+        fi
+        if [ "$kernel_name" == "void" ] || [ "$kernel_name" == "int" ] || [ "$kernel_name" == "float" ];
+        then
+            kernel_name="${array[7]/<*/}"
+        fi
+    else # memcpy
+        mem_type="${array[8]/]/}"
+        kernel_name="CUDA memcpy ${mem_type}"
+        echo "$kernel_name"
     fi
 
     sum_kernel="${array[1]}"
