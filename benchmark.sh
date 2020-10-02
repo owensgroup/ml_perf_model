@@ -79,6 +79,8 @@ then
     then
         header="${header},block_x,block_y,block_z,thread_x,thread_y,thread_z,regs,smem"
     fi
+else
+    header="${header},throughput"
 fi
 if [ ! -f "$file_name" ];
 then
@@ -148,7 +150,7 @@ do
     nvprof --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iter >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
     op_time="$( < /tmp/${CUDA_VISIBLE_DEVICES}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
 
-    if [ "$op_type" == "fully_connected" ];
+    if [ "$op_type" == "fully_connected" ] || [ "$op_type" == "memcpy" ];
     then
         echo "Get GPU trace of kernels ..."
         nvprof --print-gpu-trace --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
@@ -210,7 +212,7 @@ do
             trace_values=""
             while IFS= read -r line
             do
-                if [ "$( echo "$line" | grep "$kernel" )" == ""];
+                if [ "$( echo "$line" | grep "$kernel" )" == "" ];
                 then
                     continue
                 fi
@@ -220,8 +222,22 @@ do
                 break
             done < "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt"
             stats_row="${stats_row},${trace_values}"
+        elif [ "$op_type" == "memcpy" ];
+        then
+            trace_values=""
+            while IFS= read -r line
+            do
+                if [ "$( echo "$line" | grep "$kernel" )" == "" ];
+                then
+                    continue
+                fi
+
+                IFS=', ' read -r -a x <<< "$line"
+                trace_values="${x[8]}"
+                break
+            done < "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt"
+            stats_row="${stats_row},${trace_values}"
         fi
         echo "$stats_row" >> "$file_name"
     done
-    exit
 done < "$param_file_name"

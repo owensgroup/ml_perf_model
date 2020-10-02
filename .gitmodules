@@ -4,3 +4,6 @@
 [submodule "sparse-ads-baselines"]
 	path = sparse-ads-baselines
 	url = git@github.com:moderato/sparse-ads-baselines.git
+[submodule "dlrm"]
+	path = dlrm
+	url = git@github.com:moderato/dlrm.git
