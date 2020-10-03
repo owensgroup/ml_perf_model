@@ -63,7 +63,7 @@ class LookupFunction(torch.autograd.Function):
         L_max = 200
         assert ctx.optimizer in (Optimizer.SGD, Optimizer.APPROX_ROWWISE_ADAGRAD, Optimizer.EXACT_ROWWISE_ADAGRAD)
         if ctx.optimizer == Optimizer.SGD:
-            BT_block_size = int(max(256 / (weights.shape[1], 1)))
+            BT_block_size = int(max(256 / weights.shape[1], 1))
             assert per_sample_weights is None
             grad_per_sample_weight = table_batched_embeddings.backward_sgd(
                 grad_output,

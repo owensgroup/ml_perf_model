@@ -68,7 +68,7 @@ if [ $cpu = 1 ]; then
   echo "--------------------------------------------"
   if [ $pt = 1 ]; then
     outf="data/model1_CPU_PT_$ncores.log"
-    outp="data/dlrm_s_pytorch.prof"
+    outp="dlrm_s_pytorch.prof"
     echo "-------------------------------"
     echo "Running PT (log file: $outf)"
     echo "-------------------------------"
