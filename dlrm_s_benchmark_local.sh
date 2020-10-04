@@ -45,7 +45,7 @@ emb_size=16
 
 interaction="dot"
 tnworkers=0
-tmb_size=256
+tmb_size=-1 #256
 
 _args=" --num-batches="${nbatches}\
 " --data-generation="${data}\
@@ -58,6 +58,7 @@ _args=" --num-batches="${nbatches}\
 " --numpy-rand-seed="${rand_seed}\
 " --print-freq="${print_freq}\
 " --print-time"\
+" --debug-mode"\
 " --enable-profiling "
 
 
@@ -77,9 +78,9 @@ if [ $cpu = 1 ]; then
     eval $cmd
     min=$(grep "iteration" $outf | awk 'BEGIN{best=999999} {if (best > $7) best=$7} END{print best}')
     echo "Min time per iteration = $min"
-    # # move profiling file(s)
-    # mv $outp ${outf//".log"/".prof"}
-    # mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+    # move profiling file(s)
+    mv $outp ${outf//".log"/".prof"}
+    mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
   fi
 fi
 

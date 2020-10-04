@@ -61,7 +61,7 @@ else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
 fi
-file_name="${file_prefix}_results.csv"
+file_name="${file_prefix}.csv"
 
 header="${header},kernel_runtime,op_runtime"
 if [ "$op_type" != "memcpy" ];
@@ -147,14 +147,14 @@ do
     echo "$bench_param"
 
     # Benchmark general
-    nvprof --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iter >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
+    nvprof --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" python sparse_ads_baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iter # >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
     op_time="$( < /tmp/${CUDA_VISIBLE_DEVICES}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
 
     if [ "$op_type" == "fully_connected" ] || [ "$op_type" == "memcpy" ];
     then
         echo "Get GPU trace of kernels ..."
         nvprof --print-gpu-trace --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
-        python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters 1 >& /dev/null
+        python sparse_ads_baselines/kernel_benchmark.py $bench_param --iters 1 >& /dev/null
     fi
 
     ./get_kernel_names.sh "$op_type"
@@ -187,7 +187,7 @@ do
         nvprof --kernels $kernel \
         $metrics_args \
         --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt" \
-        python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iter >& /dev/null
+        python sparse_ads_baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iter >& /dev/null
 
         metric_values=()
         for (( j=0; j<${#metrics[@]}; j++ ));

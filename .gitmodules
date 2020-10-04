@@ -1,8 +1,8 @@
 [submodule "gpuroofperf-toolkit"]
 	path = gpuroofperf-toolkit
 	url = git@github.com:ekondis/gpuroofperf-toolkit.git
-[submodule "sparse_ads_baselines"]
-	path = sparse_ads_baselines
+[submodule "sparse-ads-baselines"]
+	path = sparse-ads-baselines
 	url = git@github.com:moderato/sparse-ads-baselines.git
 [submodule "dlrm"]
 	path = dlrm

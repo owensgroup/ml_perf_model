@@ -1,5 +1,0 @@
-__pycache__/
-build/
-dist/
-table_batched_embeddings.egg-info/
-.hypothesis/
