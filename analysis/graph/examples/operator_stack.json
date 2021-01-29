@@ -1,0 +1,102 @@
+[
+  {
+    "name": "aten::empty", "id": 6, "parent": 5, "tid": 1,
+    "inputs": [[256,256],6,"<None>","cpu","<None>",0], "input_shapes": [[],[],[],[],[],[]], "input_types": ["GenericList","Int","None","Device","None","Int"],
+    "outputs": [7], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::mul", "id": 5, "parent": 2, "tid": 1,
+    "inputs": [3,4], "input_shapes": [[256,256],[256,256]], "input_types": ["Tensor(float)","Tensor(float)"],
+    "outputs": [7], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::mul", "id": 2, "parent": 1, "tid": 1,
+    "inputs": [3,4], "input_shapes": [[256,256],[256,256]], "input_types": ["Tensor(float)","Tensor(float)"],
+    "outputs": [7], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::add", "id": 9, "parent": 8, "tid": 1,
+    "inputs": [4,7,1], "input_shapes": [[256,256],[256,256],[]], "input_types": ["Tensor(float)","Tensor(float)","Int"],
+    "outputs": [10], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::add", "id": 8, "parent": 1, "tid": 1,
+    "inputs": [4,7,1], "input_shapes": [[256,256],[256,256],[]], "input_types": ["Tensor(float)","Tensor(float)","Int"],
+    "outputs": [10], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::empty_strided", "id": 13, "parent": 12, "tid": 1,
+    "inputs": [[256,256],[256,1],6,0,"cpu","<None>"], "input_shapes": [[],[],[],[],[],[]], "input_types": ["GenericList","GenericList","Int","Int","Device","None"],
+    "outputs": [14], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::empty_like", "id": 12, "parent": 11, "tid": 1,
+    "inputs": [10,"<None>","<None>","<None>","<None>","<None>"], "input_shapes": [[256,256],[],[],[],[],[]], "input_types": ["Tensor(float)","None","None","None","None","None"],
+    "outputs": [14], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::fill_", "id": 15, "parent": 11, "tid": 1,
+    "inputs": [14,1], "input_shapes": [[256,256],[]], "input_types": ["Tensor(float)","Double"],
+    "outputs": [14], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::ones_like", "id": 11, "parent": 1, "tid": 1,
+    "inputs": [10,"<None>","<None>","<None>","<None>","<None>"], "input_shapes": [[256,256],[],[],[],[],[]], "input_types": ["Tensor(float)","None","None","None","None","None"],
+    "outputs": [14], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::conj", "id": 17, "parent": 16, "tid": 1,
+    "inputs": [18], "input_shapes": [[256,256]], "input_types": ["Tensor(float)"],
+    "outputs": [18], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::empty", "id": 21, "parent": 20, "tid": 1,
+    "inputs": [[256,256],6,"<None>","cpu","<None>",0], "input_shapes": [[],[],[],[],[],[]], "input_types": ["GenericList","Int","None","Device","None","Int"],
+    "outputs": [22], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::mul", "id": 20, "parent": 19, "tid": 1,
+    "inputs": [14,18], "input_shapes": [[256,256],[256,256]], "input_types": ["Tensor(float)","Tensor(float)"],
+    "outputs": [22], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::mul", "id": 19, "parent": 16, "tid": 1,
+    "inputs": [14,18], "input_shapes": [[256,256],[256,256]], "input_types": ["Tensor(float)","Tensor(float)"],
+    "outputs": [22], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::add", "id": 24, "parent": 23, "tid": 1,
+    "inputs": [14,22,1], "input_shapes": [[256,256],[256,256],[]], "input_types": ["Tensor(float)","Tensor(float)","Int"],
+    "outputs": [25], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::add", "id": 23, "parent": 16, "tid": 1,
+    "inputs": [14,22,1], "input_shapes": [[256,256],[256,256],[]], "input_types": ["Tensor(float)","Tensor(float)","Int"],
+    "outputs": [25], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "detach", "id": 27, "parent": 26, "tid": 1,
+    "inputs": [], "input_shapes": [], "input_types": [],
+    "outputs": [], "output_shapes": [], "output_types": []
+  },
+  {
+    "name": "aten::detach", "id": 26, "parent": 16, "tid": 1,
+    "inputs": [25], "input_shapes": [[256,256]], "input_types": ["Tensor(float)"],
+    "outputs": [28], "output_shapes": [[256,256]], "output_types": ["Tensor(float)"]
+  },
+  {
+    "name": "aten::_backward", "id": 16, "parent": 1, "tid": 1,
+    "inputs": [10,[],14,"<None>",false], "input_shapes": [[256,256],[],[256,256],[],[]], "input_types": ["Tensor(float)","GenericList","Tensor(float)","None","Bool"],
+    "outputs": [], "output_shapes": [], "output_types": []
+  },
+  {
+    "name": "## START ##", "id": 1, "parent": 0, "tid": 1,
+    "inputs": [], "input_shapes": [], "input_types": [],
+    "outputs": [], "output_shapes": [], "output_types": []
+  },
+  {
+      "name": "__ROOT__", "id": 0, "parent": 0, "tid": 0,
+      "inputs": [], "input_shapes": [], "input_types": [],
+      "outputs": [], "output_shapes": [], "output_types": []
+  }
+]
