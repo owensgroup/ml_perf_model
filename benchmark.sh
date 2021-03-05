@@ -12,7 +12,7 @@ fi
 
 op_type=$1
 is_forward=$2
-shmem="1"
+shmem="0"
 sgd="1"
 fc_test="0"
 header=""
@@ -29,7 +29,7 @@ then
     param_file_name="./bench_params/embedding_lookup_params.txt"
     if [ "$is_forward" == "1" ] && [ "$shmem" == "1" ];
     then
-        file_prefix="$file_prefix"
+        file_prefix="${file_prefix}_shmem"
     fi
     if [ "$is_forward" == "0" ];
     then
@@ -39,6 +39,10 @@ then
         else
             file_prefix="${file_prefix}_adagrad"
         fi
+	if [ "$shmem" == "1" ];
+	then
+	    file_prefix="${file_prefix}_shmem"
+	fi
     fi
 elif [ "$op_type" == "fully_connected" ];
 then
@@ -49,6 +53,10 @@ then
         param_file_name="./bench_params/fc_test_params.txt"
         file_prefix="${file_prefix}_test"
     fi
+elif [ "$op_type" == "conv" ];
+then
+    header="kernel_name,batch_size,H,W,IC,OC"
+    param_file_name="./bench_params/conv_params.txt"
 elif [ "$op_type" == "concat" ];
 then
     header="kernel_name,batch_size,M,N,K"
@@ -57,6 +65,10 @@ elif [ "$op_type" == "cross_entropy" ];
 then
     header="kernel_name,batch_size"
     param_file_name="./bench_params/ce_params.txt"
+elif [ "$op_type" == "reshape" ];
+then
+    header="kernel_name,batch_size,M,N,trans_type"
+    param_file_name="./bench_params/transpose_params.txt"
 else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
@@ -64,7 +76,7 @@ fi
 file_name="${file_prefix}.csv"
 
 header="${header},kernel_runtime,op_runtime"
-if [ "$op_type" != "memcpy" ];
+if [ "$op_type" != "memcpy" ] && [ "$op_type" != "reshape" ];
 then
     metrics_args=""
     metrics=()
@@ -75,7 +87,7 @@ then
         metrics+=( "$line" )
         header="$header,$line"
     done < "nvprof_metrics.txt"
-    if [ "$op_type" == "fully_connected" ];
+    if [ "$op_type" == "fully_connected" ] || [ "$op_type" == "conv" ];
     then
         header="${header},block_x,block_y,block_z,thread_x,thread_y,thread_z,regs,smem"
     fi
@@ -123,12 +135,18 @@ do
     elif [ "$op_type" == "fully_connected" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
+    elif [ "$op_type" == "conv" ];
+    then
+        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]}"
     elif [ "$op_type" == "concat" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
     elif [ "$op_type" == "cross_entropy" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]}"
+    elif [ "$op_type" == "reshape" ]; # reshape
+    then
+        bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --trans-type ${array[3]}"
     else # Memcpy
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]}"
     fi
@@ -150,7 +168,7 @@ do
     nvprof --openacc-profiling off --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iter >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
     op_time="$( < /tmp/${CUDA_VISIBLE_DEVICES}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
 
-    if [ "$op_type" == "fully_connected" ] || [ "$op_type" == "memcpy" ];
+    if [ "$op_type" == "fully_connected" ] || [ "$op_type" == "conv" ] || [ "$op_type" == "memcpy" ] || [ "$op_type" == "reshape" ];
     then
         echo "Get GPU trace of kernels ..."
         nvprof --openacc-profiling off --print-gpu-trace --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
@@ -207,7 +225,7 @@ do
         do
             stats_row="$stats_row,${metric_values[j]}"
         done
-        if [ "$op_type" == "fully_connected" ];
+        if [ "$op_type" == "fully_connected" ] || [ "$op_type" == "conv" ];
         then
             trace_values=""
             while IFS= read -r line
@@ -222,7 +240,7 @@ do
                 break
             done < "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt"
             stats_row="${stats_row},${trace_values}"
-        elif [ "$op_type" == "memcpy" ];
+        elif [ "$op_type" == "memcpy" ] || [ "$op_type" == "reshape" ];
         then
             trace_values=""
             while IFS= read -r line
