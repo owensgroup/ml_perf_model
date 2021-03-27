@@ -1,9 +1,3 @@
-if [ ! -f perf_params.txt ];
-then
-    echo "no device parameter file"
-    exit
-fi
-
 if [ ! -f nvprof_metrics.txt ];
 then
     echo "no nvprof metrics file"
@@ -110,22 +104,6 @@ then
     touch "$file_name"
     echo "${header}" >> "$file_name"
 fi
-
-Tsp="$( < perf_params.txt grep 'GFLOPS - SP' | awk '{ x=gensub("    ","","G",$4); printf x }' )"
-Tdp="$( < perf_params.txt grep 'DP' | awk '{ x=gensub("    ","","G",$4); printf x }' )"
-Tint="$( < perf_params.txt grep 'MAD' | awk '{ x=gensub("    ","","G",$4); printf x }' )"
-Tadd="$( < perf_params.txt grep 'ADD' | awk '{ x=gensub("    ","","G",$4); printf x }' )"
-Tldst="$( < perf_params.txt grep 'SHMEM' | awk '{ x=gensub("    ","","G",$4); printf x }' )"
-Bmem="$( < perf_params.txt grep 'GBSEC - DRAM' | awk '{ x=gensub("    ","","G",$4); printf x }' )"
-Bcache="$( < perf_params.txt grep 'GBSEC - L2' | awk '{ x=gensub("    ","","G",$4); printf x }' )"
-echo "Device params:"
-echo "    GFLOPS (SP): $Tsp"
-echo "    GFLOPS (DP): $Tdp"
-echo "    GFLOPS (MAD): $Tint"
-echo "    GFLOPS (ADD): $Tadd"
-echo "    SHMEM BW: $Tldst"
-echo "    DRAM BW: $Bmem"
-echo "    L2 BW: $Bcache"
 
 # Benchmark operator
 while IFS= read -r line
