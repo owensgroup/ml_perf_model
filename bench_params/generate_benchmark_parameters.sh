@@ -1,5 +1,5 @@
 #!/bin/bash
-GPU_memory=16777216000
+GPU_memory=16777216000 # V100
 
 if [ ! -f embedding_lookup_params.txt ];
 then
@@ -43,9 +43,9 @@ fi
 if [ ! -f fc_params.txt ];
 then
     touch fc_params.txt
-    for batch_size in 1 128 256 512;
+    for batch_size in 1 64 128 256 512;
     do
-        for M in 64 128 256 512 640 768 896 1024 1032 1544 2056 3080 4096 5004 5128 6152 7176 8192 8200 12296 16384 16392 20488 24584 28680 32768;
+        for M in 64 128 256 512 640 768 896 1024 1032 1536 1544 2048 2056 3080 3088 4096 5120 6144 6152 7176 8192 8200 12296 16384 16392 20488 24584 28680 32768;
         do
             for N in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512;
             do
@@ -115,19 +115,19 @@ fi
 if [ ! -f transpose_params.txt ];
 then
     touch transpose_params.txt
-    for batch_size in 1 64 128 256 512 1024 2048 4096;
+    for batch_size in 1 16 32 64 128 256 512;
     do
-        for M in 64 128 256 512 1024 2048 4096 16384 32768 65536;
+        for M in 64 96 128 192 256 384 512 768 1024 1536 2048 3072 4096 6144 8192 12288 16384 24576 32768 48652 65536;
         do
-            for N in 64 128 256 512 1024 2048 4096 16384 32768 65536;
+            for N in 64 96 128 192 256 384 512 768 1024 1536 2048 3072 4096 6144 8192 12288 16384 24576 32768 48652 65536;
             do
                 A_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
 
                 if [ "$A_size" -lt "$GPU_memory" ];
                 then
                     echo "$batch_size $M $N" 0 >> transpose_params.txt
-                    echo "$batch_size $M $N" 1 >> transpose_params.txt
-                    echo "$batch_size $M $N" 2 >> transpose_params.txt
+                    # echo "$batch_size $M $N" 1 >> transpose_params.txt
+                    # echo "$batch_size $M $N" 2 >> transpose_params.txt
                 fi
             done
         done

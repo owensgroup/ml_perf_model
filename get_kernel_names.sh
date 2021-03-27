@@ -20,7 +20,7 @@ do
 
     if [ "$op_type" != "memcpy" ];
     then
-        if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "10" ];
+        if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "5" ];
         then
             continue
         fi
@@ -53,7 +53,7 @@ do
     kernel_name="${array[6]/<*/}"
     if [ "$op_type" != "memcpy" ];
     then
-        if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "10" ];
+        if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "5" ];
         then
             continue
         fi
