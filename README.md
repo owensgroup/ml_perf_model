@@ -8,4 +8,5 @@ cd ml_perf_model/bench_params
 ./generate_benchmark_parameters.sh
 cd ..
 ./benchmark.sh fully_connected 1 # 1 for forward
+# ./benchmark.sh reshape 1
 ```
