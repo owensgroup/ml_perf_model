@@ -1,5 +1,6 @@
 #!/bin/bash
 GPU_memory=16777216000 # V100
+# GPU_memory=12788432896 # Titan XP
 
 if [ ! -f embedding_lookup_params.txt ];
 then
@@ -43,7 +44,7 @@ fi
 if [ ! -f fc_params.txt ];
 then
     touch fc_params.txt
-    for batch_size in 1 64 128 256 512;
+    for batch_size in 1 64 128 256 512 1024 2048;
     do
         for M in 64 128 256 512 640 768 896 1024 1032 1536 1544 2048 2056 3080 3088 4096 5120 6144 6152 7176 8192 8200 12296 16384 16392 20488 24584 28680 32768;
         do
@@ -115,7 +116,7 @@ fi
 if [ ! -f transpose_params.txt ];
 then
     touch transpose_params.txt
-    for batch_size in 1 16 32 64 128 256 512;
+    for batch_size in 1 16 32 64 128 256 512 1024 2048;
     do
         for M in 64 96 128 192 256 384 512 768 1024 1536 2048 3072 4096 6144 8192 12288 16384 24576 32768 48652 65536;
         do

@@ -1,5 +1,7 @@
 *.txt
 *.csv
 .ipynb_checkpoints/*
+analysis/notebook/.ipynb_checkpoints/*
 data/*
 .vscode/*
+ml_predictors/*.pth

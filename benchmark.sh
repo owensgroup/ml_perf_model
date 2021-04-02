@@ -217,15 +217,20 @@ do
             if [[ "$kernel_time" == *"us"* ]];
             then
                 kernel_time="$( echo "$kernel_time" | tr --delete 'us' )"
-            else
+            elif [[ "$kernel_time" == *"ms"* ]];
+            then
                 kernel_time="$( echo "$kernel_time" | tr --delete 'ms' )"
                 kernel_time="$( echo "scale=4; $kernel_time * 1000.0" | bc )"
+            else # in second
+                kernel_time="$( echo "$kernel_time" | tr --delete 's' )"
+                kernel_time="$( echo "scale=4; $kernel_time * 1000000.0" | bc )"
             fi
             if [ "$kernel_count" -gt "$warmup_iters" ];
             then
-                avg_kernel_time="$( echo "scale=4; $avg_kernel_time + $kernel_time / $runtime_batch_iters" | bc )"
+                avg_kernel_time="$( echo "scale=4; $avg_kernel_time + $kernel_time" | bc )"
             fi
         done < "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt"
+        avg_kernel_time="$( echo "scale=4; $avg_kernel_time / ($kernel_count - $warmup_iters) * ($kernel_count / ($runtime_batch_iters + $warmup_iters))" | bc )" # In case 1 op = multiple identical kernel calls, e.g. big reshape
         stats_row="${stats_row},${avg_kernel_time},${op_time},${trace_values}"
 
         if [ "$benchmark_metrics" == "1" ];

@@ -30,9 +30,13 @@ do
     if [[ "$sum_kernel" == *"us"* ]];
     then
         sum_kernel="$( echo "$sum_kernel" | tr --delete 'us' )"
-    else
+    elif [[ "$sum_kernel" == *"ms"* ]];
+    then
         sum_kernel="$( echo "$sum_kernel" | tr --delete 'ms' )"
         sum_kernel="$( echo "scale=4; $sum_kernel * 1000.0" | bc )"
+    else # in second
+        sum_kernel="$( echo "$sum_kernel" | tr --delete 's' )"
+        sum_kernel="$( echo "scale=4; $sum_kernel * 1000000.0" | bc )"
     fi
 
     sum_runtime="$( echo "scale=4; $sum_runtime + $sum_kernel" | bc )"
@@ -71,9 +75,13 @@ do
     if [[ "$sum_kernel" == *"us"* ]];
     then
         sum_kernel="$( echo "$sum_kernel" | tr --delete 'us' )"
-    else
+    elif [[ "$sum_kernel" == *"ms"* ]];
+    then
         sum_kernel="$( echo "$sum_kernel" | tr --delete 'ms' )"
         sum_kernel="$( echo "scale=4; $sum_kernel * 1000.0" | bc )"
+    else # in second
+        sum_kernel="$( echo "$sum_kernel" | tr --delete 's' )"
+        sum_kernel="$( echo "scale=4; $sum_kernel * 1000000.0" | bc )"
     fi
     perc="$( echo "scale=4; $sum_kernel / $sum_runtime" | bc )"
     sum_perc="$( echo "scale=4; $sum_perc + $perc" | bc )"
