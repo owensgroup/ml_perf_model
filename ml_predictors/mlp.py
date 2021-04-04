@@ -1,9 +1,9 @@
 import torch
 from torch.autograd import Variable
-import torch.nn.functional as F
 import torch.utils.data as Data
 import numpy as np
 import pandas as pd
+import argparse
 
 class MLP(torch.nn.Module):
     def __init__(self, n_feature, n_hidden, n_output):
@@ -144,111 +144,93 @@ def init_weights(m):
 
 BATCH_SIZE = 32 # 16
 EPOCH = 800
-peak_DRAM_BW = 804.497
 
-def get_reshape_data():
-    reshape_data = pd.read_csv('../data/reshape_1.csv', delimiter=',')
-    reshape_data = preprocessing(reshape_data)
-    r0 = reshape_data[reshape_data['trans_type'] == 0]
-    r0 = r0[2 * (r0["batch_size"] * r0["M"] * r0["N"]) * 4 / r0['kernel_runtime'] / 1e3 <= peak_DRAM_BW]
+def get_data(op_type):
+    data = pd.read_csv('../data/{}_1.csv'.format(op_type), delimiter=',')
+    data = preprocessing(data)
 
-    input_df = pd.DataFrame({
-        'batch_size': np.log(r0['batch_size']),
-        'M': np.log(r0['M']),
-        'N': np.log(r0['N'])
-    })
+    if op_type == 'fully_connected':
+        input_df = pd.DataFrame({
+            'batch_size': np.log(data['batch_size']),
+            'M': np.log(data['M']),
+            'N': np.log(data['N']),
+            'K': np.log(data['K'])
+        })
+    else:
+        input_df = pd.DataFrame({
+            'batch_size': np.log(data['batch_size']),
+            'M': np.log(data['M']),
+            'N': np.log(data['N'])
+        })
     x = torch.tensor(input_df.values).float()
 
     output_df = pd.DataFrame({
-        'kernel_runtime': np.log(r0['kernel_runtime'])
+        'kernel_runtime': np.log(data['kernel_runtime'])
     })
     y = torch.tensor(output_df.values).float()
+    print("Op type: {}, dataset length: {}".format(op_type, y.shape[0]))
 
-    return 3, x, y
+    return x.shape[1], x.to('cuda:0'), y.to('cuda:0')
 
-def get_fc_data():
-    fc_data = pd.read_csv('../data/fully_connected_1.csv', delimiter=',')
-    f0 = preprocessing(fc_data)
-    f0 = f0[2 * f0["batch_size"] * (f0["M"] * f0["N"] + f0["M"] * f0["K"] + f0["N"] * f0["K"]) * 4 / f0['kernel_runtime'] / 1e3 <= peak_DRAM_BW]
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser("Training MLP performance model for FC and reshape.")
+    parser.add_argument("--op-type", type=str, required=True)
+    args = parser.parse_args()
 
-    input_df = pd.DataFrame({
-        'batch_size': np.log(f0['batch_size']),
-        'M': np.log(f0['M']),
-        'N': np.log(f0['N']),
-        'K': np.log(f0['K'])
-    })
-    x = torch.tensor(input_df.values).float()
+    op_type = args.op_type
+    assert op_type in ["fully_connected", "reshape"]
+    n_feature, x, y = get_data(op_type=op_type)
 
-    output_df = pd.DataFrame({
-        'kernel_runtime': np.log(f0['kernel_runtime'])
-    })
-    y = torch.tensor(output_df.values).float()
+    op_dataset = Data.TensorDataset(x, y)
+    loader = Data.DataLoader(
+        dataset=op_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True, num_workers=0)
 
-    return 4, x, y
+    min_loss = 1e9
+    best_config = None
+    for size in [128, 256, 512, 1024]:
+        for num_layers in [3, 4, 5, 6, 7]:
+            for lr in [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2]:
+                for opt in ['adam', 'sgd']:
+                    for loss_func in [torch.nn.MSELoss()]:
+                        learning_rate = lr * 10 if opt == 'sgd' else lr
+                        print("Size: {}, num_layers: {}, learning rate: {}, optimizer: {}, loss function: {}".format(size, num_layers, learning_rate, opt, loss_func))
 
-##################################
-# op_tpye = "reshape"
-op_type = "fc"
-##################################
+                        size_tuple = tuple([size] * num_layers)
+                        net = MLP(n_feature=n_feature, n_hidden=size_tuple, n_output=1).to('cuda:0')
+                        net.apply(init_weights)
+                        if opt == 'adam':
+                            optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate, eps=1e-8, weight_decay=1e-4, amsgrad=False)
+                        else: # SGD
+                            optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate)
 
-if op_type == "reshape":
-    n_feature, x, y = get_reshape_data()
-else:
-    n_feature, x, y = get_fc_data()
+                        for epoch in range(EPOCH):
+                            for step, (batch_x, batch_y) in enumerate(loader):
+                                b_x = Variable(batch_x)
+                                b_y = Variable(batch_y)
 
-print(x.size())
-print(y.size())
+                                prediction = net(b_x)
+                                loss = loss_func(prediction, b_y)
+                                optimizer.zero_grad()
+                                loss.backward()
+                                optimizer.step()
 
-op_dataset = Data.TensorDataset(x, y)
-loader = Data.DataLoader(
-    dataset=op_dataset,
-    batch_size=BATCH_SIZE,
-    shuffle=True, num_workers=0)
+                            if epoch % 50 == 0:
+                                print("******* Epoch {} *******".format(epoch))
+                                prediction = net(x)
+                                loss = loss_func(prediction, y)
+                                print("Loss: {}".format(loss))
 
-min_loss = 1e9
-best_config = None
-for size in [128, 256, 512, 1024]:
-    for num_layers in [3, 4, 5, 6, 7]:
-        for lr in [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2]:
-            for opt in ['adam', 'sgd']:
-                for loss_func in [torch.nn.MSELoss()]:
-                    learning_rate = lr * 10 if opt == 'sgd' else lr
-                    print("Size: {}, num_layers: {}, learning rate: {}, optimizer: {}, loss function: {}".format(size, num_layers, learning_rate, opt, loss_func))
+                        estimated_time = torch.exp(net(x).cpu().detach().view(-1))
+                        error = abs_err(estimated_time, torch.exp(y.cpu().detach()).view(-1))
+                        histogram(error, is_abs=True)
+                        print("GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+                        if gmae(error) < min_loss:
+                            min_loss = gmae(error)
+                            best_config = (size, num_layers, learning_rate, opt, loss_func)
+                            torch.save(net.state_dict(), "./predictor_{}.pth".format(op_type))
+                        print("Current best config is {}, with error {:.2f}%".format(best_config, min_loss * 100.0))
 
-                    size_tuple = tuple([size] * num_layers)
-                    net = MLP(n_feature=n_feature, n_hidden=size_tuple, n_output=1)
-                    net.apply(init_weights)
-                    if opt == 'adam':
-                        optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate, eps=1e-8, weight_decay=1e-4, amsgrad=False)
-                    else: # SGD
-                        optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate)
-
-                    for epoch in range(EPOCH):
-                        for step, (batch_x, batch_y) in enumerate(loader):
-                            b_x = Variable(batch_x)
-                            b_y = Variable(batch_y)
-
-                            prediction = net(b_x)
-                            loss = loss_func(prediction, b_y)
-                            optimizer.zero_grad()
-                            loss.backward()
-                            optimizer.step()
-
-                        if epoch % 50 == 0:
-                            print("******* Epoch {} *******".format(epoch))
-                            prediction = net(x)
-                            loss = loss_func(prediction, y)
-                            print("Loss: {}".format(loss))
-
-                    estimated_time = torch.exp(net(x).detach().view(-1))
-                    error = abs_err(estimated_time, torch.exp(y).view(-1))
-                    histogram(error, is_abs=True)
-                    print("GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
-                    if gmae(error) < min_loss:
-                        min_loss = gmae(error)
-                        best_config = (size, num_layers, learning_rate, opt, loss_func)
-                        print("Current best config to {}".format(best_config))
-                        torch.save(net.state_dict(), "./predictor_{}.pth".format(op_type))
-
-print("Min gmae loss: {}".format(min_loss))
-print("Best config: {}".format(best_config))
+    print("Min gmae loss: {}".format(min_loss))
+    print("Best config: {}".format(best_config))
