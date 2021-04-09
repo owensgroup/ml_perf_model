@@ -17,7 +17,8 @@ benchmark_metrics="0"
 
 op_type=$1
 is_forward=$2
-shmem="0"
+is_fc_big=${3:0}
+shmem="1"
 sgd="1"
 fc_test="0"
 header=""
@@ -52,7 +53,12 @@ then
 elif [ "$op_type" == "fully_connected" ];
 then
     header="kernel_name,batch_size,M,N,K"
-    param_file_name="./bench_params/fc_params.txt"
+    if [ "$is_fc_big" == "1" ];
+    then
+        param_file_name="./bench_params/fc_params_big.txt"
+    else
+        param_file_name="./bench_params/fc_params.txt"
+    fi
     if [ "$fc_test" == "1" ];
     then
         param_file_name="./bench_params/fc_test_params.txt"
@@ -78,7 +84,12 @@ else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
 fi
-file_name="${file_prefix}.csv"
+if [ "$is_fc_big" == "1" ];
+then
+    file_name="${file_prefix}_big.csv"
+else
+    file_name="${file_prefix}.csv"
+fi
 
 header="${header},kernel_runtime,op_runtime"
 if [ "$op_type" != "memcpy" ];

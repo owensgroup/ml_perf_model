@@ -1,7 +1,9 @@
 *.txt
 *.csv
 .ipynb_checkpoints/*
-analysis/notebook/.ipynb_checkpoints/*
+*/.ipynb_checkpoints/*
+__pycache__/*
+*/__pycache__/*
 data/*
 .vscode/*
 ml_predictors/*.pth

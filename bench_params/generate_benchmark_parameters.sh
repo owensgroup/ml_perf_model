@@ -40,11 +40,10 @@ then
     done
 fi
 
-
 if [ ! -f fc_params.txt ];
 then
     touch fc_params.txt
-    for batch_size in 1 64 128 256 512 1024 2048;
+    for batch_size in 1 64 128 256;
     do
         for M in 64 128 256 512 640 768 896 1024 1032 1536 1544 2048 2056 3080 3088 4096 5120 6144 6152 7176 8192 8200 12296 16384 16392 20488 24584 28680 32768;
         do
@@ -60,6 +59,32 @@ then
                     if [ "$total_size" -lt "$GPU_memory" ];
                     then
                         echo "$batch_size $M $N $K" >> fc_params.txt
+                    fi
+                done
+            done
+        done
+    done
+fi
+
+if [ ! -f fc_params_big.txt ];
+then
+    touch fc_params_big.txt
+    for batch_size in 512 1024 2048;
+    do
+        for M in 64 128 256 512 640 768 896 1024 1032 1536 1544 2048 2056 3080 3088 4096 5120 6144 6152 7176 8192 8200 12296 16384 16392 20488 24584 28680 32768;
+        do
+            for N in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512;
+            do
+                for K in 32 64 128 256 512 768 1024 1536 2048 3072 4096 8192 16384 32768;
+                do
+                    A_size="$( echo "$batch_size * $M * $K * 4" | bc -l )"
+                    B_size="$( echo "$batch_size * $N * $K * 4" | bc -l )"
+                    C_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
+                    total_size="$( echo "$A_size + $B_size + $C_size" | bc -l )"
+
+                    if [ "$total_size" -lt "$GPU_memory" ];
+                    then
+                        echo "$batch_size $M $N $K" >> fc_params_big.txt
                     fi
                 done
             done

@@ -68,7 +68,7 @@ _args=" --num-batches=100"\
 # # MLPerf
 # model_name="MLPerf"
 # mb_size=2048
-# _args=" --num-batches=500"\
+# _args=" --num-batches=100"\
 # " --data-generation=dataset"\
 # " --data-set=terabyte"\
 # " --raw-data-file=/nvme/deep-learning/criteo_terabyte/day"\

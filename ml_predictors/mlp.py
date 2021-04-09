@@ -226,6 +226,10 @@ if __name__ == '__main__':
                         error = abs_err(estimated_time, torch.exp(y.cpu().detach()).view(-1))
                         histogram(error, is_abs=True)
                         print("GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+                        if gmae(error) == 0.0:
+                            print("Something wrong here! Not saving.")
+                            print(abs(error))
+                            continue
                         if gmae(error) < min_loss:
                             min_loss = gmae(error)
                             best_config = (size, num_layers, learning_rate, opt, loss_func)
