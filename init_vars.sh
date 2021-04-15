@@ -1,3 +1,5 @@
+export PM_HOME=`pwd`
+
 echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo &> /dev/null
 for i in {0..39}
 do
@@ -6,10 +8,10 @@ done
 
 if [[ `pwd` == *"daisy"* ]];
 then
-  source activate zhongyi
+  conda activate zhongyi
   sudo nvidia-smi -lgc 1297
 elif [[ `pwd` == *"mario"* ]];
 then
-  source activate zhongyi_mario
+  conda activate zhongyi_mario
   sudo nvidia-smi -ac 5505,1404
 fi # Add any new conda env and lock GPU frequency here

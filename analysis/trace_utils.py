@@ -1,10 +1,9 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
-from IPython.core.display import display, HTML
 from pprint import pprint
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import argparse, logging, tempfile, json, sys, pandas
+import json, sys
 
 # From Louis. Trim a long trace so that it eases the ATC processing
 def trim_trace_by_percentage(file_name, start, end, trimmed_file="../data/trace_trimmed.json"):
@@ -53,17 +52,25 @@ def trim_trace_by_time(file_name, start, end, trimmed_file="../data/trace_trimme
                 'traceEvents': trimmed_trace
             }
             json.dump(trace, out_file)
-            
-def trim_trace_by_ex_id(file_name, start, end, trimmed_file="../data/trace_trimmed.json"):
+
+def trim_trace_by_num_iter(file_name, iter=10, trimmed_file=None):
+    if trimmed_file is None:
+        trimmed_file = "data/{}_trimmed.json".format(file_name.split('/')[-1].split('.json')[0])
+
     with open(file_name) as trace_file:
         trace = json.load(trace_file)
         start_idx, end_idx = 0, -1
+        start_idx_lst = [] # Keep track for DataLoaders of 10 iters
         for idx, x in enumerate(trace["traceEvents"]):
-            if 'args' in x.keys() and 'External id' in x['args'].keys() and x['args']['External id'] == start:
-                start_idx = idx
-            if 'args' in x.keys() and 'External id' in x['args'].keys() and x['args']['External id'] == end:
-                end_idx = idx   
-        trimmed_trace = trace["traceEvents"][start_idx:end_idx]
+            if 'DataLoader' in x['name']:
+                start_idx_lst.append(idx)
+                if len(start_idx_lst) > iter:
+                    start_idx = start_idx_lst[0]
+                    start_idx_lst.pop(0) # Remove the oldest start idx
+                end_idx = idx
+        assert len(start_idx_lst) == 10, "Trace too short!"
+        trimmed_trace = [x for x in trace["traceEvents"] if x['ts'] >= trace["traceEvents"][start_idx]["ts"] and x['ts'] <= trace["traceEvents"][end_idx]["ts"]]
+
         with open(trimmed_file, 'w') as out_file:
             trace = {
                 'schemaVersion': trace['schemaVersion'],
