@@ -50,6 +50,7 @@ mb_size=2048 #1024 #512 #256
 _args=" --num-batches=100"\
 " --data-generation=random"\
 " --processed-data-file=/nvme/deep-learning/dlrm_random"\
+" --round-targets"\
 " --arch-mlp-bot=512-512-64"\
 " --arch-mlp-top=1024-1024-1024-1"\
 " --arch-sparse-feature-size=64"\
@@ -119,7 +120,7 @@ if [ $gpu = 1 ]; then
     echo "-------------------------------"
     echo "Running PT (log file: $outf)"
     echo "-------------------------------"
-    cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${_args} --use-gpu $dlrm_extra_option"
+    cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${_args} --use-gpu $dlrm_extra_option > $outf"
     echo $cmd
     eval $cmd
     min=$(grep "iteration" $outf | awk 'BEGIN{best=999999} {if (best > $7) best=$7} END{print best}')

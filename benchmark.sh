@@ -4,12 +4,6 @@ then
     exit
 fi
 
-# Lock GPU frequency
-sudo nvidia-smi –lgc 1297 # V100
-
-# Make the data dir
-mkdir -p data
-
 runtime_batch_iters=30
 metrics_bench_iters=3
 warmup_iters=5
@@ -76,7 +70,7 @@ elif [ "$op_type" == "cross_entropy" ];
 then
     header="kernel_name,batch_size"
     param_file_name="./bench_params/ce_params.txt"
-elif [ "$op_type" == "reshape" ];
+elif [ "$op_type" == "transpose" ];
 then
     header="kernel_name,batch_size,M,N,trans_type"
     param_file_name="./bench_params/transpose_params.txt"
@@ -149,7 +143,7 @@ do
     elif [ "$op_type" == "cross_entropy" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]}"
-    elif [ "$op_type" == "reshape" ]; # reshape
+    elif [ "$op_type" == "transpose" ]; # transpose
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --trans-type ${array[3]}"
     else # Memcpy
@@ -241,7 +235,7 @@ do
                 avg_kernel_time="$( echo "scale=4; $avg_kernel_time + $kernel_time" | bc )"
             fi
         done < "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt"
-        avg_kernel_time="$( echo "scale=4; $avg_kernel_time / ($kernel_count - $warmup_iters) * ($kernel_count / ($runtime_batch_iters + $warmup_iters))" | bc )" # In case 1 op = multiple identical kernel calls, e.g. big reshape
+        avg_kernel_time="$( echo "scale=4; $avg_kernel_time / ($kernel_count - $warmup_iters) * ($kernel_count / ($runtime_batch_iters + $warmup_iters))" | bc )" # In case 1 op = multiple identical kernel calls, e.g. big transpose
         stats_row="${stats_row},${avg_kernel_time},${op_time},${trace_values}"
 
         if [ "$benchmark_metrics" == "1" ];
