@@ -8,6 +8,8 @@ cd ml_perf_model/bench_params
 ./generate_benchmark_parameters.sh # Generate benchmark parameters (please modify the GPU memory size in the script).
 cd ../sparse-ads-baselines
 python setup.py install # Install table batched embedding lookup kernel.
+cd ../mlperf-logging
+python setup.py install # Install MLPerf logging for DLRM
 cd ..
 source ./init_vars.sh # Turn off turbo, turn on performance, lock frequency, etc.
 ```

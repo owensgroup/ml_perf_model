@@ -7,3 +7,6 @@
 [submodule "dlrm"]
 	path = dlrm
 	url = git@github.com:moderato/dlrm.git
+[submodule "mlperf-logging"]
+	path = mlperf-logging
+	url = https://github.com/mlcommons/logging.git

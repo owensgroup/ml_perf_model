@@ -6,8 +6,11 @@ import pandas as pd
 import json, sys
 
 # From Louis. Trim a long trace so that it eases the ATC processing
-def trim_trace_by_percentage(file_name, start, end, trimmed_file="../data/trace_trimmed.json"):
+def trim_trace_by_percentage(file_name, start, end, trimmed_file=None):
     assert (0 <= start and start <= 1 and 0 <= end and end <= 1 and start <= end)
+    if trimmed_file is None:
+        trimmed_file = "./{}_trimmed.json".format(file_name.split('/')[-1].split('.json')[0])
+
     with open(file_name) as trace_file:
         trace = json.load(trace_file)
         min_time = sys.maxsize
@@ -33,8 +36,13 @@ def trim_trace_by_percentage(file_name, start, end, trimmed_file="../data/trace_
                 'traceEvents': trimmed_trace
             }
             json.dump(trace, out_file)
+
+    return trimmed_file
             
-def trim_trace_by_time(file_name, start, end, trimmed_file="../data/trace_trimmed.json"):
+def trim_trace_by_time(file_name, start, end, trimmed_file=None):
+    if trimmed_file is None:
+        trimmed_file = "./{}_trimmed.json".format(file_name.split('/')[-1].split('.json')[0])
+
     with open(file_name) as trace_file:
         trace = json.load(trace_file)
         
@@ -53,30 +61,36 @@ def trim_trace_by_time(file_name, start, end, trimmed_file="../data/trace_trimme
             }
             json.dump(trace, out_file)
 
-def trim_trace_by_num_iter(file_name, iter=10, trimmed_file=None):
+    return trimmed_file
+
+def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None):
     if trimmed_file is None:
-        trimmed_file = "data/{}_trimmed.json".format(file_name.split('/')[-1].split('.json')[0])
+        trimmed_file = "./{}_trimmed.json".format(file_name.split('/')[-1].split('.json')[0])
 
     with open(file_name) as trace_file:
         trace = json.load(trace_file)
         start_idx, end_idx = 0, -1
-        start_idx_lst = [] # Keep track for DataLoaders of 10 iters
-        for idx, x in enumerate(trace["traceEvents"]):
+        dataloader_count = 0
+        t = trace["traceEvents"] if isinstance(trace, dict) else trace
+        for idx, x in enumerate(t):
             if 'DataLoader' in x['name']:
-                start_idx_lst.append(idx)
-                if len(start_idx_lst) > iter:
-                    start_idx = start_idx_lst[0]
-                    start_idx_lst.pop(0) # Remove the oldest start idx
-                end_idx = idx
-        assert len(start_idx_lst) == 10, "Trace too short!"
-        trimmed_trace = [x for x in trace["traceEvents"] if x['ts'] >= trace["traceEvents"][start_idx]["ts"] and x['ts'] <= trace["traceEvents"][end_idx]["ts"]]
+                if dataloader_count == skip_iters:
+                    start_idx = idx
+                if dataloader_count == skip_iters + iters:
+                    end_idx = idx
+                    break
+                dataloader_count += 1
+        assert end_idx != -1, "Trace too short!"
+        trimmed_trace = [x for x in t if x['ts'] >= t[start_idx]["ts"] and x['ts'] < t[end_idx]["ts"]] # Don't include the last Dataloader
 
         with open(trimmed_file, 'w') as out_file:
             trace = {
-                'schemaVersion': trace['schemaVersion'],
+                'schemaVersion': None,
                 'traceEvents': trimmed_trace
             }
             json.dump(trace, out_file)
+
+    return trimmed_file
 
 def list_to_tuple(lst):
     return tuple(list_to_tuple(l) if isinstance(l, list) else l for l in lst) if lst is not None else None

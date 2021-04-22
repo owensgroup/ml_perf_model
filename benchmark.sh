@@ -11,7 +11,7 @@ benchmark_metrics="0"
 
 op_type=$1
 is_forward=$2
-is_fc_big=${3:0}
+is_big=${3:0}
 shmem="1"
 sgd="1"
 fc_test="0"
@@ -26,7 +26,12 @@ fi
 if [ "$op_type" == "embedding_lookup" ];
 then
     header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
-    param_file_name="./bench_params/embedding_lookup_params.txt"
+    if [ "$is_big" == "1" ];
+    then
+        param_file_name="./bench_params/embedding_lookup_params_big.txt"
+    else
+        param_file_name="./bench_params/embedding_lookup_params.txt"
+    fi
     if [ "$is_forward" == "1" ] && [ "$shmem" == "1" ];
     then
         file_prefix="${file_prefix}_shmem"
@@ -47,7 +52,7 @@ then
 elif [ "$op_type" == "fully_connected" ];
 then
     header="kernel_name,batch_size,M,N,K"
-    if [ "$is_fc_big" == "1" ];
+    if [ "$is_big" == "1" ];
     then
         param_file_name="./bench_params/fc_params_big.txt"
     else
@@ -78,7 +83,7 @@ else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
 fi
-if [ "$is_fc_big" == "1" ];
+if [ "$is_big" == "1" ];
 then
     file_name="${file_prefix}_big.csv"
 else
@@ -88,7 +93,7 @@ fi
 header="${header},kernel_runtime,op_runtime"
 if [ "$op_type" != "memcpy" ];
 then
-    header="${header},block_x,block_y,block_z,thread_x,thread_y,thread_z,regs,smem"
+    header="${header},block_x,block_y,block_z,thread_x,thread_y,thread_z,regs,ssmem,dsmem"
 
     if [ "$benchmark_metrics" == "1" ];
     then
@@ -213,7 +218,7 @@ do
                 then
                     trace_values="${x[8]}"
                 else
-                    trace_values="${x[2]/(/},${x[3]},${x[4]/)/},${x[5]/(/},${x[6]},${x[7]/)/},${x[8]},${x[9]}"
+                    trace_values="${x[2]/(/},${x[3]},${x[4]/)/},${x[5]/(/},${x[6]},${x[7]/)/},${x[8]},${x[9]},${x[10]}"
                 fi
             fi
 
