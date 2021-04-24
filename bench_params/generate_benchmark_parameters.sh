@@ -199,3 +199,23 @@ then
         done
     done
 fi
+
+if [ ! -f tril_params.txt ];
+then
+    touch tril_params.txt
+    for batch_size in 1 64 128 256 512 1024 2048;
+    do
+        for MN in {5..40};
+        do
+            for diag in 0 1;
+            do
+                A_size="$( echo "$batch_size * $MN * $MN * 4" | bc -l )"
+
+                if [ "$A_size" -lt "$GPU_memory" ];
+                then
+                    echo "$batch_size $MN $MN $diag" >> tril_params.txt
+                fi
+            done
+        done
+    done
+fi

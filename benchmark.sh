@@ -79,6 +79,10 @@ elif [ "$op_type" == "transpose" ];
 then
     header="kernel_name,batch_size,M,N,trans_type"
     param_file_name="./bench_params/transpose_params.txt"
+elif [ "$op_type" == "tril" ];
+then
+    header="kernel_name,batch_size,M,N,diag"
+    param_file_name="./bench_params/tril_params.txt"
 else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
@@ -151,6 +155,9 @@ do
     elif [ "$op_type" == "transpose" ]; # transpose
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --trans-type ${array[3]}"
+    elif [ "$op_type" == "tril" ]; # lower triangular after feature interaction
+    then
+        bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --diag ${array[3]}"
     else # Memcpy
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]}"
     fi
