@@ -25,6 +25,8 @@ The following benchmark commands are supported:
 ./benchmark.sh embedding_lookup 0
 ./benchmark.sh embedding_lookup 1 1 # The second 1 for big batch size.
 ./benchmark.sh embedding_lookup 0 1
+./benchmark.sh tril 1
+./benchmark.sh tril 0
 ```
 
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
