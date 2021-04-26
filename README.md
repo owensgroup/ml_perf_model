@@ -30,3 +30,12 @@ The following benchmark commands are supported:
 ```
 
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
+
+To train ML-based performance model for FC, transpose, and tril, run:
+```bash
+cd analysis/ml_predictors
+python mlp.py --op-type fully_connected --batch-size 64
+python mlp.py --op-type transpose --batch-size 32
+python mlp.py --op-type tril
+python mlp.py --op-type tril --backward
+```
