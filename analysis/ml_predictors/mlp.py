@@ -5,6 +5,12 @@ import numpy as np
 import pandas as pd
 import argparse, json, os
 
+pm_home = os.environ.get('PM_HOME')
+if pm_home is None:
+    pm_home = "/home/m092926/daisy/Documents/ml_perf_model"
+dir_prefix = "{}/analysis/ml_predictors".format(pm_home)
+
+
 class MLP(torch.nn.Module):
     def __init__(self, n_feature, n_hidden, n_output):
         super(MLP, self).__init__()
@@ -169,7 +175,7 @@ def init_weights(m):
 
 
 def get_data(op_type, backward=False):
-    data = pd.read_csv('../../data/{}_{}.csv'.format(op_type, 1 if not backward else 0), delimiter=',')
+    data = pd.read_csv('{}/../../data/{}_{}.csv'.format(dir_prefix, op_type, 1 if not backward else 0), delimiter=',')
     data = preprocessing(data)
 
     if op_type == 'fully_connected':
@@ -207,17 +213,17 @@ def get_data(op_type, backward=False):
 
 
 def get_pretrained_net(op_type, backward=False):
-    with open("./best_config_{}_{}.json".format(op_type, 1 if not backward else 0), "r") as f:
+    with open("{}/best_config_{}_{}.json".format(dir_prefix, op_type, 1 if not backward else 0), "r") as f:
         best_config = json.load(f)
         n_hidden = [best_config["size"]] * best_config["num_layers"]
-    if args.op_type == "fully_connected":
+    if op_type == "fully_connected":
         n_feature = 4
-    elif args.op_type == "transpose":
+    elif op_type == "transpose":
         n_feature = 3
     else: # tril
         n_feature = 4
     net = MLP(n_feature=n_feature, n_hidden=n_hidden, n_output=1)
-    net.load_state_dict(torch.load("./predictor_{}_{}.pth".format(args.op_type, 1 if not args.backward else 0)))
+    net.load_state_dict(torch.load("{}/predictor_{}_{}.pth".format(dir_prefix, op_type, 1 if not backward else 0)))
     return net
 
 
@@ -225,10 +231,10 @@ def inference(op_type, input_sizes, backward=False):
     net = get_pretrained_net(op_type, backward)
 
     input_sizes = [int(x) for x in input_sizes.split('-')]
-    if args.op_type == "fully_connected":
+    if op_type == "fully_connected":
         n_feature = 4
         input_sizes = [np.log(x) for x in input_sizes]
-    elif args.op_type == "transpose":
+    elif op_type == "transpose":
         n_feature = 3
         input_sizes = [np.log(x) for x in input_sizes]
     else: # tril
@@ -265,8 +271,8 @@ if __name__ == '__main__':
         shuffle=True, num_workers=0)
     print("Op type: {}, dataset length: {}, batch size: {}, epoch: {}".format(args.op_type, y.shape[0], args.batch_size, args.epoch))
 
-    if os.path.exists("./best_config_{}.json".format(suffix)):
-        with open("./best_config_{}.json".format(suffix), "r") as f:
+    if os.path.exists("{}/best_config_{}.json".format(dir_prefix, suffix)):
+        with open("{}/best_config_{}.json".format(dir_prefix, suffix), "r") as f:
             best_config = json.load(f)
         net = get_pretrained_net(args.op_type, args.backward)
         estimated_time = torch.exp(net(x.cpu()).detach().view(-1))
@@ -326,12 +332,12 @@ if __name__ == '__main__':
                                 "optimizer": opt,
                                 "loss_fn": loss_func.__class__.__name__
                             }
-                            torch.save(net.state_dict(), "./predictor_{}.pth".format(suffix))
-                            torch.save(optimizer.state_dict(), "./optimizer_{}.pth".format(suffix))
-                            with open('./best_config_{}.json'.format(suffix), 'w') as f:
+                            torch.save(net.state_dict(), "{}/predictor_{}.pth".format(dir_prefix, suffix))
+                            torch.save(optimizer.state_dict(), "{}/optimizer_{}.pth".format(dir_prefix, suffix))
+                            with open('{}/best_config_{}.json'.format(dir_prefix, suffix), 'w') as f:
                                 json.dump(best_config, f)
-                        with open('./errors_{}.csv'.format(suffix), 'a') as f:
-                            if not os.path.exists('./errors_{}.csv'.format(suffix)):
+                        with open('{}/errors_{}.csv'.format(dir_prefix, suffix), 'a') as f:
+                            if not os.path.exists('{}/errors_{}.csv'.format(dir_prefix, suffix)):
                                 f.write("size,num_layers,lr,optimizer,loss_fn,GMAE,mean,std\n")
                             f.write("{},{},{},{},{},{:.4f},{:.4f},{:.4f}\n".format(size, num_layers, lr, opt, loss_func.__class__.__name__, gmae(error), error.mean(), error.std()))
 
