@@ -132,9 +132,9 @@ then
     done
 fi
 
-if [ ! -f cat_params.txt ];
+if [ ! -f concat_params.txt ];
 then
-    touch cat_params.txt
+    touch concat_params.txt
     for batch_size in 1 128 256 512 1024 2048;
     do
         for M in 64 198 256 512 1024 32768;

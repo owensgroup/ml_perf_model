@@ -70,7 +70,7 @@ then
 elif [ "$op_type" == "concat" ];
 then
     header="kernel_name,batch_size,M,N,K"
-    param_file_name="./bench_params/cat_params.txt"
+    param_file_name="./bench_params/concat_params.txt"
 elif [ "$op_type" == "cross_entropy" ];
 then
     header="kernel_name,batch_size"

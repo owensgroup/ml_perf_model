@@ -263,7 +263,7 @@ if __name__ == '__main__':
         print("Predicted inference time of {} with input sizes {}: {:.2f}.".format(suffix, args.inference_input_sizes, t))
         exit()
 
-    n_feature, x, y = get_data(op_type=args.op_type, backward=backward)
+    n_feature, x, y = get_data(op_type=args.op_type, backward=args.backward)
     op_dataset = Data.TensorDataset(x, y)
     loader = Data.DataLoader(
         dataset=op_dataset,
@@ -342,6 +342,9 @@ if __name__ == '__main__':
                             f.write("{},{},{},{},{},{:.4f},{:.4f},{:.4f}\n".format(size, num_layers, lr, opt, loss_func.__class__.__name__, gmae(error), error.mean(), error.std()))
 
                         print("Current best config is {}, with error {:.2f}%".format(best_config, min_error * 100.0))
+                        if min_error < 0.04:
+                            print("Satisfied. Stop searching.")
+                            exit()
 
     print("Min gmae loss: {}".format(min_error))
     print("Best config: {}".format(best_config))
