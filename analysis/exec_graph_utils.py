@@ -18,6 +18,115 @@ logging.getLogger().setLevel(logging.INFO)
 # LABEL: nodes used as markers
 NodeType = Enum("NodeType", "OPERATOR LABEL")
 
+# Label markers
+LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
+
+# Utility functions
+def abs_err(pred, real):
+    return abs((pred - real) / real)
+
+def err(pred, real):
+    return (pred - real) / real
+
+def gmae(x):
+    return np.exp(np.log(abs(x)).mean())
+
+def histogram(df, perc=True, is_abs=False, bins=[0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0]):
+    count = len(df)
+    ret = {}
+    if is_abs:
+        tmp_bins = []
+        for i in range(0, len(bins) - 1):
+            tmp_bins.append(-bins[len(bins) - 1 - i])
+        for b in bins:
+            tmp_bins.append(b)
+        bins = tmp_bins
+    for idx, b in enumerate(bins):
+        if idx == 0:
+            continue
+        ret[(bins[idx-1], bins[idx])] = 0
+    for x in df:
+        for idx, b in enumerate(bins):
+            if idx == 0:
+                continue
+            if x >= bins[idx-1] and x < bins[idx]:
+                ret[(bins[idx-1], bins[idx])] += 1
+                break
+    for b, c in sorted(ret.items(), key=lambda x: x[0]):
+        if perc:
+            print("{:.0f}% - {:.0f}%: {:.2f}%".format(b[0] * 100, b[1] * 100, c / count * 100))
+        else:
+            print("{:.2f} - {:.2f}: {:.2f}%".format(b[0], b[1], c / count * 100))
+    return ret
+
+def strip_unit(x):
+    for col in ['dram_read_throughput', 'dram_write_throughput', 'gld_requested_throughput', 'gld_throughput',\
+               'gst_requested_throughput', 'gst_throughput', 'l2_read_throughput', 'l2_write_throughput', \
+                'shared_load_throughput', 'shared_store_throughput']:
+        if col in x.keys():
+            if x[col].endswith('GB/s'):
+                x[col] = float(x[col].rstrip('GB/s'))
+            elif x[col].endswith('MB/s'):
+                x[col] = float(x[col].rstrip('MB/s')) / 1e3
+            elif x[col].endswith('B/s'):
+                x[col] = float(x[col].rstrip('B/s')) / 1e9
+            else:
+                raise Exception("Unrecognizable unit!")
+    return x
+    
+def p2f(x):
+    for col in ['flop_dp_efficiency', 'flop_sp_efficiency', 'gld_efficiency', 'gst_efficiency', \
+                'shared_efficiency', 'sm_efficiency', 'warp_execution_efficiency']:
+        if col in x.keys():
+            x[col] = float(str(x[col]).rstrip('%')) / 100.0
+    return x
+
+def strip_parenthesis(x):
+    for col in ['dram_utilization', 'l2_utilization', 'tex_utilization']:
+        if col in x.keys():
+            x[col] = x[col].strip('(').strip(')')
+    return x
+
+def process_smem(x):
+    # To bytes
+    if 'smem' in x.keys():
+        if x['smem'].endswith('MB'):
+            x['smem'] = int(float(x['smem'].rstrip('MB')) * 1024 * 1024)
+        elif x['smem'].endswith('KB'):
+            x['smem'] = int(float(x['smem'].rstrip('KB')) * 1024)
+        elif x['smem'].endswith('B'):
+            x['smem'] = int(x['smem'].rstrip('B'))
+        else:
+            raise Exception("Unrecognizable unit!")
+    return x
+        
+def preprocessing(df):
+    df = df.apply(func=p2f, axis=1)
+    df = df.apply(func=strip_unit, axis=1)
+    df = df.apply(func=strip_parenthesis, axis=1)
+    df = df.apply(func=process_smem, axis=1)
+    df = df[(df['kernel_name'] != 'gemv2T_kernel') & (df['kernel_name'] != 'splitKreduce_kernel')]
+    return df
+
+def div_round_up(x, y):
+    return int((x + y - 1) / y)
+
+def choose(n, k):
+    """
+    A fast way to calculate binomial coefficients by Andrew Dalke (contrib).
+    """
+    if 0 <= k <= n:
+        ntok = 1
+        ktok = 1
+        for t in range(1, min(k, n - k) + 1):
+            ntok *= n
+            ktok *= t
+            n -= 1
+        return ntok // ktok
+    else:
+        return 0
+
+
 """
 TensorNode
 
@@ -129,7 +238,7 @@ class Node:
 
     def detect_type(self, name: str, inputs: List[Any], outputs: List[Any]) -> NodeType:
         if (
-            (name.startswith("##") or name.startswith("__"))
+            any(name.startswith(x) for x in LABEL_MARKERS)
             and not inputs
             and not outputs
         ):
@@ -161,6 +270,7 @@ class Node:
 class ExecutionGraph:
     def __init__(self, json):
         self.nodes = {}
+        self.clean_nodes = {} # w/o DataLoader ops
         self.tensors = {}
         self.proc_group = {}
         pid = json["pid"]
@@ -217,7 +327,15 @@ class ExecutionGraph:
         for n in self.nodes.values():
             n.sort_children()
 
-    def print_op_stats(self, detail: bool = False, json_format: bool = False):
+        # remove all dataloader ops
+        self.remove_dataloader_ops()
+
+    def get_nodes(self, clean: bool = False):
+        if clean:
+            return self.clean_nodes
+        return self.nodes
+
+    def get_unique_ops(self, detail: bool = False, clean: bool = False, json_format: bool = False):
         def get_param(value, type, shape):
             type = type.lower()
             SCALAR_TYPES = {"int", "long", "float", "double", "bool"}
@@ -246,7 +364,8 @@ class ExecutionGraph:
             return params
 
         ops = {}
-        for n in self.nodes.values():
+        nodes_dict = self.clean_nodes if clean else self.nodes
+        for n in nodes_dict.values():
             if detail:
                 is_op = n.type == NodeType.OPERATOR
             else:
@@ -269,6 +388,12 @@ class ExecutionGraph:
             # use json to serialize list of dict to string for set
             unique = {json.dumps(x, sort_keys=True) for x in attr["inputs"]}
             attr["inputs"] = list(map(json.loads, unique))
+            
+        return ops
+
+    def print_op_stats(self, detail: bool = False, clean: bool = False, json_format: bool = False):
+        ops = self.get_unique_ops(detail, clean, json_format)
+        
         if json_format:
             print(json.dumps(ops, indent=2, sort_keys=True))
         else:
@@ -415,108 +540,20 @@ class ExecutionGraph:
         for node_id in t.sinks:
             sinks[node_id] = self.nodes[node_id].name
         print("    sinks:", sinks)
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Execution graph building and analysis"
-    )
-    parser.add_argument(
-        "--input", type=str, required=True, help="input execution graph json file."
-    )
-    parser.add_argument(
-        "--graph",
-        dest="graph",
-        default=False,
-        action="store_true",
-        help="generate a graph output using either graphviz (dot) or graphml.",
-    )
-    parser.add_argument(
-        "--graphviz",
-        dest="graphviz",
-        default=False,
-        action="store_true",
-        help="generate graph output in graphviz (dot) format.",
-    )
-    parser.add_argument(
-        "--graphml",
-        dest="graphml",
-        default=False,
-        action="store_true",
-        help="generate graph output in graphml format.",
-    )
-    parser.add_argument(
-        "--list-tensor",
-        dest="list_tensor",
-        default=False,
-        action="store_true",
-        help="list all tensors and its shape and type information.",
-    )
-    parser.add_argument(
-        "--list-op",
-        dest="list_op",
-        default=False,
-        action="store_true",
-        help="list all the ops in the execution graph.",
-    )
-    parser.add_argument(
-        "--node",
-        type=int,
-        dest="node",
-        default=-1,
-        action="store",
-        help="query information about a node and its dependency given a node ID.",
-    )
-    parser.add_argument(
-        "--detail",
-        dest="detail",
-        default=False,
-        action="store_true",
-        help="combined with some other options, will show more detailed information.",
-    )
-    parser.add_argument(
-        "--json",
-        dest="json",
-        default=False,
-        action="store_true",
-        help="for --list-op option, generate outputs in JSON format.",
-    )
-    parser.add_argument(
-        "--tree",
-        dest="tree",
-        default=False,
-        action="store_true",
-        help="generate an execution tree by process, threads, and order of node execution.",
-    )
-    args = parser.parse_args()
-
-    execution_json: str = args.input
-
-    with open(execution_json) as execution_data:
-        execution_data: TextIO
-        execution_graph: ExecutionGraph = ExecutionGraph(json.load(execution_data))
-        if args.list_op:
-            execution_graph.print_op_stats(args.detail, args.json)
-        if args.list_tensor:
-            execution_graph.print_tensors(args.detail)
-        if args.tree:
-            execution_graph.print_tree(args.detail)
-        if args.node != -1:
-            if args.node in execution_graph.nodes:
-                execution_graph.node_depend(args.node)
-            elif args.node in execution_graph.tensors:
-                execution_graph.tensor_depend(args.node)
-            else:
-                logging.error(f"node {args.node} not found.")
-
-        if args.graph or args.graphviz or args.graphml:
-            out_file: str = "execution_graph"
-            if args.graphviz:
-                execution_graph.gen_graph(out_file, "graphviz")
-            elif args.graphml:
-                execution_graph.gen_graph(out_file, "graphml")
-            else:
-                execution_graph.gen_graph(out_file)
+        
+    def remove_dataloader_ops(self):
+        def check_parent(node):
+            tmp = node
+            while tmp.id != tmp.parent_id: # while not the final root
+                if "DataLoader" in tmp.name:
+                    return True
+                tmp = tmp.parent
+            return False
+        
+        if len(self.clean_nodes.keys()) == 0: # clean_nodes is empty
+            for id, node in self.nodes.items():
+                if not check_parent(node): # if the op is not under dataloader
+                    self.clean_nodes[id] = node
 
 
 class GraphML:
@@ -642,6 +679,115 @@ class GraphML:
             graphml_begin()
             write_graph()
             graphml_end()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Execution graph building and analysis"
+    )
+    parser.add_argument(
+        "--input", type=str, required=True, help="input execution graph json file."
+    )
+    parser.add_argument(
+        "--graph",
+        dest="graph",
+        default=False,
+        action="store_true",
+        help="generate a graph output using either graphviz (dot) or graphml.",
+    )
+    parser.add_argument(
+        "--graphviz",
+        dest="graphviz",
+        default=False,
+        action="store_true",
+        help="generate graph output in graphviz (dot) format.",
+    )
+    parser.add_argument(
+        "--graphml",
+        dest="graphml",
+        default=False,
+        action="store_true",
+        help="generate graph output in graphml format.",
+    )
+    parser.add_argument(
+        "--list-tensor",
+        dest="list_tensor",
+        default=False,
+        action="store_true",
+        help="list all tensors and its shape and type information.",
+    )
+    parser.add_argument(
+        "--list-op",
+        dest="list_op",
+        default=False,
+        action="store_true",
+        help="list all the ops in the execution graph.",
+    )
+    parser.add_argument(
+        "--node",
+        type=int,
+        dest="node",
+        default=-1,
+        action="store",
+        help="query information about a node and its dependency given a node ID.",
+    )
+    parser.add_argument(
+        "--detail",
+        dest="detail",
+        default=False,
+        action="store_true",
+        help="combined with some other options, will show more detailed information.",
+    )
+    parser.add_argument(
+        "--clean",
+        dest="clean",
+        default=False,
+        action="store_true",
+        help="remove all dataloader ops.",
+    )
+    parser.add_argument(
+        "--json",
+        dest="json",
+        default=False,
+        action="store_true",
+        help="for --list-op option, generate outputs in JSON format.",
+    )
+    parser.add_argument(
+        "--tree",
+        dest="tree",
+        default=False,
+        action="store_true",
+        help="generate an execution tree by process, threads, and order of node execution.",
+    )
+    args = parser.parse_args()
+
+    execution_json: str = args.input
+
+    with open(execution_json) as execution_data:
+        execution_data: TextIO
+        execution_graph: ExecutionGraph = ExecutionGraph(json.load(execution_data))
+        if args.list_op:
+            execution_graph.print_op_stats(args.detail, args.json)
+        if args.list_tensor:
+            execution_graph.print_tensors(args.detail)
+        if args.tree:
+            execution_graph.print_tree(args.detail)
+        if args.node != -1:
+            if args.node in execution_graph.nodes:
+                execution_graph.node_depend(args.node)
+            elif args.node in execution_graph.tensors:
+                execution_graph.tensor_depend(args.node)
+            else:
+                logging.error(f"node {args.node} not found.")
+
+        if args.graph or args.graphviz or args.graphml:
+            out_file: str = "execution_graph"
+            if args.graphviz:
+                execution_graph.gen_graph(out_file, "graphviz")
+            elif args.graphml:
+                execution_graph.gen_graph(out_file, "graphml")
+            else:
+                execution_graph.gen_graph(out_file)
 
 
 if __name__ == "__main__":

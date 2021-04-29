@@ -36,6 +36,6 @@ To train ML-based performance model for FC, transpose, and tril, run:
 cd analysis/ml_predictors
 python mlp.py --op-type fully_connected --batch-size 64
 python mlp.py --op-type transpose --batch-size 32
-python mlp.py --op-type tril
-python mlp.py --op-type tril --backward
+python mlp.py --op-type tril --epoch 1000
+python mlp.py --op-type tril --backward --epoch 2000
 ```

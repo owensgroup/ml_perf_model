@@ -263,7 +263,7 @@ if __name__ == '__main__':
         print("Predicted inference time of {} with input sizes {}: {:.2f}.".format(suffix, args.inference_input_sizes, t))
         exit()
 
-    n_feature, x, y = get_data(op_type=args.op_type)
+    n_feature, x, y = get_data(op_type=args.op_type, backward=backward)
     op_dataset = Data.TensorDataset(x, y)
     loader = Data.DataLoader(
         dataset=op_dataset,

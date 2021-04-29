@@ -2,8 +2,13 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from pprint import pprint
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import json, sys
+
+# Label markers
+LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
+
+def is_module(op):
+    return any([x in op.name() for x in LABEL_MARKERS])
 
 # From Louis. Trim a long trace so that it eases the ATC processing
 def trim_trace_by_percentage(file_name, start, end, trimmed_file=None):
@@ -486,9 +491,9 @@ def get_operators(roots, ops):
         # Not a module or submodule, and
         # (Parent is a module, or, is simply a root operator)
         if r.category() == "Operator" and\
-            (not r.name().startswith("module::")) and ((\
+            (not is_module(r)) and ((\
             r.parent is not None and\
-            r.parent.name().startswith("module::")\
+            not is_module(r.parent)\
         ) or (\
             r.parent is None\
         )) :

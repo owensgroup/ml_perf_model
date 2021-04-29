@@ -8,6 +8,7 @@ data/*
 .vscode/*
 analysis/ml_predictors/*.pth
 analysis/ml_predictors/*.json
+analysis/ml_predictors/__pycache__/*
 analysis/*.pdf
 analysis/*.json
 run_kaggle_pt/*
