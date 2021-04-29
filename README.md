@@ -18,7 +18,7 @@ The following benchmark commands are supported:
 ```bash
 ./benchmark.sh fully_connected 1 # 1 for forward
 ./benchmark.sh fully_connected 1 1 # The second 1 for big batch size.
-./benchmark.sh cat 1
+./benchmark.sh concat 1
 ./benchmark.sh memcpy 1
 ./benchmark.sh transpose 1
 ./benchmark.sh embedding_lookup 1
