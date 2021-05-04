@@ -3,6 +3,7 @@ A continuation of Zhongyi's ML performance model work at Facebook.
 
 To get started, simply run
 ```bash
+pip install h5py tqdm sklearn tensorboard torchviz onnx
 git clone --recursive https://github.com/owensgroup/ml_perf_model.git
 cd ml_perf_model/bench_params
 ./generate_benchmark_parameters.sh # Generate benchmark parameters (please modify the GPU memory size in the script).

@@ -393,7 +393,7 @@ def get_event_all_kernel_launches(event):
             return
         for r in event.children:
             get_launches(r, lst)
-        
+
     lst = []
     get_launches(event, lst)
     return lst
@@ -492,8 +492,7 @@ def get_operators(roots, ops):
         # (Parent is a module, or, is simply a root operator)
         if r.category() == "Operator" and\
             (not is_module(r)) and ((\
-            r.parent is not None and\
-            not is_module(r.parent)\
+            r.parent is not None
         ) or (\
             r.parent is None\
         )) :

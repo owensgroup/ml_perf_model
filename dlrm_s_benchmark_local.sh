@@ -79,7 +79,7 @@ _args=" --num-batches=100"\
 # " --arch-sparse-feature-size=128"\
 # " --max-ind-range=40000000"\
 # " --loss-function=bce"\
-# " --round-targets=True"\
+# " --round-targets"\
 # " --learning-rate=1.0"\
 # " --print-freq=2048"\
 # " --print-time"\

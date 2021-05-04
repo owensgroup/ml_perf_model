@@ -3,6 +3,7 @@
 # Add the GPU memory size in bytes here
 GPU_memory=16777216000 # V100
 # GPU_memory=12788432896 # Titan XP
+GPU_memory=16777216000 # P100
 
 if [ ! -f embedding_lookup_params.txt ];
 then
@@ -150,7 +151,7 @@ then
 
                     if [ "$total_size" -lt "$GPU_memory" ];
                     then
-                        echo "$batch_size $M $N $K" >> cat_params.txt
+                        echo "$batch_size $M $N $K" >> concat_params.txt
                     fi
                 done
             done
@@ -163,7 +164,7 @@ then
     touch memcpy_params.txt
     for batch_size in 1 64 128 256 512 1024 2048;
     do
-        for M in 64 128 256 512 1024 2048 4096 16384 32768 65536;
+        for M in 64 128 256 512 1024 2048 4096 8192 16384 32768 65536;
         do
             for N in 64 128 256 512 1024 2048 4096 16384 32768 65536;
             do
