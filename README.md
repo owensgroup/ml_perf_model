@@ -1,9 +1,9 @@
-# ml_perf_model
-A continuation of Zhongyi's ML performance model work at Facebook.
+# dlrm_gpu_perf_model
+DLRM GPU Training Performance Model
 
 To get started, simply run
 ```bash
-pip install h5py tqdm sklearn tensorboard torchviz onnx
+pip install h5py tqdm sklearn tensorboard torchviz onnx gputil # Dependencies
 git clone --recursive https://github.com/owensgroup/ml_perf_model.git
 cd ml_perf_model/bench_params
 ./generate_benchmark_parameters.sh # Generate benchmark parameters (please modify the GPU memory size in the script).
@@ -34,9 +34,13 @@ Notice: This code also depends on the private `facebookexternal/ml_perf_model` r
 
 To train ML-based performance model for FC, transpose, and tril, run:
 ```bash
-cd analysis/ml_predictors
 python mlp.py --op-type fully_connected --batch-size 64
 python mlp.py --op-type transpose --batch-size 32
 python mlp.py --op-type tril --epoch 1000
 python mlp.py --op-type tril --backward --epoch 2000
+```
+
+To print all performance model error rates, run:
+```bash
+python kernel_pm_acc.py
 ```

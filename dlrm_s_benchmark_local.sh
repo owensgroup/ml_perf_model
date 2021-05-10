@@ -60,7 +60,7 @@ _args=" --num-batches=100"\
 " --arch-interaction-op=dot"\
 " --numpy-rand-seed=727"\
 " --num-worker=0"\
-" --print-freq=5"\
+" --print-freq=2048"\
 " --print-time"\
 " --batched-emb"\
 " --pin-memory"\
