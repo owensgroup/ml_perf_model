@@ -1,7 +1,7 @@
 import torch
 import pandas as pd
 import json
-from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS
+from utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
 peak_PCIe_BW = GPU_PARAMS["peak_PCIe_BW"]
@@ -22,7 +22,7 @@ def infer_concat():
     estimated_time = concat_traffic / actual_peak_DRAM_BW / 1000
     error = abs_err(estimated_time, concat_data['kernel_runtime'])
     print("Concat: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
-    return None, gmae(error)
+    return None, error
 
 
 def infer_memcpy():
@@ -32,7 +32,7 @@ def infer_memcpy():
     estimated_time = memcpy_traffic / peak_PCIe_BW / 1000
     error = abs_err(estimated_time, memcpy_data['kernel_runtime'])
     print("Memcpy: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
-    return None, gmae(error)
+    return None, error
 
 
 def embedding_forward_simple(**kwargs):
@@ -220,7 +220,6 @@ def infer_el(backward=False, big=False, hit_rate_estimation=False):
         _, error = infer_elb(big, hit_rate_estimation)
     else:
         _, error = infer_elf(big, hit_rate_estimation)
-
     return None, error
 
 
@@ -234,7 +233,7 @@ def infer_from_model(op_type, backward=False):
     estimated_time = torch.exp(net(x.cpu()).detach().view(-1))
     error = abs_err(estimated_time, torch.exp(y.cpu().detach()).view(-1))
     print("{}: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(suffix, gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
-    return best_config, gmae(error)
+    return best_config, error
 
 
 def infer(op_type, backward=False, **kwargs):
@@ -248,4 +247,4 @@ def infer(op_type, backward=False, **kwargs):
         best_config, error = infer_el(backward=backward, big=big, hit_rate_estimation=hit_rate_estimation)
     else: # fully_connected / transpose / tril
         best_config, error = infer_from_model(op_type, backward)
-    return best_config, error
+    return best_config, gmae(error)
