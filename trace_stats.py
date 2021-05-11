@@ -1,0 +1,126 @@
+import argparse, json
+from analysis.trace_utils import *
+from analysis.utils import PM_HOME, GPU_NAME
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser("Process trace files and get stats.")
+    parser.add_argument("--model-name", type=str, required=True)
+    parser.add_argument("--iters", type=int, default=10)
+    args = parser.parse_args()
+
+    trace_file = "{}/data/{}/{}.json".format(PM_HOME, GPU_NAME, args.model_name)
+    trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file="{}/data/{}/{}_trimmed.json".format(PM_HOME, GPU_NAME, args.model_name))
+    with open(trimmed_trace_file) as f:
+        trace = json.load(f)
+
+    roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker="DLRM ")
+    print('Num of events: {}, num of root events: {}, num of caller/callee pairs: {}'.format(len(trace['traceEvents']), len(roots), len(cc)))
+    print('Sum of dataloading time: {} us'.format(sum_skipped_intervals))
+    print("Corrected start time: {}, corrected end time: {}".format(corrected_start_time, corrected_end_time))
+    host_runtime = corrected_end_time - corrected_start_time - sum_skipped_intervals
+    # ---
+    # device_runtime, device_start_delay = get_device_runtime_and_start_delay(cc, corrected_start_time)
+    # print("Device start delay: ", device_start_delay)
+    # ---
+    device_runtime = host_runtime
+    # ---
+    print("Host runtime: {} us".format(host_runtime))
+    print("Device runtime: {} us".format(device_runtime))
+    ops = []
+    get_operators(roots, ops)
+    QPS = 1000000 / host_runtime * args.iters * 2048
+    print(f"QPS: {QPS:.2f}")
+
+    # Type 1 overhead: between two op calls
+    # Type 2 overhead: before the first device call, op-specific
+    # Type 3 overhead: after the last device call, op-specific
+    # Type 4 overhead: kernel launches themselves, kernel-launch-type-specific
+    # Type 5 overhead: sum of gaps between kernel launches, op-specific
+    overheads = {'independent': {}}
+    overheads['independent']['t1'] = [] # Independent from names
+    overheads['independent']['t4'] = {} # Independent from names
+    launches_dict = {}
+
+    for i, op in enumerate(ops):
+        name = op.name()
+        if name not in overheads.keys():
+            overheads[name] = {}
+
+        if 't2' not in overheads[name].keys():
+            overheads[name]['t2'] = []
+        if 't3' not in overheads[name].keys():
+            overheads[name]['t3'] = []
+        if 't5' not in overheads[name].keys():
+            overheads[name]['t5'] = []
+
+        launches = get_event_all_kernel_launches(op)
+        launches = [x for x in launches if x.name() == "cudaMemcpyAsync" or x.name() == "cudaLaunchKernel" or x.name() == "cudaStreamSynchronize"]
+        
+        if len(launches) > 0:
+            overheads[name]['t2'].append(launches[0].start_time() - op.start_time())
+            overheads[name]['t3'].append(op.end_time() - launches[-1].end_time())
+            if len(launches) > 1:
+                overheads[name]['t5'].extend([launches[i].start_time() - launches[i-1].end_time() for i in range(1, len(launches))])
+            else:
+                overheads[name]['t5'].append(0)
+            
+            # T4 is launch-type-dependent
+            for x in launches:
+                if x.name() not in overheads['independent']['t4']:
+                    overheads['independent']['t4'][x.name()] = []
+                overheads['independent']['t4'][x.name()].append(x.duration())
+            
+            if op.name() not in launches_dict.keys():
+                launches_dict[op.name()] = []
+                for x in launches:
+                    launches_dict[op.name()].append(x.name())
+        else:
+            # If an op doesn't have kernel calls it has only T5 overheads
+            if op.name() not in overheads[name].keys():
+                overheads[name]['t5'] = []
+            overheads[name]['t5'].append(op.duration())
+
+        if i == 0:
+            continue
+        prev_op = ops[i-1]
+        
+        # Only consider adjacent ops under the SAME MODULE
+        if prev_op.parent != op.parent:
+            continue
+            
+        gap = op.start_time() - prev_op.end_time()
+        if gap < 200: # Skip dataloading gaps
+            overheads['independent']['t1'].append(gap) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
+
+    # # T1: mean ~= 21, std ~= 20
+    # from analysis.utils import histogram
+    # histogram(overheads['independent']['t1'], perc=False, bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 200, 100000])
+    # print(np.mean(overheads['independent']['t1']), np.std(overheads['independent']['t1']))
+
+    # T2, T3, T5
+    t2 = {k: (np.mean(v['t2']), np.std(v['t2'])) for k, v in overheads.items() if k != 'independent' and len(v['t2']) > 0}
+    # pprint(t2)
+    t3 = {k: (np.mean(v['t3']), np.std(v['t3'])) for k, v in overheads.items() if k != 'independent' and len(v['t3']) > 0}
+    # pprint(t3)
+    t5 = {k: (np.mean(v['t5']), np.std(v['t5'])) for k, v in overheads.items() if k != 'independent' and len(v['t5']) > 0}
+    # pprint(t5)
+
+    # # T4
+    # for t, l in overheads['independent']['t4'].items():
+    #     print(t, np.mean(l), np.std(l))
+        
+    o = {
+        "t1": (np.mean(overheads['independent']['t1']), np.std(overheads['independent']['t1'])),
+        "t2": t2,
+        "t3": t3,
+        "t4": {
+            t: (np.mean(l), np.std(l)) for t, l in overheads['independent']['t4'].items()
+        },
+        "t5": t5,
+        "launches": launches_dict
+    }
+
+    overhead_name = "{}/data/overheads_{}.json".format(PM_HOME, args.model_name)
+    print("Export overheads to JSON...")
+    with open(overhead_name, "w") as f:
+        json.dump(o, f)
