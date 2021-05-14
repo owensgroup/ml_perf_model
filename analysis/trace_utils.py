@@ -679,6 +679,56 @@ def device_runtime_breakdown(ops, odr, depth=0):
                 result[stream][key]["occ"].append(v)
     return result
                 
+def get_major_device_results(device_runtime, drb, flatten, parent_name="total"):
+    t = drb["runtime"]
+    if t == 0.0:
+        return
+    idle = device_runtime - t
+        
+    module_perc_sum = 0
+    dominated_perc_sum = 0
+    dominated_count = 0
+    
+    if parent_name not in flatten.keys():
+        flatten[parent_name] = {}
+        flatten[parent_name]["runtime"] = 0.0
+        flatten[parent_name]["subs"] = {}
+    flatten[parent_name]["runtime"] += t
+    
+    for key, v in sorted(drb.items(), key=lambda x: x[1]["runtime"] if (isinstance(x[1], dict) and "runtime" in x[1].keys()) else -1, reverse=True):
+        if key == "runtime":
+            continue
+        perc = v["runtime"] / t
+        module_perc_sum += perc
+        dominated_perc_sum += perc
+            
+        # DFS and print
+        if "occ" in v.keys(): # Only ops and modules have 'occ', saving all occurences of this op or module with roughly the same runtime
+            get_major_device_results(device_runtime, v["occ"][0], flatten, parent_name=key)
+
+        if parent_name not in flatten:
+            flatten[parent_name] = {}
+            flatten[parent_name]["subs"] = {}
+            flatten[parent_name][key] = {}
+        if key not in flatten[parent_name]["subs"].keys():
+            flatten[parent_name]["subs"][key] = 0.0
+        flatten[parent_name]["subs"][key] += v["runtime"]
+
+    # If there's still remaining time, print it under "Others"
+    if abs(module_perc_sum - dominated_perc_sum) > 1e-4:
+        other_time = "{:.1f}".format((module_perc_sum - dominated_perc_sum) * t)
+        if "others" not in flatten[parent_name]["subs"].keys():
+            flatten[parent_name]["subs"]["others"] = 0.0
+        flatten[parent_name]["subs"]["others"] += float(other_time)
+        
+    # Unaccounted time
+    if abs(1 - module_perc_sum) > 1e-4:
+        unaccounted_time = "{:.1f}".format((1 - module_perc_sum) * t)
+        if "unaccounted" not in flatten[parent_name]["subs"].keys():
+            flatten[parent_name]["subs"]["unaccounted"] = 0.0
+        flatten[parent_name]["subs"]["unaccounted"] += float(unaccounted_time)
+
+
 def print_major_device_results(device_runtime, drb, flatten, parent_name="total", truncate_count=100, depth=0):
     t = drb["runtime"]
     t_perc = t / device_runtime * 100.0
@@ -696,12 +746,6 @@ def print_major_device_results(device_runtime, drb, flatten, parent_name="total"
     dominated_perc_sum = 0
     dominated_count = 0
     space_padding = " " * ((depth + 1) * 2 + 4)
-    
-    if parent_name not in flatten.keys():
-        flatten[parent_name] = {}
-        flatten[parent_name]["runtime"] = 0.0
-        flatten[parent_name]["subs"] = {}
-    flatten[parent_name]["runtime"] += t
     
     for key, v in sorted(drb.items(), key=lambda x: x[1]["runtime"] if (isinstance(x[1], dict) and "runtime" in x[1].keys()) else -1, reverse=True):
         if key == "runtime":
@@ -723,29 +767,14 @@ def print_major_device_results(device_runtime, drb, flatten, parent_name="total"
             # DFS and print
             if "occ" in v.keys(): # Only ops and modules have 'occ', saving all occurences of this op or module with roughly the same runtime
                 print_major_device_results(device_runtime, v["occ"][0], flatten, parent_name=key, truncate_count=truncate_count, depth=depth+1)
-                
             dominated_count += 1
-
-            if parent_name not in flatten:
-                flatten[parent_name] = {}
-                flatten[parent_name]["subs"] = {}
-                flatten[parent_name][key] = {}
-            if key not in flatten[parent_name]["subs"].keys():
-                flatten[parent_name]["subs"][key] = 0.0
-            flatten[parent_name]["subs"][key] += v["runtime"]
 
     # If there's still remaining time, print it under "Others"
     if abs(module_perc_sum - dominated_perc_sum) > 1e-4:
         other_time = "{:.1f}".format((module_perc_sum - dominated_perc_sum) * t)
         print(f"{space_padding}{'Others:':<52} {('(' + other_time):>{(depth+2) * 5}}, {((module_perc_sum - dominated_perc_sum) * 100):.2f}%)")
-        if "others" not in flatten[parent_name]["subs"].keys():
-            flatten[parent_name]["subs"]["others"] = 0.0
-        flatten[parent_name]["subs"]["others"] += float(other_time)
         
     # Unaccounted time
     if abs(1 - module_perc_sum) > 1e-4:
         unaccounted_time = "{:.1f}".format((1 - module_perc_sum) * t)
         print(f"{space_padding}{'Unaccounted:':<52} {('(' + unaccounted_time):>{(depth+2) * 5}}, {((1 - module_perc_sum) * 100):.2f}%)")
-        if "unaccounted" not in flatten[parent_name]["subs"].keys():
-            flatten[parent_name]["subs"]["unaccounted"] = 0.0
-        flatten[parent_name]["subs"]["unaccounted"] += float(unaccounted_time)

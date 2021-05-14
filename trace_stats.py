@@ -14,9 +14,10 @@ if __name__ == '__main__':
         trace = json.load(f)
 
     roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker="DLRM ")
+    print("Number of iterations: {}".format(args.iters))
     print('Num of events: {}, num of root events: {}, num of caller/callee pairs: {}'.format(len(trace['traceEvents']), len(roots), len(cc)))
     print('Sum of dataloading time: {} us'.format(sum_skipped_intervals))
-    print("Corrected start time: {}, corrected end time: {}".format(corrected_start_time, corrected_end_time))
+    # print("Corrected start time: {}, corrected end time: {}".format(corrected_start_time, corrected_end_time))
     host_runtime = corrected_end_time - corrected_start_time - sum_skipped_intervals
     # ---
     # device_runtime, device_start_delay = get_device_runtime_and_start_delay(cc, corrected_start_time)
@@ -24,12 +25,24 @@ if __name__ == '__main__':
     # ---
     device_runtime = host_runtime
     # ---
-    print("Host runtime: {} us".format(host_runtime))
-    print("Device runtime: {} us".format(device_runtime))
+    print("Average per-batch host runtime: {} us".format(host_runtime / args.iters))
+    # print("Device runtime: {} us".format(device_runtime))
     ops = []
     get_operators(roots, ops)
     QPS = 1000000 / host_runtime * args.iters * 2048
     print(f"QPS: {QPS:.2f}")
+
+    op_device_runtime = get_device_runtime(ops, cc)
+    dt_breakdown = device_runtime_breakdown(roots, op_device_runtime, depth=0)
+    flatten = {}
+    print("Totally {} GPU streams.".format(len(dt_breakdown.items())))
+    gpu_time = 0
+    for stream, v in dt_breakdown.items():
+        flatten[stream] = {}
+        get_major_device_results(device_runtime, dt_breakdown[stream], flatten[stream])
+        print("Stream {} average per-batch time: {:.2f} us".format(stream, flatten[stream]["total"]["runtime"] / args.iters))
+        gpu_time += flatten[stream]["total"]["runtime"] # TODO: Deal with stream overlapping.
+    print("Total per-batch GPU time: {:.2f} us".format(gpu_time / args.iters))
 
     # Type 1 overhead: between two op calls
     # Type 2 overhead: before the first device call, op-specific
@@ -120,7 +133,7 @@ if __name__ == '__main__':
         "launches": launches_dict
     }
 
-    overhead_name = "{}/data/overheads_{}.json".format(PM_HOME, args.model_name)
+    overhead_name = "{}/data/{}_overheads.json".format(PM_HOME, args.model_name)
     print("Export overheads to JSON...")
     with open(overhead_name, "w") as f:
         json.dump(o, f)
