@@ -6,12 +6,14 @@ from analysis.inference import get_e2e_time
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.")
     parser.add_argument("--model-name", type=str, required=True)
+    parser.add_argument("--num-gpus", type=int, default=1)
     args = parser.parse_args()
 
-    exec_graph_file = "{}/data/{}_graph.json".format(PM_HOME, args.model_name)
+    model_name = "{}_{}".format(args.model_name, args.num_gpus)
+    exec_graph_file = "{}/data/{}_graph.json".format(PM_HOME, model_name)
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
-    overheads_file = "{}/data/{}_overheads.json".format(PM_HOME, args.model_name)
+    overheads_file = "{}/data/{}_overheads.json".format(PM_HOME, model_name)
     with open(overheads_file) as f:
         overheads = json.load(f)
 

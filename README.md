@@ -44,3 +44,14 @@ To print all performance model error rates, run:
 ```bash
 python kernel_pm_acc.py
 ```
+
+To extract execution graph and generate profiler trace file, run:
+```bash
+./dlrm_s_benchmark_local.sh
+```
+
+To generate trace file stats and overheads, and conduct end-to-end performance predictio, run:
+```bash
+python trace_stats.py --model-name <model_name>
+python e2e.py --model-name <model_name>
+```

@@ -439,7 +439,7 @@ def get_e2e_time(graph, overheads):
                 cpu_time += overheads["t3"][op.name][0] # T3: after the first kernel call
             else:
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
-            # print(op.name, gpu_active_time)
+            # print(op.name, op.input_shapes, gpu_active_time)
     total_time = max(gpu_time, cpu_time)
 
     return total_time, gpu_active_time

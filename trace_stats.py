@@ -5,11 +5,13 @@ from analysis.utils import PM_HOME, GPU_NAME
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Process trace files and get stats.")
     parser.add_argument("--model-name", type=str, required=True)
+    parser.add_argument("--num-gpus", type=int, default=1)
     parser.add_argument("--iters", type=int, default=10)
     args = parser.parse_args()
 
-    trace_file = "{}/data/{}/{}.json".format(PM_HOME, GPU_NAME, args.model_name)
-    trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file="{}/data/{}/{}_trimmed.json".format(PM_HOME, GPU_NAME, args.model_name))
+    model_name = "{}_{}".format(args.model_name, args.num_gpus)
+    trace_file = "{}/data/{}/{}.json".format(PM_HOME, GPU_NAME, model_name)
+    trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file="{}/data/{}/{}_trimmed.json".format(PM_HOME, GPU_NAME, model_name))
     with open(trimmed_trace_file) as f:
         trace = json.load(f)
 
@@ -133,7 +135,7 @@ if __name__ == '__main__':
         "launches": launches_dict
     }
 
-    overhead_name = "{}/data/{}_overheads.json".format(PM_HOME, args.model_name)
+    overhead_name = "{}/data/{}_overheads.json".format(PM_HOME, model_name)
     print("Export overheads to JSON...")
     with open(overhead_name, "w") as f:
         json.dump(o, f)
