@@ -4,9 +4,20 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Get DLRM model name
+model_name=${1:-DLRM_default}
+list="DLRM_vipul DLRM_default MLPerf"
+if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
+then
+    :;
+else
+    echo "Model name not supported!"
+    exit
+fi
+
 # check if extra argument is passed to the test
-if [[ $# == 1 ]]; then
-    dlrm_extra_option=$1
+if [[ $# == 2 ]]; then
+    dlrm_extra_option=$2
 else
     dlrm_extra_option=""
 fi
@@ -36,19 +47,11 @@ then
 elif grep -q "TITAN Xp" /tmp/gpu_name.csv
 then
     export GPU_NAME="TITAN Xp"
+elif grep -q "1080" /tmp/gpu_name.csv
+then
+    export GPU_NAME="1080"
 else
     echo "Unrecognized GPU name! Exit..."
-    exit
-fi
-
-# Get DLRM model name
-model_name=${1:-DLRM_default}
-list="DLRM_vipul DLRM_default MLPerf"
-if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
-then
-    :;
-else
-    echo "Model name not supported!"
     exit
 fi
 
@@ -93,7 +96,7 @@ then
             --batched-emb\
             --pin-memory\
             --enable-profiling "
-elif [[ $model_name == "DLRM_default" ]]; # MLPerf
+elif [[ $model_name == "MLPerf" ]]; # MLPerf
 then
     mb_size=2048
     num_batches=100
