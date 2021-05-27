@@ -12,12 +12,15 @@ def get_gpu_name():
     gpus = GPUtil.getGPUs()
     assert len(gpus) > 0, "No GPUs detected!"
 
-    if "V100" in gpus[0].name:
-        return "V100"
-    if "P100" in gpus[0].name:
-        return "P100"
-    if "TITAN Xp" in gpus[0].name:
-        return "TITAN Xp"
+    for gpu in gpus:
+        if "V100" in gpu.name:
+            return "V100"
+        if "P100" in gpu.name:
+            return "P100"
+        if "TITAN Xp" in gpu.name:
+            return "TITAN Xp"
+        if "1080" in gpu.name:
+            return "1080"
     return None
 GPU_NAME = get_gpu_name()
 
@@ -49,6 +52,15 @@ HW_PARAMS = {
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,
         "L2_size": 4 * 1024 * 1024,
+    },
+    "1080": {
+        "peak_throughput": 9494.746,
+        "peak_PCIe_BW": 10.33, # 16
+        "peak_DRAM_BW": 246.890,
+        "peak_L2_BW": 1747.627,
+        "peak_SMEM_BW": 1200.361,
+        "num_SM": 20,
+        "L2_size": 2 * 1024 * 1024,
     }
 }
 GPU_PARAMS = HW_PARAMS[GPU_NAME]

@@ -4,6 +4,10 @@ then
     exit
 fi
 
+# Get GPU name
+./get_gpu_name.sh
+export GPU_NAME=`cat /tmp/gpu_name.txt`
+
 runtime_batch_iters=30
 metrics_bench_iters=3
 warmup_iters=5
@@ -17,7 +21,7 @@ sgd="1"
 fc_test="0"
 header=""
 param_file_name=""
-file_prefix="./data/${op_type}_${is_forward}"
+file_prefix="./data/${GPU_NAME}/${op_type}_${is_forward}"
 if [ "${CUDA_VISIBLE_DEVICES}" == "" ];
 then
     CUDA_VISIBLE_DEVICES="0"
