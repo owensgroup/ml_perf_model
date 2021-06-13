@@ -27,7 +27,7 @@ cpu=0
 gpu=1
 ncores=8
 nsockets="0"
-ngpus="1" #"1 2 4"
+ngpus="2" #"1 2 4"
 
 numa_cmd="numactl --physcpubind=0-$((ncores-1)) -m $nsockets" #run on one socket, without HT
 dlrm_pt_bin="python dlrm/dlrm_s_pytorch.py" # fil-profile run
@@ -156,10 +156,10 @@ if [ $gpu = 1 ]; then
     if [ ! -f "data/${model_name}_${_ng}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-batches ${num_batches} --collect-execution-graph &> /dev/null" # Collect execution graph
+      eval "$cmd --num-batches 1 --collect-execution-graph &> /dev/null" # Collect execution graph
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${model_name}_${_ng}_graph.json"
     fi
-    eval "$cmd  > $outf"
+    eval "$cmd --num-batches ${num_batches} > $outf"
     min=$(grep "iteration" $outf | awk 'BEGIN{best=999999} {if (best > $7) best=$7} END{print best}')
     echo "Min time per iteration = $min"
     # move profiling file(s)
