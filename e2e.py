@@ -10,10 +10,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model_name = "{}_{}".format(args.model_name, args.num_gpus)
-    exec_graph_file = "{}/data/{}_graph.json".format(PM_HOME, model_name)
+    exec_graph_file = "{}/data/{}/e2e/{}_graph.json".format(PM_HOME, GPU_NAME, model_name)
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
-    overheads_file = "{}/data/{}_overheads.json".format(PM_HOME, model_name)
+    overheads_file = "{}/data/{}/e2e/{}_overheads.json".format(PM_HOME, GPU_NAME, model_name)
     with open(overheads_file) as f:
         overheads = json.load(f)
 

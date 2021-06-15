@@ -17,8 +17,8 @@ def get_gpu_name():
             return "V100"
         if "P100" in gpu.name:
             return "P100"
-        if "TITAN Xp" in gpu.name:
-            return "TITAN Xp"
+        if "Xp" in gpu.name:
+            return "Xp"
         if "1080" in gpu.name:
             return "1080"
     return None
@@ -35,7 +35,7 @@ HW_PARAMS = {
         "num_SM": 80,
         "L2_size": 6 * 1024 * 1024,
     },
-    "Titan XP": {
+    "Xp": {
         "peak_throughput": 13422.779,
         "peak_PCIe_BW": 3.63, # 16
         "peak_DRAM_BW": 438.699,

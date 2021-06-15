@@ -19,4 +19,5 @@ fi # Add any new conda env and lock GPU frequency here
 ./get_gpu_name.sh
 export GPU_NAME=`cat /tmp/gpu_name.txt`
 mkdir -p analysis/ml_predictors/${GPU_NAME}
-mkdir -p data/${GPU_NAME}
+mkdir -p data/${GPU_NAME}/e2e
+mkdir -p data/${GPU_NAME}/kernel

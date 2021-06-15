@@ -27,14 +27,16 @@ cpu=0
 gpu=1
 ncores=8
 nsockets="0"
-ngpus="2" #"1 2 4"
+ngpus="1" #"1 2 4"
+common_args="   --use-gpu\
+                --enable-profiling\
+                --print-freq=5\
+                --print-time\
+                --batched-emb\
+                --pin-memory "
 
 numa_cmd="numactl --physcpubind=0-$((ncores-1)) -m $nsockets" #run on one socket, without HT
 dlrm_pt_bin="python dlrm/dlrm_s_pytorch.py" # fil-profile run
-
-data=random #synthetic
-print_freq=5 #100
-rand_seed=727
 
 # Get GPU type
 nvidia-smi --query-gpu=gpu_name --format=csv,noheader > /tmp/gpu_name.csv
@@ -44,9 +46,9 @@ then
 elif grep -q "P100" /tmp/gpu_name.csv
 then
     export GPU_NAME="P100"
-elif grep -q "TITAN Xp" /tmp/gpu_name.csv
+elif grep -q "Xp" /tmp/gpu_name.csv
 then
-    export GPU_NAME="TITAN Xp"
+    export GPU_NAME="Xp"
 elif grep -q "1080" /tmp/gpu_name.csv
 then
     export GPU_NAME="1080"
@@ -70,11 +72,7 @@ then
             --num-indices-per-lookup=38\
             --arch-interaction-op=dot\
             --numpy-rand-seed=727\
-            --print-freq=5\
-            --print-time\
-            --batched-emb\
-            --num-workers=2\
-            --enable-profiling "
+            --num-workers=2 "
 elif [[ $model_name == "DLRM_default" ]]; # DLRM original
 then
     mb_size=2048 #1024 #512 #256
@@ -90,12 +88,7 @@ then
             --num-indices-per-lookup-fixed\
             --arch-interaction-op=dot\
             --numpy-rand-seed=727\
-            --num-worker=0\
-            --print-freq=2048\
-            --print-time\
-            --batched-emb\
-            --pin-memory\
-            --enable-profiling "
+            --num-worker=0 "
 elif [[ $model_name == "MLPerf" ]]; # MLPerf
 then
     mb_size=2048
@@ -104,19 +97,14 @@ then
             --data-set=terabyte\
             --raw-data-file=/nvme/deep-learning/criteo_terabyte/day\
             --processed-data-file=/nvme/deep-learning/criteo_terabyte/terabyte_processed.npz\
+            --round-targets\
             --arch-mlp-bot=13-512-256-128\
             --arch-mlp-top=1024-1024-512-256-1\
             --arch-sparse-feature-size=128\
             --max-ind-range=40000000\
             --loss-function=bce\
-            --round-targets\
             --learning-rate=1.0\
-            --print-freq=2048\
-            --print-time\
-            --batched-emb\
-            --pin-memory\
             --test-freq=102400\
-            --enable-profiling\
             --memory-map\
             --mlperf-logging\
             --mlperf-auc-threshold=0.8025\
@@ -147,13 +135,13 @@ if [ $gpu = 1 ]; then
     echo "-------------------"
     echo "Using GPUS: "$_gpus
     echo "-------------------"
-    outf="data/${model_name}_${_ng}.log"
+    outf="data/${GPU_NAME}/e2e/${model_name}_${_ng}.log"
     outp="dlrm_s_pytorch.prof"
     echo "-------------------------------"
     echo "Running PT (log file: $outf)"
     echo "-------------------------------"
-    cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${_args} --use-gpu $dlrm_extra_option"
-    if [ ! -f "data/${model_name}_${_ng}_graph.json" ];
+    cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
+    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
       eval "$cmd --num-batches 1 --collect-execution-graph &> /dev/null" # Collect execution graph

@@ -21,7 +21,7 @@ sgd="1"
 fc_test="0"
 header=""
 param_file_name=""
-file_prefix="./data/${GPU_NAME}/${op_type}_${is_forward}"
+file_prefix="./data/${GPU_NAME}/kernel/${op_type}_${is_forward}"
 if [ "${CUDA_VISIBLE_DEVICES}" == "" ];
 then
     CUDA_VISIBLE_DEVICES="0"

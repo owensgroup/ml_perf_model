@@ -170,7 +170,7 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
 
 
 def infer_concat():
-    concat_data = pd.read_csv('{}/data/{}/concat_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
+    concat_data = pd.read_csv('{}/data/{}/kernel/concat_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
     concat_data = preprocessing(concat_data)
     concat_data = concat_data[concat_data["batch_size"] > 1]
     A_size = concat_data["batch_size"] * concat_data["M"] * concat_data["K"]
@@ -182,7 +182,7 @@ def infer_concat():
 
 
 def infer_memcpy():
-    memcpy_data = pd.read_csv('{}/data/{}/memcpy_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
+    memcpy_data = pd.read_csv('{}/data/{}/kernel/memcpy_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
     memcpy_data = preprocessing(memcpy_data)
     tensor_size = memcpy_data['batch_size'] * memcpy_data['M'] * memcpy_data['N']
     estimated_time = memcpy_predictor(tensor_size=tensor_size)
@@ -192,7 +192,7 @@ def infer_memcpy():
 
 
 def infer_elf(big=False, hit_rate_estimation=False):
-    data = pd.read_csv('{}/data/{}/embedding_lookup_1_shmem.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
+    data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_1_shmem.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
     data = preprocessing(data)
     data = data[data["kernel_name"].str.contains("batched_embedding")]
     data = data[data['batch_size'] > 1]
@@ -220,7 +220,7 @@ def infer_elf(big=False, hit_rate_estimation=False):
 
 
 def infer_elb(big=False, hit_rate_estimation=False):
-    data = pd.read_csv('{}/data/{}/embedding_lookup_0_sgd_shmem.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
+    data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_0_sgd_shmem.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
     data = preprocessing(data)
     data = data[data["kernel_name"].str.contains("batched_embedding")]
     data = data[data['batch_size'] > 1]

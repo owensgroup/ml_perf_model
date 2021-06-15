@@ -2,14 +2,14 @@
 
 # Add the GPU memory size in bytes here
 # GPU_memory=16777216000 # V100
-# GPU_memory=12788432896 # Titan XP
+# GPU_memory=12788432896 # XP
 # GPU_memory=16777216000 # P100
 # GPU_memory=8589934592 # 1080
 
 # Get GPU memory size
 GPU_memory=0
 nvidia-smi --query-gpu=gpu_name,memory.total --format=csv,noheader > /tmp/gpu_name.csv
-for GPU_NAME in "V100" "P100" "TITAN Xp" "1080";
+for GPU_NAME in "V100" "P100" "Xp" "1080";
 do
     if grep -q "$GPU_NAME" /tmp/gpu_name.csv
     then
