@@ -14,117 +14,14 @@ FORMAT = "[%(asctime)s] %(filename)s:%(lineno)d [%(levelname)s]: %(message)s"
 logging.basicConfig(format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
 
+
 # OPERATOR: nodes actually does something
 # LABEL: nodes used as markers
 NodeType = Enum("NodeType", "OPERATOR LABEL")
 
+
 # Label markers
 LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
-
-# Utility functions
-def abs_err(pred, real):
-    return abs((pred - real) / real)
-
-def err(pred, real):
-    return (pred - real) / real
-
-def gmae(x):
-    return np.exp(np.log(abs(x)).mean())
-
-def histogram(df, perc=True, is_abs=False, bins=[0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0]):
-    count = len(df)
-    ret = {}
-    if is_abs:
-        tmp_bins = []
-        for i in range(0, len(bins) - 1):
-            tmp_bins.append(-bins[len(bins) - 1 - i])
-        for b in bins:
-            tmp_bins.append(b)
-        bins = tmp_bins
-    for idx, b in enumerate(bins):
-        if idx == 0:
-            continue
-        ret[(bins[idx-1], bins[idx])] = 0
-    for x in df:
-        for idx, b in enumerate(bins):
-            if idx == 0:
-                continue
-            if x >= bins[idx-1] and x < bins[idx]:
-                ret[(bins[idx-1], bins[idx])] += 1
-                break
-    for b, c in sorted(ret.items(), key=lambda x: x[0]):
-        if perc:
-            print("{:.0f}% - {:.0f}%: {:.2f}%".format(b[0] * 100, b[1] * 100, c / count * 100))
-        else:
-            print("{:.2f} - {:.2f}: {:.2f}%".format(b[0], b[1], c / count * 100))
-    return ret
-
-def strip_unit(x):
-    for col in ['dram_read_throughput', 'dram_write_throughput', 'gld_requested_throughput', 'gld_throughput',\
-               'gst_requested_throughput', 'gst_throughput', 'l2_read_throughput', 'l2_write_throughput', \
-                'shared_load_throughput', 'shared_store_throughput']:
-        if col in x.keys():
-            if x[col].endswith('GB/s'):
-                x[col] = float(x[col].rstrip('GB/s'))
-            elif x[col].endswith('MB/s'):
-                x[col] = float(x[col].rstrip('MB/s')) / 1e3
-            elif x[col].endswith('B/s'):
-                x[col] = float(x[col].rstrip('B/s')) / 1e9
-            else:
-                raise Exception("Unrecognizable unit!")
-    return x
-    
-def p2f(x):
-    for col in ['flop_dp_efficiency', 'flop_sp_efficiency', 'gld_efficiency', 'gst_efficiency', \
-                'shared_efficiency', 'sm_efficiency', 'warp_execution_efficiency']:
-        if col in x.keys():
-            x[col] = float(str(x[col]).rstrip('%')) / 100.0
-    return x
-
-def strip_parenthesis(x):
-    for col in ['dram_utilization', 'l2_utilization', 'tex_utilization']:
-        if col in x.keys():
-            x[col] = x[col].strip('(').strip(')')
-    return x
-
-def process_smem(x):
-    # To bytes
-    if 'smem' in x.keys():
-        if x['smem'].endswith('MB'):
-            x['smem'] = int(float(x['smem'].rstrip('MB')) * 1024 * 1024)
-        elif x['smem'].endswith('KB'):
-            x['smem'] = int(float(x['smem'].rstrip('KB')) * 1024)
-        elif x['smem'].endswith('B'):
-            x['smem'] = int(x['smem'].rstrip('B'))
-        else:
-            raise Exception("Unrecognizable unit!")
-    return x
-        
-def preprocessing(df):
-    df = df.apply(func=p2f, axis=1)
-    df = df.apply(func=strip_unit, axis=1)
-    df = df.apply(func=strip_parenthesis, axis=1)
-    df = df.apply(func=process_smem, axis=1)
-    df = df[(df['kernel_name'] != 'gemv2T_kernel') & (df['kernel_name'] != 'splitKreduce_kernel')]
-    return df
-
-def div_round_up(x, y):
-    return int((x + y - 1) / y)
-
-def choose(n, k):
-    """
-    A fast way to calculate binomial coefficients by Andrew Dalke (contrib).
-    """
-    if 0 <= k <= n:
-        ntok = 1
-        ktok = 1
-        for t in range(1, min(k, n - k) + 1):
-            ntok *= n
-            ktok *= t
-            n -= 1
-        return ntok // ktok
-    else:
-        return 0
 
 
 """

@@ -1,14 +1,13 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
-from pprint import pprint
-import numpy as np
-import matplotlib.pyplot as plt
 import json, sys
 
 # Label markers
 LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
 
+
 def is_module(op):
     return any([x in op.name() for x in LABEL_MARKERS])
+
 
 # From Louis. Trim a long trace so that it eases the ATC processing
 def trim_trace_by_percentage(file_name, start, end, trimmed_file=None):
@@ -43,7 +42,8 @@ def trim_trace_by_percentage(file_name, start, end, trimmed_file=None):
             json.dump(trace, out_file)
 
     return trimmed_file
-            
+
+
 def trim_trace_by_time(file_name, start, end, trimmed_file=None):
     if trimmed_file is None:
         trimmed_file = "./{}_trimmed.json".format(file_name.split('/')[-1].split('.json')[0])
@@ -67,6 +67,7 @@ def trim_trace_by_time(file_name, start, end, trimmed_file=None):
             json.dump(trace, out_file)
 
     return trimmed_file
+
 
 def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None):
     if trimmed_file is None:
@@ -97,8 +98,10 @@ def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None
 
     return trimmed_file
 
+
 def list_to_tuple(lst):
     return tuple(list_to_tuple(l) if isinstance(l, list) else l for l in lst) if lst is not None else None
+
 
 class Event:
     def __init__(self, e, dummy=False):
@@ -190,6 +193,7 @@ class Event:
         if "args" not in self.event.keys() or "stream" not in self.event["args"].keys():
             return None
         return self.event["args"]["stream"]
+
 
 # Construct a forest to represent the event hierarchy as well as a data structure to hold the relation between ops and device calls
 ########## cc #########
@@ -385,18 +389,36 @@ def process_event_hierarchy(two, skip_module=False, module_marker="## "):
 
     return roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals
 
+
 def get_event_all_kernel_launches(event):
+    count = 0 # Count of leading events of a launch
     def get_launches(event, lst):
+        nonlocal count
         if len(event.children) == 0:
             if event.category() == 'Runtime':
-                lst.append(event)
+                lst.append((event, count))
+                count = 0
             return
         for r in event.children:
+            count += 1
             get_launches(r, lst)
 
     lst = []
     get_launches(event, lst)
     return lst
+
+
+def get_sub_event_count(event):
+    count = 0 # Count of sub events
+    def get_count(event):
+        nonlocal count
+        count += 1
+        for r in event.children:
+            get_count(r)
+        
+    get_count(event)
+    return count
+
 
 def get_device_runtime_and_start_delay(cc, corrected_start_time):
     device_runtime = 0
@@ -417,6 +439,7 @@ def get_device_runtime_and_start_delay(cc, corrected_start_time):
                             device_runtime = 0 - device_runtime
     
     return device_runtime, device_start_delay
+
 
 def get_host_runtime_breakdown(events, cc, total_time):
     runtime_breakdown = {}
@@ -448,6 +471,7 @@ def get_host_runtime_breakdown(events, cc, total_time):
     }
 
     return runtime_breakdown
+
 
 def print_host_results(rb, depth_limit=sys.maxsize, truncate_count=100, depth=0):
     t = rb["runtime"]
@@ -483,8 +507,9 @@ def print_host_results(rb, depth_limit=sys.maxsize, truncate_count=100, depth=0)
     # Unaccounted time
     unaccounted_time = "{:.1f}".format((1 - module_perc_sum) * t)
     print(f"{space_padding}{'Unaccounted:':<40} {('(' + unaccounted_time):>{(depth+2) * 5}}, {((1 - module_perc_sum) * 100):.2f}%)")
-    
-# Get root operators, not including modules
+
+
+# Get and flatten root operators, not including modules
 def get_operators(roots, ops):
     for r in roots:
         # Is an operator, and
@@ -499,7 +524,8 @@ def get_operators(roots, ops):
             ops.append(r)
         else:
             get_operators(r.children, ops)
-            
+
+
 # Shorten name for some heavily templated kernels
 def shorten_kernel_name(name):
     if '<' in name:
@@ -507,6 +533,7 @@ def shorten_kernel_name(name):
     if '::' in name:
         name = name.split('::')[-1]
     return name
+
 
 #######################
 # {
@@ -599,6 +626,7 @@ def get_device_runtime(roots, cc, depth=0):
             del result[ex_id]
     return result
 
+
 def print_all_device_results(roots, odr, total_time, depth=0):
     space_padding = " " * depth * 4
     tmp_space_padding = " " * (depth + 1) * 4
@@ -617,6 +645,7 @@ def print_all_device_results(roots, odr, total_time, depth=0):
                         print(f"{tmp_space_padding}{(kernel_name+':'):<44} {('( ' + str(shape)):>{(depth+2) * 4}}, {kernel_count}, {kernel_time} )")
             else:
                 print_all_device_results(r.children, odr, -1, depth=depth+1)
+
 
 ########### device runtime breakdown ############
 # {
@@ -678,7 +707,8 @@ def device_runtime_breakdown(ops, odr, depth=0):
                 result[stream][key]["runtime"] += v["runtime"]
                 result[stream][key]["occ"].append(v)
     return result
-                
+
+
 def get_major_device_results(device_runtime, drb, flatten, parent_name="total"):
     t = drb["runtime"]
     if t == 0.0:

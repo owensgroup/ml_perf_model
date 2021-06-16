@@ -144,8 +144,8 @@ if [ $gpu = 1 ]; then
     if [ ! -f "data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-batches 1 --collect-execution-graph &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${model_name}_${_ng}_graph.json"
+      eval "$cmd --num-batches 2 --collect-execution-graph &> /dev/null" # Collect execution graph
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json"
     fi
     eval "$cmd --num-batches ${num_batches} > $outf"
     min=$(grep "iteration" $outf | awk 'BEGIN{best=999999} {if (best > $7) best=$7} END{print best}')

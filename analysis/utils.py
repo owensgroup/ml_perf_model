@@ -66,6 +66,10 @@ HW_PARAMS = {
 GPU_PARAMS = HW_PARAMS[GPU_NAME]
 
 
+CPU_EVENT_OVERHEAD = 1.5
+GPU_EVENT_OVERHEAD = 4
+
+
 def dash_separated_ints(value):
     vals = value.split("-")
     for val in vals:

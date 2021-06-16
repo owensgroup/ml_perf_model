@@ -1,6 +1,7 @@
 import argparse, json
+import numpy as np
 from analysis.trace_utils import *
-from analysis.utils import PM_HOME, GPU_NAME
+from analysis.utils import PM_HOME, GPU_NAME, CPU_EVENT_OVERHEAD
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Process trace files and get stats.")
@@ -10,8 +11,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model_name = "{}_{}".format(args.model_name, args.num_gpus)
-    trace_file = "{}/data/{}/{}.json".format(PM_HOME, GPU_NAME, model_name)
-    trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file="{}/data/{}/{}_trimmed.json".format(PM_HOME, GPU_NAME, model_name))
+    trace_file = "{}/data/{}/e2e/{}.json".format(PM_HOME, GPU_NAME, model_name)
+    trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file="{}/data/{}/e2e/{}_trimmed.json".format(PM_HOME, GPU_NAME, model_name))
     with open(trimmed_trace_file) as f:
         trace = json.load(f)
 
@@ -68,32 +69,34 @@ if __name__ == '__main__':
         if 't5' not in overheads[name].keys():
             overheads[name]['t5'] = []
 
+        sub_event_count = get_sub_event_count(op)
         launches = get_event_all_kernel_launches(op)
-        launches = [x for x in launches if x.name() == "cudaMemcpyAsync" or x.name() == "cudaLaunchKernel" or x.name() == "cudaStreamSynchronize"]
+        launches = [(x, y) for x, y in launches if x.name() == "cudaMemcpyAsync" or x.name() == "cudaLaunchKernel" or x.name() == "cudaStreamSynchronize"]
         
         if len(launches) > 0:
-            overheads[name]['t2'].append(launches[0].start_time() - op.start_time())
-            overheads[name]['t3'].append(op.end_time() - launches[-1].end_time())
+            overheads[name]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
+            trailing_sub_event_count = sub_event_count - sum([y for _, y in launches])
+            overheads[name]['t3'].append(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD) # T3 has all overheads after the last launch
             if len(launches) > 1:
-                overheads[name]['t5'].extend([launches[i].start_time() - launches[i-1].end_time() for i in range(1, len(launches))])
+                overheads[name]['t5'].extend([launches[i][0].start_time() - launches[i-1][0].end_time() - launches[i][1] * CPU_EVENT_OVERHEAD for i in range(1, len(launches))]) # T5 has all overheads between each pair of launches
             else:
                 overheads[name]['t5'].append(0)
             
             # T4 is launch-type-dependent
-            for x in launches:
+            for x, _ in launches:
                 if x.name() not in overheads['independent']['t4']:
                     overheads['independent']['t4'][x.name()] = []
-                overheads['independent']['t4'][x.name()].append(x.duration())
+                overheads['independent']['t4'][x.name()].append(x.duration() - CPU_EVENT_OVERHEAD) # T4 has 1 overhead
             
             if op.name() not in launches_dict.keys():
                 launches_dict[op.name()] = []
-                for x in launches:
+                for x, _ in launches:
                     launches_dict[op.name()].append(x.name())
         else:
-            # If an op doesn't have kernel calls it has only T5 overheads
+            # If an op doesn't have kernel calls it has only one T5 overhead representing its CPU duration
             if op.name() not in overheads[name].keys():
                 overheads[name]['t5'] = []
-            overheads[name]['t5'].append(op.duration())
+            overheads[name]['t5'].append(op.duration() - sub_event_count * CPU_EVENT_OVERHEAD) # Remove cpu overhead for all sub events
 
         if i == 0:
             continue
@@ -105,7 +108,7 @@ if __name__ == '__main__':
             
         gap = op.start_time() - prev_op.end_time()
         if gap < 200: # Skip dataloading gaps
-            overheads['independent']['t1'].append(gap) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
+            overheads['independent']['t1'].append(gap - CPU_EVENT_OVERHEAD) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
 
     # # T1: mean ~= 21, std ~= 20
     # from analysis.utils import histogram
@@ -135,7 +138,7 @@ if __name__ == '__main__':
         "launches": launches_dict
     }
 
-    overhead_name = "{}/data/{}_overheads.json".format(PM_HOME, model_name)
+    overhead_name = "{}/data/{}/e2e/{}_overheads.json".format(PM_HOME, GPU_NAME, model_name)
     print("Export overheads to JSON...")
     with open(overhead_name, "w") as f:
         json.dump(o, f)
