@@ -293,7 +293,7 @@ def get_kernel_time(op, op_lists):
                 M, K, N = child.input_shapes[1][0], child.input_shapes[1][1], child.input_shapes[2][1]
                 t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=M, N=N, K=K)
                 kernel_times.append(t)
-    if op.name == "AddmmBackward":
+    elif op.name == "AddmmBackward":
         addmm_op = op_lists["addmm"].pop()
         M, K, N = addmm_op.input_shapes[1][0], addmm_op.input_shapes[1][1], addmm_op.input_shapes[2][1]
         m1, k1, n1 = M, N, K
@@ -305,12 +305,12 @@ def get_kernel_time(op, op_lists):
             t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
             kernel_times.append(t2)
         t = t1 + t2
-    if op.name == "aten::bmm":
+    elif op.name == "aten::bmm":
         op_lists["bmm"].append(op)
         batch_size, M, K, N = op.input_shapes[0][0], op.input_shapes[0][1], op.input_shapes[0][2], op.input_shapes[1][2]
         t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=M, N=N, K=K)
         kernel_times.append(t)
-    if op.name == "BmmBackward0":
+    elif op.name == "BmmBackward0":
         bmm_op = op_lists["bmm"].pop()
         batch_size, M, K, N = bmm_op.input_shapes[0][0], bmm_op.input_shapes[0][1], bmm_op.input_shapes[0][2], bmm_op.input_shapes[1][2]
         m1, k1, n1 = N, M, K
@@ -320,7 +320,7 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(t1)
         kernel_times.append(t2)
         t = t1 + t2
-    if op.name == "LookupFunction":
+    elif op.name == "LookupFunction":
         op_lists["el"].append(op)
         T = op.input_shapes[1][0]
         D = op.input_shapes[0][1]
@@ -330,7 +330,7 @@ def get_kernel_time(op, op_lists):
         rows_per_block = max(int(256 / D), 1)
         t = embedding_forward_predictor(batch_size=B, num_embeddings=E, num_tables=T, bag_size=L, embedding_dim=D, rows_per_block=rows_per_block)
         kernel_times.append(t)
-    if op.name == "LookupFunctionBackward":
+    elif op.name == "LookupFunctionBackward":
         el_op = op_lists["el"].pop()
         T = el_op.input_shapes[1][0]
         D = el_op.input_shapes[0][1]
@@ -340,7 +340,7 @@ def get_kernel_time(op, op_lists):
         rows_per_block = max(int(256 / D), 1)
         t = embedding_backward_sgd_predictor(batch_size=B, num_embeddings=E, num_tables=T, bag_size=L, embedding_dim=D, rows_per_block=rows_per_block)
         kernel_times.append(t)
-    if op.name == "aten::index":
+    elif op.name == "aten::index":
         op_lists["tril"].append(op)
         batch_size, M, N = op.input_shapes[0][0], op.input_shapes[0][1], op.input_shapes[0][2]
         total_output_element = op.input_shapes[1][1][0]
@@ -350,7 +350,7 @@ def get_kernel_time(op, op_lists):
             diag = 0
         t = mlp_predictor_kwargs("tril", backward=False, batch_size=batch_size, M=M, N=N, diag=diag)
         kernel_times.append(t)
-    if op.name == "IndexBackward": # See all kernels as a whole
+    elif op.name == "IndexBackward": # See all kernels as a whole
         tril_op = op_lists["tril"].pop()
         batch_size, M, N = tril_op.input_shapes[0][0], tril_op.input_shapes[0][1], tril_op.input_shapes[0][2]
         total_output_element = tril_op.input_shapes[1][1][0]
@@ -360,40 +360,56 @@ def get_kernel_time(op, op_lists):
             diag = 0
         t = mlp_predictor_kwargs("tril", backward=False, batch_size=batch_size, M=M, N=N, diag=diag)
         kernel_times.append(t)
-    if op.name == "aten::t":
+    elif op.name == "aten::relu":
+        op_lists["relu"].append(op)
+        s = 1
+        for x in op.input_shapes[0]:
+            s *= x
+        t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
+        kernel_times.append(t)
+    elif op.name == "ReluBackward0":
+        relu_op = op_lists["relu"].pop()
+        s = 1
+        for x in relu_op.input_shapes[0]:
+            s *= x
+        t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
+        kernel_times.append(t)
+    elif op.name == "aten::sigmoid":
+        op_lists["sigmoid"].append(op)
+        s = 1
+        for x in op.input_shapes[0]:
+            s *= x
+        t = max(4 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per sigmoid (exp as one); one read one write
+        kernel_times.append(t)
+    elif op.name == "aten::sigmoid":
+        sigmoid_op = op_lists["sigmoid"].pop()
+        s = 1
+        for x in sigmoid_op.input_shapes[0]:
+            s *= x
+        t = max(2 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 2 flops per sigmoid backward (f' = f*(1-f)); one read one write
+        kernel_times.append(t)
+    elif op.name == "aten::t":
         kernel_times.append(0) # T is handled under addmm
-    if op.name == "aten::add":
+    elif op.name == "aten::add":
         s = 1
         for x in op.input_shapes[0]:
             s *= x
         t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
         kernel_times.append(t)
-    if op.name == "aten::cat":
+    elif op.name == "aten::cat":
         sa, sb = 1, 1
         for x, y in zip(op.input_shapes[0][0], op.input_shapes[0][1]):
             sa *= x
             sb *= y
         t = concat_predictor(A_size=sa, B_size=sb)
         kernel_times.append(t)
-    if op.name == "aten::relu":
-        s = 1
-        for x in op.input_shapes[0]:
-            s *= x
-        t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
-        kernel_times.append(t)
-    if op.name == "aten::sigmoid":
-        s = 1
-        for x in op.input_shapes[0]:
-            s *= x
-        t = max(4 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per sigmoid (exp as one); one read one write
-        kernel_times.append(t)
-    if op.name == "aten::sum":
+    elif op.name == "aten::sum":
         s = 1
         for x in op.input_shapes[0]:
             s *= x
         t = max(s / peak_throughput / 1000, s * 4 / peak_DRAM_BW / 1000) # One reads
         kernel_times.append(t)
-    if op.name == "aten::to":
+    elif op.name == "aten::to":
         s = 1
         for x in op.input_shapes[0]:
             s *= x
@@ -411,7 +427,9 @@ def get_e2e_time(graph, overheads):
         "addmm": [],
         "bmm": [],
         "el": [],
-        "tril": []
+        "relu": [],
+        "sigmoid": [],
+        "tril": [],
     }
     cpu_time = 0
     gpu_time = 0
@@ -419,19 +437,14 @@ def get_e2e_time(graph, overheads):
 
     consider = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", \
                 "LookupFunction", "LookupFunctionBackward", \
-                "IndexBackward", "aten::index", \
-                "aten::add", "aten::cat", "aten::relu", "aten::sigmoid", "aten::sum", "aten::to"]
-    whole = ["Optimizer.zero_grad#SGD.zero_grad", "Optimizer.step#SGD.step"]
-    skip = []
+                "aten::index", "IndexBackward", \
+                "aten::relu", "ReluBackward0", \
+                "aten::sigmoid", "SigmoidBackward", \
+                "aten::add", "aten::cat", "aten::sum", "aten::to"]
 
     for _, op in sorted_nodes:
-        if op.name in skip:
-            continue
         is_op = (op.type == NodeType.OPERATOR and op.parent.type != NodeType.OPERATOR)
         if is_op:
-            # # TODO: These are (mostly) minor backward ops yet to be handled.
-            # if op.name not in consider and op.name not in whole:
-            #     print(op.name)
             cpu_time += overheads["t1"][0] # T1: between two ops
             if op.name in overheads["launches"].keys(): # Has kernel calls
                 cpu_time += overheads["t2"][op.name][0] # T2: before the first kernel call
@@ -460,15 +473,11 @@ def get_e2e_time(graph, overheads):
                         if idx < len(launches) - 1:
                             cpu_time += t5
                 else:
-                    if op.name in whole:
-                        # Take the op as a whole without considering all its kernel calls
-                        cpu_time += overheads["t2"][op.name][0] + overheads["t3"][op.name][0] + overheads["t5"][op.name][0] * (len(launches) - 1)
-                    else:
-                        # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
-                        cpu_time += overheads["t5"][op.name][0] * (len(launches) - 1) # T5
-                        cpu_time += np.sum([overheads["t4"][x][0] for x in launches]) # T4
-                cpu_time += overheads["t3"][op.name][0] # T3: after the first kernel call
-            else:
+                    # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
+                    cpu_time += overheads["t5"][op.name][0] * (len(launches) - 1) # T5
+                    cpu_time += np.sum([overheads["t4"][x][0] for x in launches]) # T4
+                cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
+            else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
             # print(op.name, op.input_shapes, gpu_active_time)
     total_time = max(gpu_time, cpu_time)
