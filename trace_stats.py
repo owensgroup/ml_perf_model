@@ -70,8 +70,16 @@ if __name__ == '__main__':
             overheads[name]['t5'] = []
 
         sub_event_count = get_sub_event_count(op)
-        launches = get_event_all_kernel_launches(op)
-        launches = [(x, y) for x, y in launches if x.name() == "cudaMemcpyAsync" or x.name() == "cudaLaunchKernel" or x.name() == "cudaStreamSynchronize"]
+        # Get the number of events before each kernel launch (to subtract corresponding amount of CPU overheads from estimated time)
+        tmp_launches = get_event_all_kernel_launches(op)
+        launches = []
+        count = 0
+        for x, y in tmp_launches:
+            count += y
+            if x.name() in ["cudaMemcpyAsync", "cudaLaunchKernel", "cudaStreamSynchronize"]:
+                launches.append((x, count))
+                count = 0
+        print([(x.name(), y) for x, y in launches])
         
         if len(launches) > 0:
             overheads[name]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
