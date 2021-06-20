@@ -2,7 +2,7 @@ import torch
 import pandas as pd
 import numpy as np
 import json
-from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS, GPU_EVENT_OVERHEAD
+from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS
 from .exec_graph_utils import NodeType
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
@@ -443,7 +443,7 @@ def get_e2e_time(graph, overheads):
                         t5 = overheads["t5"][op.name][0] # Avg overhead between
 
                         # Contribution of CPU overheads on GPU idle time
-                        gpu_time = max(gpu_time + 1, cpu_time + t4 - GPU_EVENT_OVERHEAD) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
+                        gpu_time = max(gpu_time + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
 
                         # Kernel launches like cudaStreamSynchronize do not have actual kernel calls
                         if idx < len(t):
@@ -464,7 +464,6 @@ def get_e2e_time(graph, overheads):
                 cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
-            # print(op.name, op.input_shapes, gpu_active_time)
     total_time = max(gpu_time, cpu_time)
 
     return total_time, gpu_active_time

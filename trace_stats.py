@@ -1,7 +1,7 @@
 import argparse, json
 import numpy as np
 from analysis.trace_utils import *
-from analysis.utils import PM_HOME, GPU_NAME, CPU_EVENT_OVERHEAD
+from analysis.utils import PM_HOME, GPU_NAME, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Process trace files and get stats.")
@@ -86,7 +86,7 @@ if __name__ == '__main__':
             for x, _ in launches:
                 if x.name() not in overheads['independent']['t4']:
                     overheads['independent']['t4'][x.name()] = []
-                overheads['independent']['t4'][x.name()].append(x.duration() - CPU_EVENT_OVERHEAD) # T4 has 1 overhead
+                overheads['independent']['t4'][x.name()].append(x.duration() - CPU_EVENT_OVERHEAD - GPU_EVENT_OVERHEAD) # T4 has 1 overhead
             
             if op.name() not in launches_dict.keys():
                 launches_dict[op.name()] = []
