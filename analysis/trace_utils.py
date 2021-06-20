@@ -154,9 +154,9 @@ class Event:
         ee = self.start_time() + self.duration()
         return ls <= es and le >= ee
     def input_shape(self):
-        if "args" not in self.event.keys() or "Input dims" not in self.event["args"].keys():
+        if "args" not in self.event.keys() or "Input Dims" not in self.event["args"].keys():
             return (-1,)
-        return list_to_tuple(self.event["args"]["Input dims"])
+        return list_to_tuple(self.event["args"]["Input Dims"])
     def output_shape(self):
         if "args" not in self.event.keys() or "Output dims" not in self.event["args"].keys():
             return (-1,)

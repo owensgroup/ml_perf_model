@@ -313,10 +313,10 @@ def get_kernel_time(op, op_lists):
     elif op.name == "BmmBackward0":
         bmm_op = op_lists["bmm"].pop()
         batch_size, M, K, N = bmm_op.input_shapes[0][0], bmm_op.input_shapes[0][1], bmm_op.input_shapes[0][2], bmm_op.input_shapes[1][2]
-        m1, k1, n1 = N, M, K
+        m1, k1, n1 = K, M, N
         m2, k2, n2 = M, N, K
-        t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m1, N=n1, K=k1)
-        t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
+        t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=m1, N=n1, K=k1)
+        t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=m2, N=n2, K=k2)
         kernel_times.append(t1)
         kernel_times.append(t2)
         t = t1 + t2
@@ -358,61 +358,46 @@ def get_kernel_time(op, op_lists):
             diag = 1
         else:
             diag = 0
-        t = mlp_predictor_kwargs("tril", backward=False, batch_size=batch_size, M=M, N=N, diag=diag)
+        t = mlp_predictor_kwargs("tril", backward=True, batch_size=batch_size, M=M, N=N, diag=diag)
         kernel_times.append(t)
+    # Minor ops staring from here: ----
     elif op.name == "aten::relu":
         op_lists["relu"].append(op)
-        s = 1
-        for x in op.input_shapes[0]:
-            s *= x
+        s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
         kernel_times.append(t)
     elif op.name == "ReluBackward0":
         relu_op = op_lists["relu"].pop()
-        s = 1
-        for x in relu_op.input_shapes[0]:
-            s *= x
+        s = np.prod(relu_op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
         kernel_times.append(t)
     elif op.name == "aten::sigmoid":
         op_lists["sigmoid"].append(op)
-        s = 1
-        for x in op.input_shapes[0]:
-            s *= x
+        s = np.prod(op.input_shapes[0])
         t = max(4 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per sigmoid (exp as one); one read one write
         kernel_times.append(t)
-    elif op.name == "aten::sigmoid":
+    elif op.name == "SigmoidBackward":
         sigmoid_op = op_lists["sigmoid"].pop()
-        s = 1
-        for x in sigmoid_op.input_shapes[0]:
-            s *= x
+        s = np.prod(sigmoid_op.input_shapes[0])
         t = max(2 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 2 flops per sigmoid backward (f' = f*(1-f)); one read one write
         kernel_times.append(t)
     elif op.name == "aten::t":
         kernel_times.append(0) # T is handled under addmm
     elif op.name == "aten::add":
-        s = 1
-        for x in op.input_shapes[0]:
-            s *= x
+        s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
         kernel_times.append(t)
     elif op.name == "aten::cat":
-        sa, sb = 1, 1
-        for x, y in zip(op.input_shapes[0][0], op.input_shapes[0][1]):
-            sa *= x
-            sb *= y
+        sa = np.prod(op.input_shapes[0][0])
+        sb = np.prod(op.input_shapes[0][1])
         t = concat_predictor(A_size=sa, B_size=sb)
         kernel_times.append(t)
     elif op.name == "aten::sum":
-        s = 1
-        for x in op.input_shapes[0]:
-            s *= x
+        s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, s * 4 / peak_DRAM_BW / 1000) # One reads
         kernel_times.append(t)
     elif op.name == "aten::to":
-        s = 1
-        for x in op.input_shapes[0]:
-            s *= x
+        s = np.prod(op.input_shapes[0])
         t = memcpy_predictor(tensor_size=s)
         kernel_times.append(t)
     # print(op.name, op.input_shapes, t)
