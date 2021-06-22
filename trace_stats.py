@@ -79,7 +79,6 @@ if __name__ == '__main__':
             if x.name() in ["cudaMemcpyAsync", "cudaLaunchKernel", "cudaStreamSynchronize"]:
                 launches.append((x, count))
                 count = 0
-        print([(x.name(), y) for x, y in launches])
         
         if len(launches) > 0:
             overheads[name]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch

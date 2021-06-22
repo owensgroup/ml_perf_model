@@ -180,6 +180,12 @@ class Event:
         if ("correlation" not in self.event["args"].keys()):
             raise TypeError("Correlation id lost!")
         return self.event["args"]["correlation"]
+    def pid(self):
+        assert "pid" in self.event.keys(), "Illegal trace!"
+        return self.event["pid"]
+    def tid(self):
+        assert "tid" in self.event.keys(), "Illegal trace!"
+        return self.event["tid"]
     def device(self):
         if "args" not in self.event.keys() or \
             ("Device" not in self.event["args"].keys() and \
@@ -210,20 +216,20 @@ class Event:
 #     }
 #     ...
 # }
-def process_event_hierarchy(two, skip_module=False, module_marker="## "):
+def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     
     # Get the "grandest child" event of a given leaf
     # e.g. |------------ A --------------| The leaf event in the frontier currently being accessed
     #         |------------B-----------|
     #            |-----C------| The current "grandest child" of A, since D hasn't been added as A's child yet
     #               |---D---| The event currently being processed
-    def get_grandest_child_event(leaf, event, depth=1):
-        if not event.is_sub_of(leaf):
+    def get_grandest_child_event(leaf, current_event, depth=1):
+        if not current_event.is_sub_of(leaf):
             return None
         ret = leaf
         for c in leaf.children:
-            grandest = get_grandest_child_event(c, event, depth+1)
-            if grandest is not None:
+            grandest = get_grandest_child_event(c, current_event, depth+1)
+            if grandest is not None and current_event.tid() == grandest.tid(): # The root leaf e.g. the module won't be the grandest here
                 ret = grandest
                 break
         return ret
@@ -232,10 +238,11 @@ def process_event_hierarchy(two, skip_module=False, module_marker="## "):
     leaves = [] # The event frontier of the processing
     unaccounted = [] # Unaccounted events (not being used now)
     cc = {} # caller / callee: key = external id, value = { caller event, callee events }
+    main_tid = -1 # ID of the main thread that executes data loading, module events, etc
     
     # Remove all events without a duration and sort the event lists by start time (increasing order) and duration (decreasing order)
-    duration_none = [e for e in two if "dur" not in e.keys()]
-    sorted_events = [Event(e) for e in two if e not in duration_none]
+    duration_none = [e for e in raw_trace if "dur" not in e.keys()]
+    sorted_events = [Event(e) for e in raw_trace if e not in duration_none]
     sorted_events = sorted(sorted_events, key=lambda x: (x.start_time(), -x.duration()))
     
     # Remove all leftovers from the last iteration and next iteration
@@ -243,6 +250,13 @@ def process_event_hierarchy(two, skip_module=False, module_marker="## "):
     end_idx = len(sorted_events) - 1
     corrected_start_time = sorted_events[0].start_time()
     corrected_end_time = sorted_events[-1].start_time()
+    # Find the thread ID of the main thread
+    for idx, x in enumerate(sorted_events):
+        if x.name().startswith(module_marker):
+            main_tid = x.tid()
+            break
+    assert main_tid != -1
+
     # Start the analysis from the first module detected, if module is not to be skipped
     for idx, x in enumerate(sorted_events):
         ######## IMPORTANT ########
@@ -265,6 +279,21 @@ def process_event_hierarchy(two, skip_module=False, module_marker="## "):
             break
     sorted_events = sorted_events[start_idx:(len(sorted_events) - 1 - end_idx)]
     skipped_intervals = []
+    skipped_intervals_loader = []
+    skipped_intervals_distribute = []
+
+    # Skip data-loading ops and DLRM distribute emb data
+    for x in sorted_events:
+        event_start = x.start_time()
+        event_duration = x.duration()
+        external_id = x.external_id()
+        correlation_id = x.correlation_id()
+        if 'DataLoader' in x.name():
+            skipped_intervals_loader.append((event_start, event_start+event_duration))
+        if 'DLRM distribute emb data' in x.name():
+            skipped_intervals_distribute.append((event_start, event_start+event_duration))
+    for x, y in zip(skipped_intervals_loader, skipped_intervals_distribute):
+        skipped_intervals.append((x[0], y[1]))
 
     for x in sorted_events:
         # Get start, duration and end time of the current event
@@ -273,13 +302,12 @@ def process_event_hierarchy(two, skip_module=False, module_marker="## "):
         external_id = x.external_id()
         correlation_id = x.correlation_id()
         
-        # Skip data-loading ops
-        if 'DataLoader' in x.name():
-            skipped_intervals.append((event_start, event_start+event_duration))
+        # Skip all events in skipped intervals
         should_skip = False
         for s, e in skipped_intervals:
             if event_start >= s and event_start <= e:
                 should_skip = True
+                break
         if should_skip:
             continue
 
@@ -294,42 +322,45 @@ def process_event_hierarchy(two, skip_module=False, module_marker="## "):
             # if x.device() == 0:
             #     unaccounted.append(x)
             #     continue
-                
+
             event_end = event_start + event_duration
             corrected_end_time = max(event_end, corrected_end_time)
             # Find parent of the current event from the frontier
             parent_found = False
-            to_add_root = None
-            to_add_leaf = None
+            add_to_root = None
+            add_to_leaf = None
             for l in leaves:
+                if parent_found:
+                    break
                 leaf_start = l.start_time()
                 leaf_end = leaf_start + l.duration()
 
+                # The current event has no overlap with leaf
+                if event_start > leaf_end:
+                    continue
                 # The current event is sub to leaf
                 if event_end <= leaf_end:
-                    # Add this event to the GRANDEST CHILD of the leaf that can sub it
-                    grandest = get_grandest_child_event(l, x)
-                    x.parent = grandest
-                    grandest.children.append(x)
-                    to_add_leaf = x
+                    # Only search of the children when the current leaf is on the main thread or the same thread of the current event
+                    if l.tid() == main_tid or l.tid() == x.tid():
+                        # Add this event to the GRANDEST CHILD of the leaf that can sub it
+                        grandest = get_grandest_child_event(l, x)
+                        x.parent = grandest
+                        grandest.children.append(x)
+                    # Add to leaf anyway
+                    add_to_leaf = x
                     parent_found = True
-                    break
-                # The current event has no overlap with leaf
-                elif event_start >= leaf_end:
-                    continue
                 # Crossover shouldn't happen
                 else:
-                    pprint(str(x))
-                    raise ValueError("\tCrossover happens!")
+                    raise ValueError("\tCrossover happens to {}!".format(str(x)))
 
             # New root and leaf
             if not parent_found:
-                to_add_root = x
-                to_add_leaf = x
-            if to_add_root:
-                roots.append(to_add_root)
-            if to_add_leaf:
-                leaves.append(to_add_leaf)
+                add_to_root = x
+                add_to_leaf = x
+            if add_to_root:
+                roots.append(add_to_root)
+            if add_to_leaf:
+                leaves.append(add_to_leaf)
             
             # Add op to caller or unaccounted
             if x.category() == "Operator":
