@@ -241,3 +241,82 @@ then
         done
     done
 fi
+
+if [ ! -f conv_params.txt ];
+then
+    touch conv_params.txt
+    for batch_size in 1 8 16 32 64 128;
+    do
+        for HW in 7 8 14 17 28 35 56 71 73 112 147 149 224 299;
+        do
+            for IC in 3 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048;
+            do
+                for OC in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048;
+                do
+                    for stride in 1 2;
+                    do
+                        for FHW in 1 3 5;
+                        do
+                            for is_dw in 0 1;
+                            do
+                                if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv only has stride = 1
+                                then
+                                    continue
+                                fi
+                                if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv doesn't exist
+                                then
+                                    continue
+                                fi
+                                if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv
+                                then
+                                    continue
+                                fi
+                                if [[ $IC == "3" ]];
+                                then
+                                    if [[ $HW != "299" && $HW != "224" ]]; # Infeasible input sizes
+                                    then
+                                        continue
+                                    fi
+                                fi
+                                single_input_size="$( echo "$HW * $HW * $IC * 4" | bc -l )" # Infeasible input sizes
+                                if [[ $single_input_size -lt 50000 ]];
+                                then
+                                    continue
+                                fi
+                                ic_oc_ratio="$( echo "scale=4; $IC / $OC" | bc )"
+                                if [[ $IC == "3" ]];
+                                then
+                                    if [[ $(echo "$ic_oc_ratio > 0.03"| bc) -eq 0 ]]; # Infeasible channel lengths
+                                    then
+                                        continue
+                                    fi
+                                else
+                                    if [[ $(echo "$ic_oc_ratio > 0.125"| bc) -eq 0 || $(echo "$ic_oc_ratio < 8"| bc) -eq 0 ]]; # Infeasible channel lengths
+                                    then
+                                        continue
+                                    fi
+                                fi
+
+                                input_size="$( echo "$batch_size * $HW * $HW * $IC * 4" | bc -l )"
+                                filter_size=0
+                                if [ $is_dw == "1" ];
+                                then
+                                    filter_size="$( echo "$FHW * $FHW * $OC * 4" | bc -l )"
+                                else
+                                    filter_size="$( echo "$FHW * $FHW * $IC * $OC * 4" | bc -l )"
+                                fi
+                                output_size="$( echo "$batch_size * $HW * $HW * $OC * 4" | bc -l )"
+                                total_size="$( echo "$input_size + $filter_size + $output_size" | bc -l )"
+
+                                if [ "$total_size" -lt "$GPU_memory" ];
+                                then
+                                    echo "$batch_size $HW $HW $IC $OC $stride $FHW $is_dw" >> conv_params.txt
+                                fi
+                            done
+                        done
+                    done
+                done
+            done
+        done
+    done
+fi
