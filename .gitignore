@@ -7,6 +7,7 @@ __pycache__/*
 data/*
 .vscode/*
 analysis/ml_predictors/*
-analysis/*.pdf
+*/*.pdf
+*/*.png
 analysis/*.json
 run_kaggle_pt/*

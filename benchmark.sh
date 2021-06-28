@@ -70,7 +70,12 @@ then
 elif [ "$op_type" == "conv" ];
 then
     header="kernel_name,batch_size,H,W,IC,OC,stride,FHW,is_dw"
-    param_file_name="./bench_params/conv_params.txt"
+    if [ "$is_big" == "1" ];
+    then
+        param_file_name="./bench_params/conv_params_big.txt"
+    else
+        param_file_name="./bench_params/conv_params.txt"
+    fi
 elif [ "$op_type" == "concat" ];
 then
     header="kernel_name,batch_size,M,N,K"
