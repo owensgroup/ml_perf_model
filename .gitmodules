@@ -10,3 +10,6 @@
 [submodule "mlperf-logging"]
 	path = mlperf-logging
 	url = https://github.com/mlcommons/logging.git
+[submodule "param"]
+	path = param
+	url = https://github.com/moderato/param
