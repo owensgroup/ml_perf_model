@@ -28,13 +28,16 @@ The following benchmark commands are supported:
 ./benchmark.sh embedding_lookup 0 1
 ./benchmark.sh tril 1
 ./benchmark.sh tril 0
+./benchmark.sh conv 1 # We also support convolution for comparison with other performance models on DL models other the DLRM
+./benchmark.sh conv 1 1
 ```
 
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
 
-To train ML-based performance model for FC, transpose, and tril, run:
+To train ML-based performance model for FC, conv, transpose, and tril, run:
 ```bash
 python mlp.py --op-type fully_connected --batch-size 64
+python mlp.py --op-type conv --batch-size 64
 python mlp.py --op-type transpose --batch-size 32
 python mlp.py --op-type tril --epoch 1000
 python mlp.py --op-type tril --backward --epoch 2000
@@ -47,10 +50,10 @@ python kernel_pm_acc.py
 
 To extract execution graph and generate profiler trace file, run:
 ```bash
-./dlrm_s_benchmark_local.sh
+./dlrm_s_benchmark_local.sh <model_name> # Default is MLPerf
 ```
 
-To generate trace file stats and overheads, and conduct end-to-end performance predictio, run:
+To generate trace file stats and overheads, and conduct end-to-end performance prediction, run:
 ```bash
 python trace_stats.py --model-name <model_name>
 python e2e.py --model-name <model_name>
