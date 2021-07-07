@@ -14,7 +14,7 @@ if __name__ == '__main__':
     parser.add_argument("--epoch", type=int, default=800)
     args = parser.parse_args()
 
-    assert args.op_type in ["fully_connected", "transpose", "tril"]
+    assert args.op_type in ["fully_connected", "conv", "transpose", "tril"]
     suffix = "{}_{}".format(args.op_type, 1 if not args.backward else 0)
     n_feature, x, y = get_data(op_type=args.op_type, backward=args.backward)
     op_dataset = Data.TensorDataset(x, y)

@@ -159,6 +159,9 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
     if op_type == "fully_connected":
         n_feature = 4
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N", "K"]]
+    elif op_type == "conv":
+        n_feature = 7
+        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'H', 'W', 'IC', 'OC']] + [kwargs['stride'], kwargs['FHW'], kwargs['is_dw']]
     elif op_type == "transpose":
         n_feature = 3
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N"]]

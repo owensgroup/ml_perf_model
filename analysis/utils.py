@@ -216,6 +216,8 @@ def get_pretrained_net(op_type, backward=False):
         n_hidden = [best_config["size"]] * best_config["num_layers"]
     if op_type == "fully_connected":
         n_feature = 4
+    if op_type == "conv":
+        n_feature = 7
     elif op_type == "transpose":
         n_feature = 3
     else: # tril
@@ -250,7 +252,7 @@ class MLP(torch.nn.Module):
 
 
 def get_data(op_type, backward=False, gpu=True):
-    data = pd.read_csv('{}/data/{}/{}_{}.csv'.format(PM_HOME, GPU_NAME, op_type, 1 if not backward else 0), delimiter=',')
+    data = pd.read_csv('{}/data/{}/kernel/{}_{}.csv'.format(PM_HOME, GPU_NAME, op_type, 1 if not backward else 0), delimiter=',')
     data = preprocessing(data)
 
     if op_type == 'fully_connected':
@@ -260,6 +262,17 @@ def get_data(op_type, backward=False, gpu=True):
             'M': np.log(data['M']),
             'N': np.log(data['N']),
             'K': np.log(data['K'])
+        })
+    elif op_type == 'conv':
+        data = data[['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'FHW', 'is_dw', 'kernel_runtime']].groupby(['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'FHW', 'is_dw'], as_index=False).sum() # Sum up all kernels
+        input_df = pd.DataFrame({
+            'batch_size': np.log(data['batch_size']),
+            'H': np.log(data['H']),
+            'IC': np.log(data['IC']),
+            'OC': np.log(data['OC']),
+            'stride': data['stride'],
+            'FHW': data['FHW'],
+            'is_dw': data['is_dw'],
         })
     elif op_type == 'transpose':
         input_df = pd.DataFrame({
