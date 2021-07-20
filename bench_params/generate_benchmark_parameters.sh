@@ -255,73 +255,80 @@ then
                 do
                     for stride in 1 2;
                     do
-                        for FHW in 1 3 5;
+                        for dilation in 1 2;
                         do
-                            for is_dw in 0 1;
+                            for FHW in 1 3 5;
                             do
-                                if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv only has stride = 1
-                                then
-                                    continue
-                                fi
-                                if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv doesn't exist
-                                then
-                                    continue
-                                fi
-                                if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv
-                                then
-                                    continue
-                                fi
-                                if [[ $IC == "3" ]];
-                                then
-                                    if [[ $HW != "299" && $HW != "224" ]]; # Infeasible input sizes
+                                for is_dw in 0 1;
+                                do
+                                    if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv only has stride = 1
                                     then
                                         continue
                                     fi
-                                fi
-                                if [[ $HW == "299" || $HW == "224" ]];
-                                then
-                                    if [[ $IC != "3" ]]; # Infeasible input sizes
+                                    if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv doesn't exist
                                     then
                                         continue
                                     fi
-                                fi
-                                ic_hw_prod="$( echo "$IC * $HW" | bc -l )" # Infeasible input sizes
-                                if [[ $ic_hw_prod -lt 1500 || $ic_hw_prod -gt 15000 ]];
-                                then
-                                    if [[ $IC != "3" ]];
+                                    if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv
                                     then
                                         continue
                                     fi
-                                fi
-                                ic_oc_ratio="$( echo "scale=4; $IC / $OC" | bc )"
-                                if [[ $IC == "3" ]];
-                                then
-                                    if [[ $( echo "$ic_oc_ratio > 0.03" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                    if [[ $is_dw == "1" && $dilation != "2" ]]; # No dilation for in dw-conv
                                     then
                                         continue
                                     fi
-                                else
-                                    if [[ $( echo "$ic_oc_ratio > 0.125" | bc ) -eq 0 || $( echo "$ic_oc_ratio < 8" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                    if [[ $IC == "3" ]];
                                     then
-                                        continue
+                                        if [[ $HW != "299" && $HW != "224" ]]; # Infeasible input sizes
+                                        then
+                                            continue
+                                        fi
                                     fi
-                                fi
+                                    if [[ $HW == "299" || $HW == "224" ]];
+                                    then
+                                        if [[ $IC != "3" ]]; # Infeasible input sizes
+                                        then
+                                            continue
+                                        fi
+                                    fi
+                                    ic_hw_prod="$( echo "$IC * $HW" | bc -l )" # Infeasible input sizes
+                                    if [[ $ic_hw_prod -lt 1500 || $ic_hw_prod -gt 15000 ]];
+                                    then
+                                        if [[ $IC != "3" ]];
+                                        then
+                                            continue
+                                        fi
+                                    fi
+                                    ic_oc_ratio="$( echo "scale=4; $IC / $OC" | bc )"
+                                    if [[ $IC == "3" ]];
+                                    then
+                                        if [[ $( echo "$ic_oc_ratio > 0.03" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                        then
+                                            continue
+                                        fi
+                                    else
+                                        if [[ $( echo "$ic_oc_ratio > 0.125" | bc ) -eq 0 || $( echo "$ic_oc_ratio < 8" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                        then
+                                            continue
+                                        fi
+                                    fi
 
-                                input_size="$( echo "$batch_size * $HW * $HW * $IC * 4" | bc -l )"
-                                filter_size=0
-                                if [ $is_dw == "1" ];
-                                then
-                                    filter_size="$( echo "$FHW * $FHW * $OC * 4" | bc -l )"
-                                else
-                                    filter_size="$( echo "$FHW * $FHW * $IC * $OC * 4" | bc -l )"
-                                fi
-                                output_size="$( echo "$batch_size * $HW * $HW * $OC * 4" | bc -l )"
-                                total_size="$( echo "$input_size + $filter_size + $output_size" | bc -l )"
+                                    input_size="$( echo "$batch_size * $HW * $HW * $IC * 4" | bc -l )"
+                                    filter_size=0
+                                    if [ $is_dw == "1" ];
+                                    then
+                                        filter_size="$( echo "$FHW * $FHW * $OC * 4" | bc -l )"
+                                    else
+                                        filter_size="$( echo "$FHW * $FHW * $IC * $OC * 4" | bc -l )"
+                                    fi
+                                    output_size="$( echo "$batch_size * $HW * $HW * $OC * 4" | bc -l )"
+                                    total_size="$( echo "$input_size + $filter_size + $output_size" | bc -l )"
 
-                                if [ "$total_size" -lt "$GPU_memory" ];
-                                then
-                                    echo "$batch_size $HW $HW $IC $OC $stride $FHW $is_dw" >> conv_params.txt
-                                fi
+                                    if [ "$total_size" -lt "$GPU_memory" ];
+                                    then
+                                        echo "$batch_size $HW $HW $IC $OC $stride $dilation $FHW $is_dw" >> conv_params.txt
+                                    fi
+                                done
                             done
                         done
                     done
@@ -344,73 +351,80 @@ then
                 do
                     for stride in 1 2;
                     do
-                        for FHW in 1 3 5;
+                        for dilation in 1 2;
                         do
-                            for is_dw in 0 1;
+                            for FHW in 1 3 5;
                             do
-                                if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv only has stride = 1
-                                then
-                                    continue
-                                fi
-                                if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv doesn't exist
-                                then
-                                    continue
-                                fi
-                                if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv
-                                then
-                                    continue
-                                fi
-                                if [[ $IC == "3" ]];
-                                then
-                                    if [[ $HW != "299" && $HW != "224" ]]; # Infeasible input sizes
+                                for is_dw in 0 1;
+                                do
+                                    if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv only has stride = 1
                                     then
                                         continue
                                     fi
-                                fi
-                                if [[ $HW == "299" || $HW == "224" ]];
-                                then
-                                    if [[ $IC != "3" ]]; # Infeasible input sizes
+                                    if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv doesn't exist
                                     then
                                         continue
                                     fi
-                                fi
-                                ic_hw_prod="$( echo "$IC * $HW" | bc -l )" # Infeasible input sizes
-                                if [[ $ic_hw_prod -lt 1500 || $ic_hw_prod -gt 15000 ]];
-                                then
-                                    if [[ $IC != "3" ]];
+                                    if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv
                                     then
                                         continue
                                     fi
-                                fi
-                                ic_oc_ratio="$( echo "scale=4; $IC / $OC" | bc )"
-                                if [[ $IC == "3" ]];
-                                then
-                                    if [[ $( echo "$ic_oc_ratio > 0.03" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                    if [[ $is_dw == "1" && $dilation != "2" ]]; # No dilation for in dw-conv
                                     then
                                         continue
                                     fi
-                                else
-                                    if [[ $( echo "$ic_oc_ratio > 0.125" | bc ) -eq 0 || $( echo "$ic_oc_ratio < 8" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                    if [[ $IC == "3" ]];
                                     then
-                                        continue
+                                        if [[ $HW != "299" && $HW != "224" ]]; # Infeasible input sizes
+                                        then
+                                            continue
+                                        fi
                                     fi
-                                fi
+                                    if [[ $HW == "299" || $HW == "224" ]];
+                                    then
+                                        if [[ $IC != "3" ]]; # Infeasible input sizes
+                                        then
+                                            continue
+                                        fi
+                                    fi
+                                    ic_hw_prod="$( echo "$IC * $HW" | bc -l )" # Infeasible input sizes
+                                    if [[ $ic_hw_prod -lt 1500 || $ic_hw_prod -gt 15000 ]];
+                                    then
+                                        if [[ $IC != "3" ]];
+                                        then
+                                            continue
+                                        fi
+                                    fi
+                                    ic_oc_ratio="$( echo "scale=4; $IC / $OC" | bc )"
+                                    if [[ $IC == "3" ]];
+                                    then
+                                        if [[ $( echo "$ic_oc_ratio > 0.03" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                        then
+                                            continue
+                                        fi
+                                    else
+                                        if [[ $( echo "$ic_oc_ratio > 0.125" | bc ) -eq 0 || $( echo "$ic_oc_ratio < 8" | bc ) -eq 0 ]]; # Infeasible channel lengths
+                                        then
+                                            continue
+                                        fi
+                                    fi
 
-                                input_size="$( echo "$batch_size * $HW * $HW * $IC * 4" | bc -l )"
-                                filter_size=0
-                                if [ $is_dw == "1" ];
-                                then
-                                    filter_size="$( echo "$FHW * $FHW * $OC * 4" | bc -l )"
-                                else
-                                    filter_size="$( echo "$FHW * $FHW * $IC * $OC * 4" | bc -l )"
-                                fi
-                                output_size="$( echo "$batch_size * $HW * $HW * $OC * 4" | bc -l )"
-                                total_size="$( echo "$input_size + $filter_size + $output_size" | bc -l )"
+                                    input_size="$( echo "$batch_size * $HW * $HW * $IC * 4" | bc -l )"
+                                    filter_size=0
+                                    if [ $is_dw == "1" ];
+                                    then
+                                        filter_size="$( echo "$FHW * $FHW * $OC * 4" | bc -l )"
+                                    else
+                                        filter_size="$( echo "$FHW * $FHW * $IC * $OC * 4" | bc -l )"
+                                    fi
+                                    output_size="$( echo "$batch_size * $HW * $HW * $OC * 4" | bc -l )"
+                                    total_size="$( echo "$input_size + $filter_size + $output_size" | bc -l )"
 
-                                if [ "$total_size" -lt "$GPU_memory" ];
-                                then
-                                    echo "$batch_size $HW $HW $IC $OC $stride $FHW $is_dw" >> conv_params_big.txt
-                                fi
+                                    if [ "$total_size" -lt "$GPU_memory" ];
+                                    then
+                                        echo "$batch_size $HW $HW $IC $OC $stride $dilation $FHW $is_dw" >> conv_params_big.txt
+                                    fi
+                                done
                             done
                         done
                     done

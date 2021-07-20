@@ -39,23 +39,8 @@ numa_cmd="numactl --physcpubind=0-$((ncores-1)) -m $nsockets" #run on one socket
 dlrm_pt_bin="python dlrm/dlrm_s_pytorch.py" # fil-profile run
 
 # Get GPU type
-nvidia-smi --query-gpu=gpu_name --format=csv,noheader > /tmp/gpu_name.csv
-if grep -q "V100" /tmp/gpu_name.csv
-then
-    export GPU_NAME="V100"
-elif grep -q "P100" /tmp/gpu_name.csv
-then
-    export GPU_NAME="P100"
-elif grep -q "Xp" /tmp/gpu_name.csv
-then
-    export GPU_NAME="Xp"
-elif grep -q "1080" /tmp/gpu_name.csv
-then
-    export GPU_NAME="1080"
-else
-    echo "Unrecognized GPU name! Exit..."
-    exit
-fi
+./get_gpu_name.sh
+export GPU_NAME=`cat /tmp/gpu_name.txt`
 
 # ----------------------- Model param -----------------------
 mb_size=2048
