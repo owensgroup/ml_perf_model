@@ -1,5 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import json, sys
+from itertools import compress
 
 # Label markers
 LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
@@ -329,14 +330,17 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
             parent_found = False
             add_to_root = None
             add_to_leaf = None
-            for l in leaves:
+            active_leaves = [] # Boolean markers for leaves that are not outdated yet
+            for idx, l in enumerate(leaves):
                 if parent_found:
+                    active_leaves.extend([True] * (len(leaves) - len(active_leaves))) # Fill up the filter list
                     break
                 leaf_start = l.start_time()
                 leaf_end = leaf_start + l.duration()
 
                 # The current event has no overlap with leaf
                 if event_start > leaf_end:
+                    active_leaves.append(False) # Mark this leaf as outdated
                     continue
                 # The current event is sub to leaf
                 if event_end <= leaf_end:
@@ -349,9 +353,12 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                     # Add to leaf anyway
                     add_to_leaf = x
                     parent_found = True
+                    active_leaves.append(True) # Mark this leaf as active
                 # Crossover shouldn't happen
                 else:
                     raise ValueError("\tCrossover happens to {}!".format(str(x)))
+            # Delete all outdated leaves
+            leaves = list(compress(leaves, active_leaves))
 
             # New root and leaf
             if not parent_found:
