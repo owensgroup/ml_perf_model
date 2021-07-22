@@ -21,7 +21,7 @@ then
 elif [[ $GPU_NAME == "P100" ]];
 then
   sudo nvidia-smi -lgc 1189
-elif [[ $GPU_NAME == "TITAN Xp" ]];
+elif [[ $GPU_NAME == "Xp" ]];
 then
   sudo nvidia-smi -ac 5505,1404
 fi # Add any new conda env and lock GPU frequency here

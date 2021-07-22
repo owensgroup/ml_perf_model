@@ -12,4 +12,10 @@
 	url = https://github.com/mlcommons/logging.git
 [submodule "param"]
 	path = param
-	url = https://github.com/moderato/param
+	url = https://github.com/moderato/param.git
+[submodule "convnet-benchmark-py"]
+	path = convnet-benchmark-py
+	url = https://github.com/moderato/convnet-benchmark-py.git
+[submodule "transformer-pt"]
+	path = transformer-pt
+	url = https://github.com/moderato/attention-is-all-you-need-pytorch.git

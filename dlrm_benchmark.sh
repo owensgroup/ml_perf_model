@@ -6,7 +6,7 @@
 
 # Get DLRM model name
 model_name=${1:-DLRM_default}
-list="DLRM_vipul DLRM_default MLPerf"
+list="DLRM_vipul DLRM_default DLRM_MLPerf"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -74,7 +74,7 @@ then
             --arch-interaction-op=dot\
             --numpy-rand-seed=727\
             --num-worker=0 "
-elif [[ $model_name == "MLPerf" ]]; # MLPerf
+elif [[ $model_name == "DLRM_MLPerf" ]]; # DLRM_MLPerf
 then
     mb_size=2048
     num_batches=100
@@ -104,7 +104,8 @@ tnworkers=0
 tmb_size=-1 #256
 
 # GPU Benchmarking
-if [ $gpu = 1 ]; then
+if [ $gpu = 1 ];
+then
   echo "--------------------------------------------"
   echo "GPU Benchmarking - running on $ngpus GPUs"
   echo "--------------------------------------------"
