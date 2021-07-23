@@ -46,6 +46,8 @@ cd ../ml_perf_model
 ./microbenchmark.sh tril 0
 ./microbenchmark.sh conv 1 # We also support convolution for comparison with other performance models on DL models other the DLRM.
 ./microbenchmark.sh conv 1 1
+./microbenchmark.sh bn 1
+./microbenchmark.sh bn 0
 ```
 
 ### Training ML-based kernel performance model

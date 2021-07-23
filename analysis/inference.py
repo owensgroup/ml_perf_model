@@ -160,8 +160,8 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
         n_feature = 4
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N", "K"]]
     elif op_type == "conv":
-        n_feature = 7
-        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'H', 'W', 'IC', 'OC']] + [kwargs['stride'], kwargs['FHW'], kwargs['is_dw']]
+        n_feature = 8
+        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FHW', 'is_dw']]
     elif op_type == "transpose":
         n_feature = 3
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N"]]
@@ -263,7 +263,7 @@ def infer_from_model(op_type, backward=False):
     suffix = "{}_{}".format(op_type, 1 if not backward else 0)
     with open("{}/analysis/ml_predictors/{}/best_config_{}.json".format(PM_HOME, GPU_NAME, suffix), "r") as f:
         best_config = json.load(f)
-    estimated_time = mlp_predictor_tensor(x, op_type, backward=backward, )
+    estimated_time = mlp_predictor_tensor(x, op_type, backward=backward)
     error = abs_err(estimated_time, torch.exp(y.cpu().detach()).view(-1))
     print("{}: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(suffix, gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
     return best_config, error

@@ -433,3 +433,28 @@ then
         done
     done
 fi
+
+if [ ! -f bn.txt ];
+then
+    touch bn.txt
+    for batch_size in 1 16 32 64 128;
+    do
+        for HW in 7 8 14 17 28 35 56 71 73 112 147 149 224 299;
+        do
+            for OC in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048;
+            do
+                oc_hw_prod="$( echo "$OC * $HW" | bc -l )" # Infeasible input sizes
+                if [[ $oc_hw_prod -lt 1500 || $oc_hw_prod -gt 15000 ]];
+                then
+                    continue
+                fi
+
+                input_size="$( echo "$batch_size * $HW * $HW * $OC * 4" | bc -l )"
+                if [ "$input_size" -lt "$GPU_memory" ];
+                then
+                    echo "$batch_size $HW $HW $OC" >> bn_params.txt
+                fi
+            done
+        done
+    done
+fi

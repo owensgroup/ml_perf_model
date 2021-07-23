@@ -69,7 +69,7 @@ then
     fi
 elif [ "$op_type" == "conv" ];
 then
-    header="kernel_name,batch_size,H,W,IC,OC,stride,FHW,is_dw"
+    header="kernel_name,batch_size,H,W,IC,OC,stride,dilation,FHW,is_dw"
     if [ "$is_big" == "1" ];
     then
         param_file_name="./bench_params/conv_params_big.txt"
@@ -92,6 +92,10 @@ elif [ "$op_type" == "tril" ];
 then
     header="kernel_name,batch_size,M,N,diag"
     param_file_name="./bench_params/tril_params.txt"
+elif [ "$op_type" == "bn" ];
+then
+    header="kernel_name,batch_size,H,W,OC"
+    param_file_name="./bench_params/bn_params.txt"
 else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
@@ -154,8 +158,8 @@ do
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
     elif [ "$op_type" == "conv" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]} --stride ${array[5]} --FHW ${array[6]}"
-        if [ "${array[7]}" == "1" ];
+        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]} --stride ${array[5]} --dilation ${array[6]} --FHW ${array[7]}"
+        if [ "${array[8]}" == "1" ];
         then
             bench_param="${bench_param} --is-dw"
         fi
@@ -165,12 +169,15 @@ do
     elif [ "$op_type" == "cross_entropy" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]}"
-    elif [ "$op_type" == "transpose" ]; # transpose
+    elif [ "$op_type" == "transpose" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --trans-type ${array[3]}"
     elif [ "$op_type" == "tril" ]; # lower triangular after feature interaction
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --diag ${array[3]}"
+    elif [ "$op_type" == "bn" ];
+    then
+        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --OC ${array[3]}"
     else # Memcpy
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]}"
     fi
@@ -185,12 +192,15 @@ do
     op_time="$( < /tmp/${CUDA_VISIBLE_DEVICES}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
 
     # Benchmark general: get the major kernel names
-    nvprof --openacc-profiling off --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters $warmup_iters >& /dev/null
+    nvprof --openacc-profiling off --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" \
+    python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters \
+    --warmup-iters $warmup_iters # >& /dev/null
 
     # Get gpu trace
     echo "Get GPU trace of kernels ..."
     nvprof --openacc-profiling off --print-gpu-trace --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
-    python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& /dev/null
+    python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
+    --warmup-iters $warmup_iters >& /dev/null
 
     ./get_kernel_names.sh "$op_type"
     kernels=()
