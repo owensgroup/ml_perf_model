@@ -434,9 +434,9 @@ then
     done
 fi
 
-if [ ! -f bn.txt ];
+if [ ! -f bn_params.txt ];
 then
-    touch bn.txt
+    touch bn_params.txt
     for batch_size in 1 16 32 64 128;
     do
         for HW in 7 8 14 17 28 35 56 71 73 112 147 149 224 299;
