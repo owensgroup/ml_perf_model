@@ -194,7 +194,7 @@ do
     # Benchmark general: get the major kernel names
     nvprof --openacc-profiling off --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" \
     python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters \
-    --warmup-iters $warmup_iters # >& /dev/null
+    --warmup-iters $warmup_iters >& /dev/null
 
     # Get gpu trace
     echo "Get GPU trace of kernels ..."
