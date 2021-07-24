@@ -34,7 +34,7 @@ then
         python -m spacy download en
         python -m spacy download de
         cd transformer-pt
-        python reprocess.py -lang_src de -lang_trg en -share_vocab -save_data m30k_deen_shr.pkl
+        python preprocess.py -lang_src de -lang_trg en -share_vocab -save_data m30k_deen_shr.pkl
         cd ..
     fi
 fi

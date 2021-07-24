@@ -55,6 +55,8 @@ cd ../ml_perf_model
 python mlp.py --op-type fully_connected --batch-size 64
 python mlp.py --op-type conv --batch-size 64
 python mlp.py --op-type transpose --batch-size 32
+python mlp.py --op-type bn --batch-size 32
+python mlp.py --op-type bn --backward --batch-size 32
 python mlp.py --op-type tril --epoch 1000
 python mlp.py --op-type tril --backward --epoch 2000
 ```
@@ -66,7 +68,8 @@ python kernel_pm_acc.py
 ### Execution graph extraction and profiler trace generation
 ```bash
 ./dlrm_benchmark.sh <model_name> # Default is MLPerf
-./convnet_benchmark.sh <model_name> # Default is all
+./convnet_benchmark.sh <model_name> # Default is resnet50
+./nlp_benchmark.sh <model_name> # Default is transformer
 ```
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
 

@@ -220,6 +220,8 @@ def get_pretrained_net(op_type, backward=False):
         n_feature = 8
     elif op_type == "transpose":
         n_feature = 3
+    elif op_type == "bn":
+        n_feature = 3
     else: # tril
         n_feature = 4
     net = MLP(n_feature=n_feature, n_hidden=n_hidden, n_output=1)
@@ -281,6 +283,13 @@ def get_data(op_type, backward=False, gpu=True):
             'batch_size': np.log(data['batch_size']),
             'M': np.log(data['M']),
             'N': np.log(data['N'])
+        })
+    elif op_type == 'bn':
+        data = data[data['kernel_name'].str.contains("cudnn")] # Train on samples with 'cudnn' in kernel name
+        input_df = pd.DataFrame({
+            'batch_size': np.log(data['batch_size']),
+            'H': np.log(data['H']),
+            'OC': np.log(data['OC']),
         })
     else: # tril
         if backward:
