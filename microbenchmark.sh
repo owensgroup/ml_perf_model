@@ -96,6 +96,10 @@ elif [ "$op_type" == "bn" ];
 then
     header="kernel_name,batch_size,H,W,OC"
     param_file_name="./bench_params/bn_params.txt"
+elif [ "$op_type" == "pool" ];
+then
+    header="kernel_name,batch_size,H,W,OC,stride,dilation,FHW,is_maxpool"
+    param_file_name="./bench_params/pool_params.txt"
 else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
@@ -178,6 +182,13 @@ do
     elif [ "$op_type" == "bn" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --OC ${array[3]}"
+    elif [ "$op_type" == "pool" ];
+    then
+        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --OC ${array[3]} --stride ${array[4]} --dilation ${array[5]} --FHW ${array[6]}"
+        if [ "${array[7]}" == "1" ];
+        then
+            bench_param="${bench_param} --is-maxpool"
+        fi
     else # Memcpy
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]}"
     fi
