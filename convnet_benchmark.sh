@@ -44,23 +44,25 @@ then
     echo "-------------------"
     echo "Using GPUS: "$_gpus
     echo "-------------------"
-    outf="data/${GPU_NAME}/e2e/${model_name}_${_ng}.log"
+    mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
+    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}.log"
     outp="convnet_benchmark.prof"
     echo "-------------------------------"
     echo "Running benchmark (log file: $outf)"
     echo "-------------------------------"
-    cmd="python -u convnet-benchmark-py/benchmark.py --profile --arch ${model_name}"
-    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json" ];
+    cmd="python -u convnet-benchmark-py/benchmark.py --arch ${model_name}"
+    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-steps 2 --collect-execution-graph &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json"
+      eval "$cmd --num-steps 2 --collect-execution-graph --profile &> /dev/null" # Collect execution graph
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json"
     fi
-    eval "$cmd --num-steps ${num_steps} > $outf"
-    min=$(grep "iteration" $outf | awk 'BEGIN{best=999999} {if (best > $7) best=$7} END{print best}')
-    echo "Min time per iteration = $min"
+    eval "$cmd --num-steps ${num_steps} --profile > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+    eval "$cmd --num-steps ${num_steps} > $outf" # No profile to get E2E time
+    min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $4) best=$4} END{print best}')
+    echo "Min time per iteration = $min"
   done
 fi

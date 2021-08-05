@@ -29,7 +29,6 @@ ncores=8
 nsockets="0"
 ngpus="1" #"1 2 4"
 common_args="   --use-gpu\
-                --enable-profiling\
                 --print-freq=5\
                 --print-time\
                 --batched-emb\
@@ -121,23 +120,25 @@ then
     echo "-------------------"
     echo "Using GPUS: "$_gpus
     echo "-------------------"
-    outf="data/${GPU_NAME}/e2e/${model_name}_${_ng}.log"
+    mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
+    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}.log"
     outp="dlrm_s_pytorch.prof"
     echo "-------------------------------"
     echo "Running PT (log file: $outf)"
     echo "-------------------------------"
     cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
-    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json" ];
+    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-batches 2 --collect-execution-graph &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json"
+      eval "$cmd --num-batches 2 --collect-execution-graph --enable-profiling &> /dev/null" # Collect execution graph
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json"
     fi
-    eval "$cmd --num-batches ${num_batches} > $outf"
-    min=$(grep "iteration" $outf | awk 'BEGIN{best=999999} {if (best > $7) best=$7} END{print best}')
-    echo "Min time per iteration = $min"
+    eval "$cmd --num-batches ${num_batches} --enable-profiling > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+    eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
+    min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $8) best=$8} END{print best}')
+    echo "Min time per iteration = $min"
   done
 fi

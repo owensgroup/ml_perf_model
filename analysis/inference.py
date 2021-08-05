@@ -47,7 +47,7 @@ def embedding_forward_predictor(**kwargs):
     # num_total_warps = y["batch_size"] * y["num_tables"] # Total warp number of the kernel
     num_warps_per_sm = y["rows_per_block"] # Number of warps per sm
     num_warps_simul = num_SM * num_warps_per_sm # Total number of warps simultaneously running on the device
-    num_tables_simul = (num_warps_simul + y["batch_size"] - 1) // y["batch_size"] # Number of tables simultaneously being accessed on the device
+    num_tables_simul = div_round_up(num_warps_simul, y["batch_size"]) # Number of tables simultaneously being accessed on the device
     avg_table_size = min(L2_size // num_tables_simul, y["num_embeddings"] * y["embedding_dim"] * 4) # Average table size that reside on the device
     indices_size = 0
     avg_num_rows_per_table = (avg_table_size - indices_size) // 4 // y["embedding_dim"]
@@ -63,10 +63,24 @@ def embedding_forward_predictor(**kwargs):
     table_traffic = y["bag_size"] * (div_round_up(y["embedding_dim"] * 4, 32) * 32)
     output_traffic = (div_round_up(y["embedding_dim"] * 4, 32) * 32)
 
-    total_l2_traffic = ((table_offsets_traffic + offsets_traffic + indices_l2_traffic) * y["batch_size"] + \
-                        hr * (table_traffic * y["batch_size"] - avg_table_size)) * y["num_tables"]
-    total_dram_traffic = ((indices_dram_traffic + output_traffic) * y["batch_size"] + \
-                          (1 - hr) * (table_traffic * y["batch_size"] - avg_table_size) + avg_table_size) * y["num_tables"]
+    total_l2_traffic = y["num_tables"] * (
+                            y["batch_size"] * (
+                                table_offsets_traffic + \
+                                offsets_traffic + \
+                                indices_l2_traffic) + \
+                            hr * (
+                                table_traffic * y["batch_size"] - \
+                                avg_table_size)
+                        )
+    total_dram_traffic = y["num_tables"] * (
+                            y["batch_size"] * (
+                                indices_dram_traffic + 
+                                output_traffic) + \
+                            (1 - hr) * (
+                                table_traffic * y["batch_size"] - \
+                                avg_table_size) + \
+                            avg_table_size
+                        )
 
     return max(total_dram_traffic / peak_DRAM_BW / 1000.0, total_l2_traffic / peak_L2_BW / 1000.0)
 
@@ -110,7 +124,7 @@ def embedding_backward_sgd_predictor(**kwargs):
     # num_total_warps = y["batch_size"] * y["num_tables"] # Total warp number of the kernel
     num_warps_per_sm = y["rows_per_block"] # Number of warps per sm
     num_warps_simul = num_SM * num_warps_per_sm # Total number of warps simultaneously running on the device
-    num_tables_simul = (num_warps_simul + y["batch_size"] - 1) // y["batch_size"] # Number of tables simultaneously being accessed on the device
+    num_tables_simul = div_round_up(num_warps_simul, y["batch_size"]) # Number of tables simultaneously being accessed on the device
     avg_table_size = min(L2_size // num_tables_simul, y["num_embeddings"] * y["embedding_dim"] * 4) # Average table size that reside on the device
     indices_size = 0
     avg_num_rows_per_table = (avg_table_size - indices_size) // 4 // y["embedding_dim"]
@@ -126,10 +140,25 @@ def embedding_backward_sgd_predictor(**kwargs):
     table_traffic = 2 * y["bag_size"] * (div_round_up(y["embedding_dim"] * 4, 32) * 32)
     output_traffic = (div_round_up(y["embedding_dim"] * 4, 32) * 32)
 
-    total_l2_traffic = ((table_offsets_traffic + offsets_traffic + indices_l2_traffic) * y["batch_size"] + \
-                        hr * (table_traffic * y["batch_size"] - avg_table_size)) * y["num_tables"]
-    total_dram_traffic = ((indices_dram_traffic + output_traffic) * y["batch_size"] + \
-                          (1 - hr) * (table_traffic * y["batch_size"] - avg_table_size) + avg_table_size) * y["num_tables"]
+    total_l2_traffic = y["num_tables"] * (
+                            y["batch_size"] * (
+                                table_offsets_traffic + \
+                                offsets_traffic + \
+                                indices_l2_traffic) + \
+                            hr * (
+                                table_traffic * y["batch_size"] - \
+                                avg_table_size
+                            )
+                        )
+    total_dram_traffic = y["num_tables"] * (
+                            y["batch_size"] * (
+                                indices_dram_traffic + \
+                                output_traffic) + \
+                            (1 - hr) * (
+                                table_traffic * y["batch_size"] - \
+                                avg_table_size) + \
+                            avg_table_size
+                        )
 
     # Total compute throughput
     mac_per_warp = y["bag_size"] * 4 * (y["embedding_dim"] // 4)
@@ -152,7 +181,10 @@ def memcpy_predictor(**kwargs):
 
 def mlp_predictor_tensor(x, op_type, backward=False):
     net = get_pretrained_net(op_type, backward)
-    return torch.exp(net(x.cpu()).detach().view(-1)).item()
+    result = torch.exp(net(x.cpu()).detach().view(-1))
+    if result.shape == torch.Size((1,)):
+        result = result.item()
+    return result
 
 
 def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
@@ -289,16 +321,27 @@ def infer(op_type, backward=False, **kwargs):
 def get_kernel_time(op, op_lists):
     kernel_times = []
     if op.name == "aten::linear":
+        # transpose will sometimes trigger a kernel call and sometimes not
+        transpose = None
         for child in op.children:
-            if "aten::t" in child.name:
-                M, N = child.input_shapes[0][0], child.input_shapes[0][1]
-                t = mlp_predictor_kwargs("transpose", backward=False, batch_size=1, M=M, N=N)
-                kernel_times.append(t)
-            else: # addmm
+            if child.name == "aten::t":
+                transpose = child
+            elif "addmm" in child.name:
+                if transpose is not None:
+                    M, N = transpose.input_shapes[0][0], transpose.input_shapes[0][1]
+                    t = mlp_predictor_kwargs("transpose", backward=False, batch_size=1, M=M, N=N)
+                    kernel_times.append(t)
                 op_lists["addmm"].append(child)
                 M, K, N = child.input_shapes[1][0], child.input_shapes[1][1], child.input_shapes[2][1]
                 t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=M, N=N, K=K)
                 kernel_times.append(t)
+                # print(child.name, M, K, N, child.input_shapes, t)
+            elif child.name == "aten::matmul":
+                op_lists["mm"].append(child)
+                M, K, N = child.input_shapes[0][0] * child.input_shapes[0][1], child.input_shapes[0][2], child.input_shapes[1][1] if len(child.input_shapes[1]) > 1 else 1
+                t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=M, N=N, K=K)
+                kernel_times.append(t)
+                # print(child.name, M, K, N, child.input_shapes, t)
     elif op.name == "AddmmBackward":
         addmm_op = op_lists["addmm"].pop()
         M, K, N = addmm_op.input_shapes[1][0], addmm_op.input_shapes[1][1], addmm_op.input_shapes[2][1]
@@ -311,11 +354,39 @@ def get_kernel_time(op, op_lists):
             t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
             kernel_times.append(t2)
         t = t1 + t2
+        # print(" -- ", addmm_op.name, M, K, N, addmm_op.input_shapes, t)
+    elif op.name == "MmBackward":
+        mm_op = op_lists["mm"].pop()
+        M, K, N = mm_op.input_shapes[0][0] * mm_op.input_shapes[0][1], mm_op.input_shapes[0][2], mm_op.input_shapes[1][1] if len(mm_op.input_shapes[1]) > 1 else 1
+        m1, k1, n1 = M, N, K
+        m2, k2, n2 = N, M, K
+        t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m1, N=n1, K=k1)
+        kernel_times.append(t1)
+        t2 = 0
+        if M != N:
+            t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
+            kernel_times.append(t2)
+        t = t1 + t2
+        # print(" -- ", mm_op.name, M, K, N, mm_op.input_shapes, t)
+    elif op.name == "aten::matmul":
+        for child in op.children:
+            if child.name == "aten::reshape": # Equivalent to concat
+                sa = np.prod(child.input_shapes[0][0])
+                sb = np.prod(child.input_shapes[0][1])
+                t = concat_predictor(A_size=sa, B_size=sb)
+                kernel_times.append(t)
+            elif "aten::bmm" in child.name: # aten::bmm
+                op_lists["bmm"].append(child)
+                batch_size, M, K, N = child.input_shapes[0][0], child.input_shapes[0][1], child.input_shapes[0][2], child.input_shapes[1][2]
+                t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=M, N=N, K=K)
+                kernel_times.append(t)
+                # print(child.name, batch_size, M, K, N, child.input_shapes, t)
     elif op.name == "aten::bmm":
         op_lists["bmm"].append(op)
         batch_size, M, K, N = op.input_shapes[0][0], op.input_shapes[0][1], op.input_shapes[0][2], op.input_shapes[1][2]
         t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=M, N=N, K=K)
         kernel_times.append(t)
+        # print(op.name, batch_size, M, K, N, op.input_shapes, t)
     elif op.name == "BmmBackward0":
         bmm_op = op_lists["bmm"].pop()
         batch_size, M, K, N = bmm_op.input_shapes[0][0], bmm_op.input_shapes[0][1], bmm_op.input_shapes[0][2], bmm_op.input_shapes[1][2]
@@ -326,6 +397,7 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(t1)
         kernel_times.append(t2)
         t = t1 + t2
+        # print(" -- ", bmm_op.name, batch_size, M, K, N, bmm_op.input_shapes, t)
     elif op.name == "aten::conv2d":
         op_lists["conv"].append(op)
         batch_size, IC, IH, _ = op.input_shapes[0]
@@ -333,7 +405,6 @@ def get_kernel_time(op, op_lists):
         stride, padding, dilation, is_dw = op.inputs[3][0], op.inputs[4][0], op.inputs[5][0], int(op.inputs[6] != 1)
         t = mlp_predictor_kwargs("conv", backward=False, batch_size=batch_size, H=IH+2*padding, IC=IC, OC=OC, stride=stride, dilation=dilation, FHW=FHW, is_dw=is_dw) # Predictor default is "Valid" (padding = 0)
         kernel_times.append(t)
-        # print(t, "forward", op.input_shapes[0], op.input_shapes[1], op.input_shapes[2], op.inputs[3:])
     elif op.name == "CudnnConvolutionBackward":
         conv_op = op_lists["conv"].pop()
         batch_size, IC, IH, _ = conv_op.input_shapes[0]
@@ -348,7 +419,6 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(t1)
         kernel_times.append(t2)
         t = t1 + t2
-        # print(t, "backward", conv_op.input_shapes[0], conv_op.input_shapes[1], conv_op.input_shapes[2], conv_op.inputs[3:])
     elif op.name == "LookupFunction":
         op_lists["el"].append(op)
         T = op.input_shapes[1][0]
@@ -367,6 +437,7 @@ def get_kernel_time(op, op_lists):
         E = int(el_op.input_shapes[0][0] / T)
         L = int(el_op.input_shapes[2][0] / B / T)
         rows_per_block = max(int(256 / D), 1)
+        print("====", B, E, T, L, D, rows_per_block)
         t = embedding_backward_sgd_predictor(batch_size=B, num_embeddings=E, num_tables=T, bag_size=L, embedding_dim=D, rows_per_block=rows_per_block)
         kernel_times.append(t)
     elif op.name == "aten::batch_norm":
@@ -400,12 +471,12 @@ def get_kernel_time(op, op_lists):
         t = mlp_predictor_kwargs("tril", backward=True, batch_size=batch_size, M=M, N=N, diag=diag)
         kernel_times.append(t)
     # Minor ops staring from here: ----
-    elif op.name == "aten::relu":
+    elif op.name in ["aten::relu", "aten::relu_"]:
         op_lists["relu"].append(op)
         s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
         kernel_times.append(t)
-    elif op.name == "ReluBackward0":
+    elif op.name in ["ReluBackward0", "ReluBackward1"]:
         relu_op = op_lists["relu"].pop()
         s = np.prod(relu_op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
@@ -420,9 +491,29 @@ def get_kernel_time(op, op_lists):
         s = np.prod(sigmoid_op.input_shapes[0])
         t = max(2 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 2 flops per sigmoid backward (f' = f*(1-f)); one read one write
         kernel_times.append(t)
+    elif op.name == "aten::binary_cross_entropy":
+        op_lists["bce"].append(op)
+        s = np.prod(op.input_shapes[0])
+        t = max(7 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 7 flops per bce (log as one); two read one write
+        kernel_times.append(t)
+    elif op.name == "BinaryCrossEntropyBackward":
+        bce_op = op_lists["bce"].pop()
+        s = np.prod(bce_op.input_shapes[0])
+        t = max(4 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per bce backward (E' = (y-t)/y/(1-y)); two read one write
+        kernel_times.append(t)
+    elif op.name == "aten::mse_loss":
+        op_lists["mse"].append(op)
+        s = np.prod(op.input_shapes[0])
+        t = max(3 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 3 flops per mse; two read one write
+        kernel_times.append(t)
+    elif op.name == "MseLossBackward":
+        mse_op = op_lists["mse"].pop()
+        s = np.prod(mse_op.input_shapes[0])
+        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per mse backward (M' = y-t); two read one write
+        kernel_times.append(t)
     elif op.name == "aten::t":
         kernel_times.append(0) # T is handled under addmm
-    elif op.name == "aten::add":
+    elif op.name in ["aten::add", "aten::__and__"]:
         s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
         kernel_times.append(t)
@@ -439,6 +530,31 @@ def get_kernel_time(op, op_lists):
         s = np.prod(op.input_shapes[0])
         t = memcpy_predictor(tensor_size=s)
         kernel_times.append(t)
+    elif op.name == "aten::ones_like":
+        s = np.prod(op.children[0].input_shapes[0])
+        t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
+        kernel_times.append(t)
+    # Grad ops starting from here: ----
+    elif op.name == "torch::autograd::AccumulateGrad": # Mismatch: empty + clone, while in trace it's add
+        s = np.prod(op.children[0].input_shapes[0])
+        t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
+        t = 0 if s > 5e6 else t # Tmp solution to avoid dense add for embedding table lookup
+        kernel_times.append(t)
+    elif op.name == "Optimizer.step#SGD.step":
+        for child in op.children:
+            s = np.prod(child.input_shapes[0])
+            if s > 5e6:
+                continue # Tmp solution to avoid dense add for embedding table lookup
+            t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
+            kernel_times.append(t)
+    elif op.name == "Optimizer.zero_grad#SGD.zero_grad": # Mismatch: empty, while in trace it's zero
+        # for child in op.children:
+        #     s = np.prod(child.input_shapes[0])
+        #     if s > 5e6:
+        #         continue # Tmp solution to avoid dense add for embedding table lookup
+        #     t = memcpy_predictor(tensor_size=s)
+        #     kernel_times.append(t)
+        kernel_times.append(0)
     # print(op.name, op.input_shapes, t)
     return kernel_times
 
@@ -447,12 +563,16 @@ def get_kernel_time(op, op_lists):
 def get_e2e_time(graph, overheads):
     nodes = graph.get_nodes(clean=True)
     sorted_nodes = sorted(nodes.items(), key=lambda x: x[0])
+
     op_lists = {
         "addmm": [],
+        "bce": [],
         "bmm": [],
         "bn": [],
         "conv": [],
         "el": [],
+        "mm": [],
+        "mse": [],
         "relu": [],
         "sigmoid": [],
         "tril": [],
@@ -461,18 +581,25 @@ def get_e2e_time(graph, overheads):
     gpu_time = 0
     gpu_active_time = 0
 
-    consider = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", \
+    consider = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten::matmul", "MmBackward", \
                 "aten::conv2d", "CudnnConvolutionBackward", \
                 "LookupFunction", "LookupFunctionBackward", \
                 "aten::batch_norm", "CudnnBatchNormBackward", \
                 "aten::index", "IndexBackward", \
-                "aten::relu", "ReluBackward0", \
+                "aten::relu", "aten::relu_", "ReluBackward0", "ReluBackward1", \
                 "aten::sigmoid", "SigmoidBackward", \
-                "aten::add", "aten::cat", "aten::sum", "aten::to"]
+                "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
+                "aten::mse_loss", "MseLossBackward", \
+                "aten::add", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
+                "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
+
+    skip = ["aten::ones", "SliceBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
 
     for _, op in sorted_nodes:
         is_op = (op.type == NodeType.OPERATOR and op.parent.type != NodeType.OPERATOR)
         if is_op:
+            if op.name in skip:
+                continue
             cpu_time += overheads["t1"][0] # T1: between two ops
             if op.name in overheads["launches"].keys(): # Has kernel calls
                 cpu_time += overheads["t2"][op.name][0] # T2: before the first kernel call
@@ -507,6 +634,7 @@ def get_e2e_time(graph, overheads):
                 cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
+            # print(op.name, cpu_time, gpu_time, op.input_shapes)
     total_time = max(gpu_time, cpu_time)
 
     return total_time, gpu_active_time

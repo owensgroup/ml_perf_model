@@ -1,7 +1,7 @@
-import argparse, json
+import argparse, json, os
 import numpy as np
 from analysis.trace_utils import *
-from analysis.utils import PM_HOME, GPU_NAME, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD
+from analysis.utils import PM_HOME, GPU_NAME, KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Process trace files and get stats.")
@@ -10,13 +10,15 @@ if __name__ == '__main__':
     parser.add_argument("--iters", type=int, default=10)
     args = parser.parse_args()
 
-    model_name = "{}_{}".format(args.model_name, args.num_gpus)
-    trace_file = "{}/data/{}/e2e/{}.json".format(PM_HOME, GPU_NAME, model_name)
-    trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file="{}/data/{}/e2e/{}_trimmed.json".format(PM_HOME, GPU_NAME, model_name))
+    trace_file = "{}/data/{}/e2e/{}/{}.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
+    trimmed_trace_file="{}/data/{}/e2e/{}/{}_trimmed.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
+    if not os.path.exists(trimmed_trace_file):
+        trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file=trimmed_trace_file)
     with open(trimmed_trace_file) as f:
         trace = json.load(f)
 
-    roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker="DLRM ")
+    module_marker = "DLRM " if "DLRM" in args.model_name else "## Forward ##"
+    roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker=module_marker)
     print("Number of iterations: {}".format(args.iters))
     print('Num of events: {}, num of root events: {}, num of caller/callee pairs: {}'.format(len(trace['traceEvents']), len(roots), len(cc)))
     print('Sum of dataloading time: {} us'.format(sum_skipped_intervals))
@@ -93,7 +95,7 @@ if __name__ == '__main__':
             for x, _ in launches:
                 if x.name() not in overheads['independent']['t4']:
                     overheads['independent']['t4'][x.name()] = []
-                overheads['independent']['t4'][x.name()].append(x.duration() - CPU_EVENT_OVERHEAD - GPU_EVENT_OVERHEAD) # T4 has 1 overhead
+                overheads['independent']['t4'][x.name()].append(KERNEL_LAUNCH_LENGTH - CPU_EVENT_OVERHEAD - GPU_EVENT_OVERHEAD) # T4 has 1 overhead
             
             if op.name() not in launches_dict.keys():
                 launches_dict[op.name()] = []
@@ -145,7 +147,7 @@ if __name__ == '__main__':
         "launches": launches_dict
     }
 
-    overhead_name = "{}/data/{}/e2e/{}_overheads.json".format(PM_HOME, GPU_NAME, model_name)
+    overhead_name = "{}/data/{}/e2e/{}/{}_overheads.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
     print("Export overheads to JSON...")
     with open(overhead_name, "w") as f:
         json.dump(o, f)

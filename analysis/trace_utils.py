@@ -7,7 +7,7 @@ LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
 
 
 def is_module(op):
-    return any([x in op.name() for x in LABEL_MARKERS])
+    return any([op.name().startswith(x) for x in LABEL_MARKERS])
 
 
 # From Louis. Trim a long trace so that it eases the ATC processing
@@ -77,16 +77,21 @@ def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None
     with open(file_name) as trace_file:
         trace = json.load(trace_file)
         start_idx, end_idx = 0, -1
-        dataloader_count = 0
+        marker_count = 0
         t = trace["traceEvents"] if isinstance(trace, dict) else trace
+
+        if 'DLRM' in file_name:
+            marker = 'DataLoader'
+        else:
+            marker = '## Forward ##'
         for idx, x in enumerate(t):
-            if 'DataLoader' in x['name']:
-                if dataloader_count == skip_iters:
+            if marker in x['name']:
+                if marker_count == skip_iters:
                     start_idx = idx
-                if dataloader_count == skip_iters + iters:
+                if marker_count == skip_iters + iters:
                     end_idx = idx
                     break
-                dataloader_count += 1
+                marker_count += 1
         assert end_idx != -1, "Trace too short!"
         trimmed_trace = [x for x in t if x['ts'] >= t[start_idx]["ts"] and x['ts'] < t[end_idx]["ts"]] # Don't include the last Dataloader
 
@@ -433,7 +438,7 @@ def get_event_all_kernel_launches(event):
     def get_launches(event, lst):
         nonlocal count
         if len(event.children) == 0:
-            if event.category() == 'Runtime':
+            if event.name != "cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags" and event.category() == 'Runtime':
                 lst.append((event, count))
                 count = 0
             return

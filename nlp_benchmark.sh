@@ -54,22 +54,24 @@ then
     echo "-------------------"
     echo "Using GPUS: "$_gpus
     echo "-------------------"
-    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}_${_ng}.log"
+    mkdir -p "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}"
+    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}.log"
     outp="${model_name}_benchmark.prof"
     echo "-------------------------------"
     echo "Running benchmark (log file: $outf)"
     echo "-------------------------------"
-    cmd="python train.py -data_pkl m30k_deen_shr.pkl -embs_share_weight -proj_share_weight -label_smoothing -output_dir output -b 256 -warmup 5000 -profile -no_eval"
-    if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json" ];
+    cmd="python train.py -data_pkl m30k_deen_shr.pkl -embs_share_weight -proj_share_weight -label_smoothing -output_dir output -b 256 -warmup 5000 -no_eval"
+    if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd -epoch 1 -collect_execution_graph -truncate &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}_${_ng}_graph.json"
+      eval "$cmd -epoch 1 -collect_execution_graph -profile &> /dev/null" # Collect execution graph
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json"
     fi
-    eval "$cmd -epoch 1 > $outf"
+    eval "$cmd -epoch 1 -profile > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+    eval "$cmd -epoch 1 > $outf" # No profile to get E2E time
     cd ..
   done
 fi
