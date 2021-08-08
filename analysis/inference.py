@@ -299,7 +299,8 @@ def infer_from_model(op_type, backward=False):
     with open("{}/analysis/ml_predictors/{}/best_config_{}.json".format(PM_HOME, GPU_NAME, suffix), "r") as f:
         best_config = json.load(f)
     estimated_time = mlp_predictor_tensor(x, op_type, backward=backward)
-    error = abs_err(estimated_time, torch.exp(y.cpu().detach()).view(-1))
+    real_time = torch.exp(y.cpu().detach()).view(-1)
+    error = abs_err(estimated_time, real_time)
     print("{}: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(suffix, gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
     return best_config, error
 
@@ -437,7 +438,6 @@ def get_kernel_time(op, op_lists):
         E = int(el_op.input_shapes[0][0] / T)
         L = int(el_op.input_shapes[2][0] / B / T)
         rows_per_block = max(int(256 / D), 1)
-        print("====", B, E, T, L, D, rows_per_block)
         t = embedding_backward_sgd_predictor(batch_size=B, num_embeddings=E, num_tables=T, bag_size=L, embedding_dim=D, rows_per_block=rows_per_block)
         kernel_times.append(t)
     elif op.name == "aten::batch_norm":
@@ -513,7 +513,7 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(t)
     elif op.name == "aten::t":
         kernel_times.append(0) # T is handled under addmm
-    elif op.name in ["aten::add", "aten::__and__"]:
+    elif op.name in ["aten::add", "aten::add_", "aten::__and__"]:
         s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
         kernel_times.append(t)
@@ -590,7 +590,7 @@ def get_e2e_time(graph, overheads):
                 "aten::sigmoid", "SigmoidBackward", \
                 "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
                 "aten::mse_loss", "MseLossBackward", \
-                "aten::add", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
+                "aten::add", "aten::add_", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
                 "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
 
     skip = ["aten::ones", "SliceBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)

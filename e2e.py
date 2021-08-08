@@ -26,4 +26,5 @@ if __name__ == '__main__':
     total_time, gpu_active_time = get_e2e_time(graph, overheads)
     print("Total time: {:.2f}, GPU time: {:.2f}".format(total_time, gpu_active_time))
     if real_e2e_time != -1:
+        print("Reference time: {:.2f}".format(real_e2e_time * 1000))
         print("Prediction error: {:.2f}%".format(abs(total_time / real_e2e_time / 1000 - 1) * 100))

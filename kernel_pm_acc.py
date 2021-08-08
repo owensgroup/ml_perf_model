@@ -12,7 +12,7 @@ if __name__ == '__main__':
         pass_list = ['forward', 'backward']
     else:
         op_list = [args.op_type]
-        pass_list = [args.backward]
+        pass_list = ['backward' if args.backward else 'forward']
 
     for op_type in op_list:
         for p in pass_list:
