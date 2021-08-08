@@ -69,7 +69,7 @@ then
     fi
 elif [ "$op_type" == "conv" ];
 then
-    header="kernel_name,batch_size,H,W,IC,OC,stride,dilation,FHW,is_dw"
+    header="kernel_name,batch_size,H,W,IC,OC,stride,dilation,FH,FW,is_dw"
     if [ "$is_big" == "1" ];
     then
         param_file_name="./bench_params/conv_params_big.txt"
@@ -96,10 +96,6 @@ elif [ "$op_type" == "bn" ];
 then
     header="kernel_name,batch_size,H,W,OC"
     param_file_name="./bench_params/bn_params.txt"
-elif [ "$op_type" == "pool" ];
-then
-    header="kernel_name,batch_size,H,W,OC,stride,dilation,FHW,is_maxpool"
-    param_file_name="./bench_params/pool_params.txt"
 else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="./bench_params/memcpy_params.txt"
@@ -162,8 +158,8 @@ do
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
     elif [ "$op_type" == "conv" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]} --stride ${array[5]} --dilation ${array[6]} --FHW ${array[7]}"
-        if [ "${array[8]}" == "1" ];
+        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]} --stride ${array[5]} --dilation ${array[6]} --FH ${array[7]} --FW ${array[8]}"
+        if [ "${array[9]}" == "1" ];
         then
             bench_param="${bench_param} --is-dw"
         fi
@@ -182,14 +178,7 @@ do
     elif [ "$op_type" == "bn" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --OC ${array[3]}"
-    elif [ "$op_type" == "pool" ];
-    then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --OC ${array[3]} --stride ${array[4]} --dilation ${array[5]} --FHW ${array[6]}"
-        if [ "${array[7]}" == "1" ];
-        then
-            bench_param="${bench_param} --is-maxpool"
-        fi
-    else # Memcpy
+   else # Memcpy
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]}"
     fi
     if [ "$is_forward" == "0" ];

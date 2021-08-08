@@ -192,8 +192,8 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
         n_feature = 4
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N", "K"]]
     elif op_type == "conv":
-        n_feature = 8
-        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FHW', 'is_dw']]
+        n_feature = 9
+        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FH', 'FW', 'is_dw']]
     elif op_type == "transpose":
         n_feature = 3
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N"]]
@@ -402,24 +402,17 @@ def get_kernel_time(op, op_lists):
     elif op.name == "aten::conv2d":
         op_lists["conv"].append(op)
         batch_size, IC, IH, _ = op.input_shapes[0]
-        OC, FHW = op.input_shapes[1][0], op.input_shapes[1][2]
-        stride, padding, dilation, is_dw = op.inputs[3][0], op.inputs[4][0], op.inputs[5][0], int(op.inputs[6] != 1)
-        t = mlp_predictor_kwargs("conv", backward=False, batch_size=batch_size, H=IH+2*padding, IC=IC, OC=OC, stride=stride, dilation=dilation, FHW=FHW, is_dw=is_dw) # Predictor default is "Valid" (padding = 0)
+        OC, FH, FW = op.input_shapes[1][0], op.input_shapes[1][2], op.input_shapes[1][3]
+        stride, padding_h, dilation, is_dw = op.inputs[3][0], op.inputs[4][0], op.inputs[5][0], int(op.inputs[6] != 1)
+        t = mlp_predictor_kwargs("conv", backward=False, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
         kernel_times.append(t)
     elif op.name == "CudnnConvolutionBackward":
         conv_op = op_lists["conv"].pop()
         batch_size, IC, IH, _ = conv_op.input_shapes[0]
-        OC, FHW = conv_op.input_shapes[1][0], conv_op.input_shapes[1][2]
-        stride, _, dilation, is_dw = conv_op.inputs[3][0], conv_op.inputs[4][0], conv_op.inputs[5][0], int(conv_op.inputs[6] != 1)
-        _, OC, OH, _ = conv_op.output_shapes[0]
-        batch_size1, IC1, H1, OC1, FHW1, stride1, dilation1, is_dw1 = IC, batch_size, IH, OC, OH, 1, stride, is_dw # For weights (OC, IC, FH, FW)
-        padding = 2 * (FHW - 1) # Padding for full-conv
-        batch_size2, IC2, H2, OC2, FHW2, stride2, dilation2, is_dw2 = batch_size, OC, OH + padding, IC, FHW, 1, stride, is_dw # For inputs (N, IC, IH, IW)
-        t1 = mlp_predictor_kwargs("conv", backward=False, batch_size=batch_size1, H=H1, IC=IC1, OC=OC1, stride=stride1, dilation=dilation1, FHW=FHW1, is_dw=is_dw1)
-        t2 = mlp_predictor_kwargs("conv", backward=False, batch_size=batch_size2, H=H2, IC=IC2, OC=OC2, stride=stride2, dilation=dilation2, FHW=FHW2, is_dw=is_dw2)
-        kernel_times.append(t1)
-        kernel_times.append(t2)
-        t = t1 + t2
+        OC, FH, FW = conv_op.input_shapes[1][0], conv_op.input_shapes[1][2], conv_op.input_shapes[1][3]
+        stride, padding_h, dilation, is_dw = conv_op.inputs[3][0], conv_op.inputs[4][0], conv_op.inputs[5][0], int(conv_op.inputs[6] != 1)
+        t = mlp_predictor_kwargs("conv", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
+        kernel_times.append(t)
     elif op.name == "LookupFunction":
         op_lists["el"].append(op)
         T = op.input_shapes[1][0]

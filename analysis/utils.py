@@ -218,7 +218,7 @@ def get_pretrained_net(op_type, backward=False):
     if op_type == "fully_connected":
         n_feature = 4
     if op_type == "conv":
-        n_feature = 8
+        n_feature = 9
     elif op_type == "transpose":
         n_feature = 3
     elif op_type == "bn":
@@ -268,7 +268,7 @@ def get_data(op_type, backward=False, gpu=True):
         })
     elif op_type == 'conv':
         data = data[data['kernel_name'].str.contains("at::") == False] # Exclude ATen kernels for training
-        data = data[['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FHW', 'is_dw', 'kernel_runtime']].groupby(['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FHW', 'is_dw'], as_index=False).sum() # Sum up all kernels
+        data = data[['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw', 'kernel_runtime']].groupby(['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw'], as_index=False).sum() # Sum up all kernels
         input_df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
             'H': np.log(data['H']),
@@ -276,7 +276,8 @@ def get_data(op_type, backward=False, gpu=True):
             'OC': np.log(data['OC']),
             'stride': data['stride'],
             'dilation': data['dilation'],
-            'FHW': data['FHW'],
+            'FH': data['FH'],
+            'FW': data['FW'],
             'is_dw': data['is_dw'],
         })
     elif op_type == 'transpose':
