@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get model name
-model_name=${1:-resnet50}
+model_name=$1
 list="alexnet vgg11 inception_v3 resnet18 resnet50 resnext101 wide_resnet50_2 mnasnet_a1 mnasnet0_5 \
         squeezenet1_0 densenet121 mobilenet_v1 mobilenet_v2 shufflenet unet unet3d"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
@@ -11,6 +11,7 @@ else
     echo "Model name not supported!"
     exit
 fi
+mb_size=$2
 
 gpu="1"
 ngpus="1" #"1 2 4"
@@ -45,17 +46,17 @@ then
     echo "Using GPUS: "$_gpus
     echo "-------------------"
     mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
-    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}.log"
+    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}.log"
     outp="convnet_benchmark.prof"
     echo "-------------------------------"
     echo "Running benchmark (log file: $outf)"
     echo "-------------------------------"
-    cmd="python -u convnet-benchmark-py/benchmark.py --arch ${model_name}"
-    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json" ];
+    cmd="python -u convnet-benchmark-py/benchmark.py --arch ${model_name} --batch-size ${mb_size}"
+    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
       eval "$cmd --num-steps 2 --collect-execution-graph --profile &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json"
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
     eval "$cmd --num-steps ${num_steps} --profile > $outf" # Profile to get trace
     # move profiling file(s)
@@ -63,6 +64,6 @@ then
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
     eval "$cmd --num-steps ${num_steps} > $outf" # No profile to get E2E time
     min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $4) best=$4} END{print best}')
-    echo "Min time per iteration = $min"
+    echo "Min time per iteration = $min ms"
   done
 fi

@@ -1,4 +1,4 @@
-import argparse, json, os
+import argparse, json, os, re
 import numpy as np
 from analysis.trace_utils import *
 from analysis.utils import PM_HOME, GPU_NAME, KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD
@@ -7,11 +7,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser("Process trace files and get stats.")
     parser.add_argument("--model-name", type=str, required=True)
     parser.add_argument("--num-gpus", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--iters", type=int, default=10)
     args = parser.parse_args()
+    print("======= {}, {} GPU(s), batch size: {} =======".format(args.model_name, args.num_gpus, args.batch_size))
 
-    trace_file = "{}/data/{}/e2e/{}/{}.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
-    trimmed_trace_file="{}/data/{}/e2e/{}/{}_trimmed.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
+    trace_file = "{}/data/{}/e2e/{}/{}_{}.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
+    trimmed_trace_file="{}/data/{}/e2e/{}/{}_{}_trimmed.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
+    if not os.path.exists(trace_file):
+        print("Trace file doesn't exist! Please run the benchmark first.")
+        exit(1)
     if not os.path.exists(trimmed_trace_file):
         trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file=trimmed_trace_file)
     with open(trimmed_trace_file) as f:
@@ -45,7 +50,34 @@ if __name__ == '__main__':
     for stream, v in dt_breakdown.items():
         flatten[stream] = {}
         get_major_device_results(device_runtime, dt_breakdown[stream], flatten[stream])
-        print("Stream {} average per-batch time: {:.2f} us".format(stream, flatten[stream]["total"]["runtime"] / args.iters))
+        print("  Stream {}: average per-batch time: {:.2f} us".format(stream, flatten[stream]["total"]["runtime"] / args.iters))
+        runtime_no_pf = -1
+        log_file = "{}/data/{}/e2e/{}/1_{}.log".format(PM_HOME, GPU_NAME, args.model_name, args.batch_size)
+        if os.path.exists(log_file):
+            for line in open(log_file, 'r'):
+                if re.search("Overall per-batch", line):
+                    runtime_no_pf = float(line.split(' ')[4]) * 1000 * args.iters # us
+
+            per_op = {}
+            total = 0.0
+            for k, vv in flatten[stream].items():
+                if k == 'total' or 'DLRM ' in k[0] or 'module' in k[0]: # Skip all labels
+                    continue
+                k0 = k[0] if '#' not in k[0] else k[0].split('#')[0]
+                if k0 not in per_op.keys():
+                    per_op[k0] = 0.0
+                per_op[k0] += vv['runtime']
+                total += vv['runtime']
+
+            tmp = sorted(per_op.items(), key=lambda x: x[1], reverse=True)
+            op = [x[0] for x in tmp]
+            p = [x[1] / total for x in tmp]
+
+            active_time_perc = flatten[stream]['total']['runtime'] / runtime_no_pf
+            idle_time_perc = 1 - flatten[stream]['total']['runtime'] / runtime_no_pf
+            print("  Stream {}: active time perc {:.2f}%, idle time perc {:.2f}%".format(
+                stream, active_time_perc * 100, idle_time_perc * 100))
+        
         gpu_time += flatten[stream]["total"]["runtime"] # TODO: Deal with stream overlapping.
     print("Total per-batch GPU time: {:.2f} us".format(gpu_time / args.iters))
 
@@ -147,7 +179,7 @@ if __name__ == '__main__':
         "launches": launches_dict
     }
 
-    overhead_name = "{}/data/{}/e2e/{}/{}_overheads.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
+    overhead_name = "{}/data/{}/e2e/{}/{}_{}_overheads.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
     print("Export overheads to JSON...")
     with open(overhead_name, "w") as f:
         json.dump(o, f)

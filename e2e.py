@@ -7,17 +7,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.")
     parser.add_argument("--model-name", type=str, required=True)
     parser.add_argument("--num-gpus", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=2048)
     args = parser.parse_args()
 
-    exec_graph_file = "{}/data/{}/e2e/{}/{}_graph.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
+    exec_graph_file = "{}/data/{}/e2e/{}/{}_{}_graph.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
-    overheads_file = "{}/data/{}/e2e/{}/{}_overheads.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
+    overheads_file = "{}/data/{}/e2e/{}/{}_{}_overheads.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
     with open(overheads_file) as f:
         overheads = json.load(f)
 
     real_e2e_time = -1
-    log_file = "{}/data/{}/e2e/{}/{}.log".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus)
+    log_file = "{}/data/{}/e2e/{}/{}_{}.log".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
     if os.path.exists(log_file):
         for line in open(log_file, 'r'):
             if re.search("Overall per-batch", line):

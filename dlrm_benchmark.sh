@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Get DLRM model name
-model_name=${1:-DLRM_default}
+model_name=$1
 list="DLRM_vipul DLRM_default DLRM_MLPerf"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
@@ -14,9 +14,10 @@ else
     echo "Model name not supported!"
     exit
 fi
+mb_size=$2
 
 # check if extra argument is passed to the test
-if [[ $# == 2 ]]; then
+if [[ $# == 3 ]]; then
     dlrm_extra_option=$2
 else
     dlrm_extra_option=""
@@ -42,11 +43,9 @@ dlrm_pt_bin="python dlrm/dlrm_s_pytorch.py" # fil-profile run
 export GPU_NAME=`cat /tmp/gpu_name.txt`
 
 # ----------------------- Model param -----------------------
-mb_size=2048
 _args=""
 if [[ $model_name == "DLRM_vipul" ]]; # From Vipul
 then
-    mb_size=256 #2048 #1024 #512 #256
     num_batches=50
     _args=" --data-generation=random\
             --arch-mlp-bot=13-512-256-64-16\
@@ -59,7 +58,6 @@ then
             --num-workers=2 "
 elif [[ $model_name == "DLRM_default" ]]; # DLRM original
 then
-    mb_size=2048 #1024 #512 #256
     num_batches=100
     _args=" --data-generation=random\
             --processed-data-file=/nvme/deep-learning/dlrm_random\
@@ -75,7 +73,6 @@ then
             --num-worker=0 "
 elif [[ $model_name == "DLRM_MLPerf" ]]; # DLRM_MLPerf
 then
-    mb_size=2048
     num_batches=100
     _args=" --data-generation=dataset\
             --data-set=terabyte\
@@ -121,17 +118,17 @@ then
     echo "Using GPUS: "$_gpus
     echo "-------------------"
     mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
-    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}.log"
+    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}.log"
     outp="dlrm_s_pytorch.prof"
     echo "-------------------------------"
     echo "Running PT (log file: $outf)"
     echo "-------------------------------"
     cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
-    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json" ];
+    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
       eval "$cmd --num-batches 2 --collect-execution-graph --enable-profiling &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json"
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
     fi
     eval "$cmd --num-batches ${num_batches} --enable-profiling > $outf" # Profile to get trace
     # move profiling file(s)
@@ -139,6 +136,6 @@ then
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
     eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
     min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $8) best=$8} END{print best}')
-    echo "Min time per iteration = $min"
+    echo "Min time per iteration = $min ms"
   done
 fi
