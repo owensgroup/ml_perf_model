@@ -527,6 +527,14 @@ def get_kernel_time(op, op_lists):
         s = np.prod(op.children[0].input_shapes[0])
         t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
         kernel_times.append(t)
+    elif op.name == "aten::max_pool2d" or op.name == "aten::avg_pool2d":
+        s = np.prod(op.output_shapes[0])
+        t = max((np.prod(op.inputs[1]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
+        kernel_times.append(t)
+    elif op.name == "MaxPool2DWithIndicesBackward" or op.name == "AvgPool2DBackward":
+        s = np.prod(op.children[0].output_shapes[0])
+        t = max((2 * np.prod(op.children[0].inputs[2]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
+        kernel_times.append(t)
     # Grad ops starting from here: ----
     elif op.name == "torch::autograd::AccumulateGrad": # Mismatch: empty + clone, while in trace it's add
         s = np.prod(op.children[0].input_shapes[0])
@@ -553,7 +561,7 @@ def get_kernel_time(op, op_lists):
 
 
 # Infer E2E time from an execution graph and an overhead file
-def get_e2e_time(graph, overheads):
+def get_e2e_time(graph, overheads, debug=False, is_dlrm=False):
     nodes = graph.get_nodes(clean=True)
     sorted_nodes = sorted(nodes.items(), key=lambda x: x[0])
 
@@ -583,19 +591,32 @@ def get_e2e_time(graph, overheads):
                 "aten::sigmoid", "SigmoidBackward", \
                 "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
                 "aten::mse_loss", "MseLossBackward", \
+                "aten::avg_pool2d", "AvgPool2D", \
+                "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
                 "aten::add", "aten::add_", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
                 "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
 
     skip = ["aten::ones", "SliceBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
 
+    forward_found = False
     for _, op in sorted_nodes:
+        if is_dlrm:
+            if op.name == "DLRM forward":
+                forward_found = True
+            if not forward_found:
+                continue
         is_op = (op.type == NodeType.OPERATOR and op.parent.type != NodeType.OPERATOR)
         if is_op:
             if op.name in skip:
                 continue
             cpu_time += overheads["t1"][0] # T1: between two ops
+            if debug:
+                print(" ", op.name, "--------")
+                print("    t1:", overheads["t1"][0])
             if op.name in overheads["launches"].keys(): # Has kernel calls
                 cpu_time += overheads["t2"][op.name][0] # T2: before the first kernel call
+                if debug:
+                    print("    t2:", overheads["t2"][op.name][0])
                 launches = overheads["launches"][op.name]
                 if op.name in consider:
                     t = get_kernel_time(op, op_lists) # Get kernel time
@@ -611,23 +632,36 @@ def get_e2e_time(graph, overheads):
                         # Kernel launches like cudaStreamSynchronize do not have actual kernel calls
                         if idx < len(t):
                             gpu_time += t[idx]
+                            if debug:
+                                print("    kernel:", t[idx])
 
-                        if "aten::to" == op.name and idx != 0:
-                            cpu_time += t[0] # The time cudaStreamSynchronize in aten::to is tied to the memcpy kernel
+                        if "aten::to" == op.name and len(op.children) == 0:
+                            cpu_time += 2 # Some aten::to doesn't have children
                         else:
                             cpu_time += t4
 
                         # Num of T5 is num of T4 - 1
                         if idx < len(launches) - 1:
                             cpu_time += t5
+                        if debug:
+                            print("    t4:", t4)
+                            print("    t5:", t5)
                 else:
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
-                    cpu_time += overheads["t5"][op.name][0] * (len(launches) - 1) # T5
                     cpu_time += np.sum([overheads["t4"][x][0] for x in launches]) # T4
+                    cpu_time += overheads["t5"][op.name][0] * (len(launches) - 1) # T5
+                    if debug:
+                        print("    t4:", np.sum([overheads["t4"][x][0] for x in launches]))
+                        print("    t5:", overheads["t5"][op.name][0] * (len(launches) - 1))
                 cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
+                if debug:
+                    print("    t3:", overheads["t3"][op.name][0])
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
-            # print(op.name, cpu_time, gpu_time, op.input_shapes)
+                if debug:
+                    print("    t5:", overheads["t5"][op.name][0])
+            if debug:
+                print(op.name, cpu_time, gpu_time, op.input_shapes)
     total_time = max(gpu_time, cpu_time)
 
     return total_time, gpu_active_time

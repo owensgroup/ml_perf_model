@@ -438,8 +438,11 @@ def get_event_all_kernel_launches(event):
     def get_launches(event, lst):
         nonlocal count
         if len(event.children) == 0:
-            if event.name != "cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags" and event.category() == 'Runtime':
-                lst.append((event, count))
+            if event.category() == 'Runtime' and \
+                    event.name() not in ["cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags", \
+                                        "cudaStreamSynchronize", \
+                                        "cudaPeakAtLastError"]:
+                lst.append((event, count-1))
                 count = 0
             return
         for r in event.children:

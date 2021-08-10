@@ -9,6 +9,7 @@ if __name__ == '__main__':
     parser.add_argument("--num-gpus", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2048)
     args = parser.parse_args()
+    print("======= {}, {} GPU(s), batch size: {} =======".format(args.model_name, args.num_gpus, args.batch_size))
 
     exec_graph_file = "{}/data/{}/e2e/{}/{}_{}_graph.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
     with open(exec_graph_file) as f:

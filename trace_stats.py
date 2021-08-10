@@ -110,13 +110,13 @@ if __name__ == '__main__':
         count = 0
         for x, y in tmp_launches:
             count += y
-            if x.name() in ["cudaMemcpyAsync", "cudaLaunchKernel", "cudaStreamSynchronize"]:
+            if x.name() in ["cudaMemcpyAsync", "cudaLaunchKernel"]:
                 launches.append((x, count))
                 count = 0
         
         if len(launches) > 0:
             overheads[name]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
-            trailing_sub_event_count = sub_event_count - sum([y for _, y in launches])
+            trailing_sub_event_count = sub_event_count - sum([y+1 for _, y in launches]) # And kernel launches themselves
             overheads[name]['t3'].append(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD) # T3 has all overheads after the last launch
             if len(launches) > 1:
                 overheads[name]['t5'].extend([launches[i][0].start_time() - launches[i-1][0].end_time() - launches[i][1] * CPU_EVENT_OVERHEAD for i in range(1, len(launches))]) # T5 has all overheads between each pair of launches
@@ -134,22 +134,26 @@ if __name__ == '__main__':
                 for x, _ in launches:
                     launches_dict[op.name()].append(x.name())
         else:
+            if name not in overheads.keys():
+                overheads[name] = {}
             # If an op doesn't have kernel calls it has only one T5 overhead representing its CPU duration
-            if op.name() not in overheads[name].keys():
+            if 't5' not in overheads[name].keys():
                 overheads[name]['t5'] = []
-            overheads[name]['t5'].append(op.duration() - sub_event_count * CPU_EVENT_OVERHEAD) # Remove cpu overhead for all sub events
+            if name == "aten::to":
+                continue # Some aten::to doesn't have children
+            else:
+                overheads[name]['t5'].append(op.duration() - sub_event_count * CPU_EVENT_OVERHEAD) # Remove cpu overhead for all sub events
 
-        if i == 0:
-            continue
-        prev_op = ops[i-1]
-        
-        # Only consider adjacent ops under the SAME MODULE
-        if prev_op.parent != op.parent:
-            continue
+        if i > 0:
+            prev_op = ops[i-1]
             
-        gap = op.start_time() - prev_op.end_time()
-        if gap < 200: # Skip dataloading gaps
-            overheads['independent']['t1'].append(gap - CPU_EVENT_OVERHEAD) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
+            # Only consider adjacent ops under the SAME MODULE
+            if prev_op.parent != op.parent:
+                continue
+                
+            gap = op.start_time() - prev_op.end_time()
+            if gap < 200: # Skip dataloading gaps
+                overheads['independent']['t1'].append(gap - CPU_EVENT_OVERHEAD) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
 
     # # T1: mean ~= 21, std ~= 20
     # from analysis.utils import histogram

@@ -67,9 +67,9 @@ python kernel_pm_acc.py
 
 ### Execution graph extraction and profiler trace generation
 ```bash
-./dlrm_benchmark.sh <model_name> # Default is MLPerf
-./convnet_benchmark.sh <model_name> # Default is resnet50
-./nlp_benchmark.sh <model_name> # Default is transformer
+./dlrm_benchmark.sh <model_name> <batch_size>
+./convnet_benchmark.sh <model_name> <batch_size>
+./nlp_benchmark.sh <model_name> <batch_size>
 ```
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
 
