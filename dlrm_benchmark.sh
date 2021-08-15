@@ -36,7 +36,7 @@ common_args="   --use-gpu\
                 --pin-memory "
 
 numa_cmd="numactl --physcpubind=0-$((ncores-1)) -m $nsockets" #run on one socket, without HT
-dlrm_pt_bin="python dlrm/dlrm_s_pytorch.py" # fil-profile run
+dlrm_pt_bin="python 3rdparty/dlrm/dlrm_s_pytorch.py" # fil-profile run
 
 # Get GPU type
 ./get_gpu_name.sh

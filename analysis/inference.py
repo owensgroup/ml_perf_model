@@ -561,7 +561,7 @@ def get_kernel_time(op, op_lists):
 
 
 # Infer E2E time from an execution graph and an overhead file
-def get_e2e_time(graph, overheads, debug=False, is_dlrm=False):
+def get_e2e_time(graph, overheads, module_marker, debug=False):
     nodes = graph.get_nodes(clean=True)
     sorted_nodes = sorted(nodes.items(), key=lambda x: x[0])
 
@@ -600,11 +600,10 @@ def get_e2e_time(graph, overheads, debug=False, is_dlrm=False):
 
     forward_found = False
     for _, op in sorted_nodes:
-        if is_dlrm:
-            if op.name == "DLRM forward":
-                forward_found = True
-            if not forward_found:
-                continue
+        if op.name == module_marker:
+            forward_found = True
+        if not forward_found:
+            continue
         is_op = (op.type == NodeType.OPERATOR and op.parent.type != NodeType.OPERATOR)
         if is_op:
             if op.name in skip:

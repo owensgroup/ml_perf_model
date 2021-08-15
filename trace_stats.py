@@ -11,9 +11,11 @@ if __name__ == '__main__':
     parser.add_argument("--iters", type=int, default=10)
     args = parser.parse_args()
     print("======= {}, {} GPU(s), batch size: {} =======".format(args.model_name, args.num_gpus, args.batch_size))
+    prefix = "{}/data/{}/e2e/{}/{}_{}".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
+    module_marker = "DLRM " if "DLRM" in args.model_name else "## Forward ##"
 
-    trace_file = "{}/data/{}/e2e/{}/{}_{}.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
-    trimmed_trace_file="{}/data/{}/e2e/{}/{}_{}_trimmed.json".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size)
+    trace_file = "{}.json".format(prefix)
+    trimmed_trace_file="{}_trimmed.json".format(prefix)
     if not os.path.exists(trace_file):
         print("Trace file doesn't exist! Please run the benchmark first.")
         exit(1)
@@ -22,7 +24,6 @@ if __name__ == '__main__':
     with open(trimmed_trace_file) as f:
         trace = json.load(f)
 
-    module_marker = "DLRM " if "DLRM" in args.model_name else "## Forward ##"
     roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker=module_marker)
     print("Number of iterations: {}".format(args.iters))
     print('Num of events: {}, num of root events: {}, num of caller/callee pairs: {}'.format(len(trace['traceEvents']), len(roots), len(cc)))

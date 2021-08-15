@@ -1,3 +1,5 @@
+#!/bin/bash
+
 if [ ! -f nvprof_metrics.txt ];
 then
     echo "no nvprof metrics file"
@@ -74,7 +76,7 @@ then
     then
         param_file_name="./bench_params/conv_params_big.txt"
     else
-        param_file_name="./bench_params/conv_params.txt"
+        param_file_name="./bench_params/conv_only.txt"
     fi
 elif [ "$op_type" == "concat" ];
 then

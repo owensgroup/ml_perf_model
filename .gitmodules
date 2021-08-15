@@ -1,21 +1,21 @@
 [submodule "gpuroofperf-toolkit"]
-	path = gpuroofperf-toolkit
+	path = 3rdparty/gpuroofperf-toolkit
 	url = git@github.com:ekondis/gpuroofperf-toolkit.git
 [submodule "sparse-ads-baselines"]
-	path = sparse-ads-baselines
+	path = 3rdparty/sparse-ads-baselines
 	url = git@github.com:moderato/sparse-ads-baselines.git
 [submodule "dlrm"]
-	path = dlrm
+	path = 3rdparty/dlrm
 	url = git@github.com:moderato/dlrm.git
 [submodule "mlperf-logging"]
-	path = mlperf-logging
+	path = 3rdparty/mlperf-logging
 	url = https://github.com/mlcommons/logging.git
 [submodule "param"]
-	path = param
+	path = 3rdparty/param
 	url = https://github.com/moderato/param.git
 [submodule "convnet-benchmark-py"]
-	path = convnet-benchmark-py
+	path = 3rdparty/convnet-benchmark-py
 	url = https://github.com/moderato/convnet-benchmark-py.git
 [submodule "transformer-pt"]
-	path = transformer-pt
+	path = 3rdparty/transformer-pt
 	url = https://github.com/moderato/attention-is-all-you-need-pytorch.git

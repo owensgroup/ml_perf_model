@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Get model name
-model_name=${1:-transformer}
-list="transformer seq2seq"
+model_name=$1
+list="transformer"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -10,6 +10,7 @@ else
     echo "Model name not supported!"
     exit
 fi
+mb_size=$2
 
 gpu="1"
 ngpus="1" #"1 2 4"
@@ -48,30 +49,30 @@ then
   for _ng in $ngpus
   do
     rm -f /tmp/pytorch_execution_graph*
-    cd transformer-pt
+    cd 3rdparty/transformer-pt
     _gpus=$(seq -s, 0 $((_ng-1)))
     cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
     echo "-------------------"
     echo "Using GPUS: "$_gpus
     echo "-------------------"
     mkdir -p "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}"
-    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}.log"
+    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}.log"
     outp="${model_name}_benchmark.prof"
     echo "-------------------------------"
     echo "Running benchmark (log file: $outf)"
     echo "-------------------------------"
-    cmd="python train.py -data_pkl m30k_deen_shr.pkl -embs_share_weight -proj_share_weight -label_smoothing -output_dir output -b 256 -warmup 5000 -no_eval"
-    if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json" ];
+    cmd="python train.py -data_pkl m30k_deen_shr.pkl -embs_share_weight -proj_share_weight -label_smoothing -output_dir output -b ${mb_size} -warmup 5000 -no_eval"
+    if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
       eval "$cmd -epoch 1 -collect_execution_graph -profile &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_graph.json"
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
     eval "$cmd -epoch 1 -profile > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
     eval "$cmd -epoch 1 > $outf" # No profile to get E2E time
-    cd ..
+    cd ../../
   done
 fi
