@@ -6,13 +6,13 @@ DLRM GPU Training Performance Model
 pip install h5py tqdm sklearn tensorboard torchviz onnx gputil spacy dill # Dependencies
 git clone --recursive https://github.com/owensgroup/ml_perf_model.git
 
-cd ml_perf_model/bench_params
+cd ml_perf_model/3rdparty/bench_params
 ./generate_benchmark_parameters.sh # Generate benchmark parameters (please modify the GPU memory size in the script).
 cd ../sparse-ads-baselines
 python setup.py install # Install table batched embedding lookup kernel.
 cd ../mlperf-logging
 python setup.py install # Install MLPerf logging for DLRM
-cd ..
+cd ../../
 source ./init_vars.sh # Turn off turbo, turn on performance, lock frequency, etc.
 
 # Torchvision for ConvNet benchmark
@@ -44,7 +44,7 @@ cd ../ml_perf_model
 ./microbenchmark.sh embedding_lookup 0 1
 ./microbenchmark.sh tril 1
 ./microbenchmark.sh tril 0
-./microbenchmark.sh conv 1 # We also support convolution for comparison with other performance models on DL models other the DLRM.
+./microbenchmark.sh conv 1 # We also support convolution and BN for comparison with other performance models on DL models other the DLRM.
 ./microbenchmark.sh conv 1 1
 ./microbenchmark.sh bn 1
 ./microbenchmark.sh bn 0
