@@ -1,7 +1,7 @@
 export PM_HOME=`pwd`
 mkdir -p data
 conda activate zhongyi
-echo "localhost" > param/train/comms/pt/hfile.txt
+echo "localhost" > 3rdparty/param/train/comms/pt/hfile.txt
 
 echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo &> /dev/null
 for i in {0..39}

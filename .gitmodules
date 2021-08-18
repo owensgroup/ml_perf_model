@@ -19,3 +19,6 @@
 [submodule "transformer-pt"]
 	path = 3rdparty/transformer-pt
 	url = https://github.com/moderato/attention-is-all-you-need-pytorch.git
+[submodule "3rdparty/ncf"]
+	path = 3rdparty/ncf
+	url = https://github.com/moderato/neural-collaborative-filtering.git
