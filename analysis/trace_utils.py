@@ -245,10 +245,9 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     unaccounted = [] # Unaccounted events (not being used now)
     cc = {} # caller / callee: key = external id, value = { caller event, callee events }
     main_tid = -1 # ID of the main thread that executes data loading, module events, etc
-    
+
     # Remove all events without a duration and sort the event lists by start time (increasing order) and duration (decreasing order)
-    duration_none = [e for e in raw_trace if "dur" not in e.keys()]
-    sorted_events = [Event(e) for e in raw_trace if e not in duration_none]
+    sorted_events = [Event(e) for e in raw_trace if "dur" in e.keys()]
     sorted_events = sorted(sorted_events, key=lambda x: (x.start_time(), -x.duration()))
     
     # Remove all leftovers from the last iteration and next iteration
@@ -256,12 +255,6 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     end_idx = len(sorted_events) - 1
     corrected_start_time = sorted_events[0].start_time()
     corrected_end_time = sorted_events[-1].start_time()
-    # Find the thread ID of the main thread
-    for idx, x in enumerate(sorted_events):
-        if x.name().startswith(module_marker):
-            main_tid = x.tid()
-            break
-    assert main_tid != -1
 
     # Start the analysis from the first module detected, if module is not to be skipped
     for idx, x in enumerate(sorted_events):
@@ -296,8 +289,12 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
         correlation_id = x.correlation_id()
         if 'DataLoader' in x.name():
             skipped_intervals_loader.append((event_start, event_start+event_duration))
-        if 'DLRM distribute emb data' in x.name():
+        if 'distribute emb data' in x.name():
             skipped_intervals_distribute.append((event_start, event_start+event_duration))
+        # Find the thread ID of the main thread btw
+        if main_tid == -1 and x.name().startswith(module_marker):
+            main_tid = x.tid()
+    assert main_tid != -1
     for x, y in zip(skipped_intervals_loader, skipped_intervals_distribute):
         skipped_intervals.append((x[0], y[1]))
 
