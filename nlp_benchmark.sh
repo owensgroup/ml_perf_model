@@ -30,13 +30,14 @@ export GPU_NAME=`cat /tmp/gpu_name.txt`
 
 if [ ${model_name} == "transformer" ];
 then
-    if [[ ! -d "transformer-pt/.data" ]]; # Data preprocessing
+    if [[ ! -d "3rdparty/transformer-pt/.data" ]]; # Data preprocessing
     then
-        python -m spacy download en
-        python -m spacy download de
-        cd transformer-pt
+
+        cd 3rdparty/transformer-pt
+        python -m spacy download en_core_web_sm
+        python -m spacy download de_core_news_sm
         python preprocess.py -lang_src de -lang_trg en -share_vocab -save_data m30k_deen_shr.pkl
-        cd ..
+        cd ${PM_HOME}
     fi
 fi
 
@@ -68,11 +69,11 @@ then
       eval "$cmd -epoch 1 -collect_execution_graph -profile &> /dev/null" # Collect execution graph
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
-    eval "$cmd -epoch 1 -profile > $outf" # Profile to get trace
+    eval "$cmd -epoch 1 -profile -num_batches 100 # > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
     eval "$cmd -epoch 1 > $outf" # No profile to get E2E time
-    cd ../../
+    cd ${PM_HOME}
   done
 fi
