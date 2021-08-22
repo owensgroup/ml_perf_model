@@ -55,7 +55,7 @@ HW_PARAMS = {
     },
     "1080": {
         "peak_throughput": 9494.746,
-        "peak_PCIe_BW": 10.33, # 16
+        "peak_PCIe_BW": 3.04,
         "peak_DRAM_BW": 246.890,
         "peak_L2_BW": 1747.627,
         "peak_SMEM_BW": 1200.361,
