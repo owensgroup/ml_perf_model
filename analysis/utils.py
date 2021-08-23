@@ -28,7 +28,7 @@ GPU_NAME = get_gpu_name()
 HW_PARAMS = {
     "V100": {
         "peak_throughput": 15441.524,
-        "peak_PCIe_BW": 10.83, # 16
+        "peak_PCIe_BW": 8.11, # 16
         "peak_DRAM_BW": 804.497,
         "peak_L2_BW": 2847.457,
         "peak_SMEM_BW": 3918.911,
