@@ -37,7 +37,7 @@ HW_PARAMS = {
     },
     "Xp": {
         "peak_throughput": 13422.779,
-        "peak_PCIe_BW": 3.63, # 16
+        "peak_PCIe_BW": 3.43, # 8
         "peak_DRAM_BW": 438.699,
         "peak_L2_BW": 1406.454,
         "peak_SMEM_BW": 1831.258,
@@ -46,7 +46,7 @@ HW_PARAMS = {
     },
     "P100": {
         "peak_throughput": 9343.711,
-        "peak_PCIe_BW": 10.33, # 16
+        "peak_PCIe_BW": 7.86, # 16
         "peak_DRAM_BW": 547.798,
         "peak_L2_BW": 1591.259,
         "peak_SMEM_BW": 2384.979,
@@ -55,7 +55,7 @@ HW_PARAMS = {
     },
     "1080": {
         "peak_throughput": 9494.746,
-        "peak_PCIe_BW": 3.04,
+        "peak_PCIe_BW": 3.04, # 8
         "peak_DRAM_BW": 246.890,
         "peak_L2_BW": 1747.627,
         "peak_SMEM_BW": 1200.361,
