@@ -287,7 +287,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
         event_duration = x.duration()
         external_id = x.external_id()
         correlation_id = x.correlation_id()
-        if 'DataLoader' in x.name():
+        if 'DataLoader' in x.name() and event_duration > 100:
             skipped_intervals_loader.append((event_start, event_start+event_duration))
         if 'distribute emb data' in x.name():
             skipped_intervals_distribute.append((event_start, event_start+event_duration))

@@ -127,7 +127,7 @@ then
     if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-batches 2 --collect-execution-graph --enable-profiling &> /dev/null" # Collect execution graph
+      eval "$cmd --num-batches 1 --collect-execution-graph --enable-profiling --test-freq=-1 &> /dev/null" # Collect execution graph
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
     fi
     eval "$cmd --num-batches ${num_batches} --enable-profiling > $outf" # Profile to get trace

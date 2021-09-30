@@ -435,7 +435,13 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(t)
     elif op.name == "aten::batch_norm":
         op_lists["bn"].append(op)
-        batch_size, OC, H, _ = op.input_shapes[0]
+        if len(op.input_shapes[0]) == 4:
+            batch_size, OC, H, _ = op.input_shapes[0] # BN 2D
+        elif len(op.input_shapes[0]) == 3:
+            batch_size, OC, H = op.input_shapes[0] # BN 1D with 3D input
+        else:
+            batch_size, OC = op.input_shapes[0] # BN 1D with 2D input
+            H = 1
         t = mlp_predictor_kwargs("bn", backward=False, batch_size=batch_size, H=H, OC=OC)
         kernel_times.append(t)
     elif op.name == "CudnnBatchNormBackward":
@@ -596,7 +602,8 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                 "aten::add", "aten::add_", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
                 "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
 
-    skip = ["aten::ones", "SliceBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
+    skip = ["aten::ones", "SliceBackward", "FusedDropoutBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
+    # FusedDropoutBackward somehow occurs in DeepFM graph
 
     forward_found = False
     for _, op in sorted_nodes:

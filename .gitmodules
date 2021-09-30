@@ -19,9 +19,9 @@
 [submodule "transformer-pt"]
 	path = 3rdparty/transformer-pt
 	url = git@github.com:moderato/attention-is-all-you-need-pytorch.git
-[submodule "3rdparty/ncf"]
-	path = 3rdparty/ncf
-	url = git@github.com:moderato/neural-collaborative-filtering.git
-[submodule "3rdparty/deepfm"]
+[submodule "deepfm"]
 	path = 3rdparty/deepfm
 	url = git@github.com:moderato/Pytorch_DeepFM.git
+[submodule "ncf"]
+	path = 3rdparty/ncf
+	url = git@github.com:moderato/neural-collaborative-filtering.git
