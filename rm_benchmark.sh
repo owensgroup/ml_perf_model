@@ -56,7 +56,7 @@ then
     else # DeepFM
         cd 3rdparty/deepfm
         cmd="python main.py --batch-size ${mb_size}"
-        num_epoch=100
+        num_epoch=500
     fi
     if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
     then
@@ -64,7 +64,7 @@ then
       eval "$cmd --num-epoch 1 --collect-execution-graph --profile --num-batches 1 &> /dev/null" # Collect execution graph
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
-    eval "$cmd --num-epoch ${num_epoch} --profile --num-batches 100 > $outf" # Profile to get trace
+    eval "$cmd --num-epoch ${num_epoch} --profile --num-batches 500 > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}

@@ -6,7 +6,7 @@
 
 # Get DLRM model name
 model_name=$1
-list="DLRM_vipul DLRM_default DLRM_MLPerf"
+list="DLRM_vipul DLRM_default DLRM_MLPerf DLRM_DDP"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -15,20 +15,19 @@ else
     exit
 fi
 mb_size=$2
+ngpus=$3
 
 # check if extra argument is passed to the test
-if [[ $# == 3 ]]; then
+if [[ $# == 4 ]]; then
     dlrm_extra_option=$2
 else
     dlrm_extra_option=""
 fi
 # echo $dlrm_extra_option
 
-gpu=1
-ngpus="1" #"1 2 4"
 tnworkers=0
 tmb_size=-1 #256
-num_batches=100
+num_batches=500
 common_args="   --use-gpu\
                 --print-freq=5\
                 --batched-emb\
@@ -76,6 +75,7 @@ then
             --arch-sparse-feature-size=128\
             --arch-embedding-size=80000-80000-80000-80000-80000-80000-80000-80000\
             --max-ind-range=40000000\
+            --num-indices-per-lookup-fixed\
             --loss-function=bce\
             --learning-rate=1.0 "
 elif [[ $model_name == "DLRM_MLPerf" ]]; # DLRM_MLPerf
@@ -102,72 +102,69 @@ then
 fi
 
 # GPU Benchmarking
-if [ $gpu = 1 ];
-then
-  echo "--------------------------------------------"
-  echo "GPU Benchmarking - running on $ngpus GPUs"
-  echo "--------------------------------------------"
-  for _ng in $ngpus
-  do
-    rm -f /tmp/pytorch_execution_graph*
-    # # weak scaling
-    # _mb_size=$((mb_size*_ng))
-    # strong scaling
-    _mb_size=$((mb_size*1))
-    _gpus=$(seq -s, 0 $((_ng-1)))
+echo "--------------------------------------------"
+echo "GPU Benchmarking - running on $ngpus GPUs"
+echo "--------------------------------------------"
+for _ng in $ngpus
+do
+  rm -f /tmp/pytorch_execution_graph*
+  # # weak scaling
+  # _mb_size=$((mb_size*_ng))
+  # strong scaling
+  _mb_size=$((mb_size*1))
+  _gpus=$(seq -s, 0 $((_ng-1)))
+  if [ ${_ng} = 1 ];
+  then
+    dlrm_pt_bin="python 3rdparty/dlrm/dlrm_s_pytorch.py"
+    graph_filename_pattern="${_ng}_${_mb_size}_graph.json"
+  else
+    dlrm_pt_bin="python -m torch.distributed.run --nproc_per_node=${_ng} 3rdparty/dlrm/dlrm_s_pytorch.py --dist-backend=nccl "
+    graph_filename_pattern="${_ng}_${_mb_size}_distributed_[0-$((_ng-1))]_graph.json"
+  fi
+  cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
+  echo "-------------------"
+  echo "Using GPUS: "$_gpus
+  echo "-------------------"
+  mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
+  echo "-------------------------------"
+  echo "Running PT (log file: $outf)"
+  echo "-------------------------------"
+  cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
+  if [[ ${_ng} != `ls data/${GPU_NAME}/e2e/${model_name} | grep -e $graph_filename_pattern | wc -l` ]];
+  then
+    echo "Execution graph doesn't exist! Extract it..."
+    eval "$cmd --num-batches 1 --collect-execution-graph --enable-profiling --test-freq=-1 &> /dev/null" # Collect execution graph
     if [ ${_ng} = 1 ];
     then
-      dlrm_pt_bin="python 3rdparty/dlrm/dlrm_s_pytorch.py"
-      graph_filename_pattern="${_ng}_${_mb_size}_graph.json"
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
     else
-      dlrm_pt_bin="python -m torch.distributed.run --nproc_per_node=${_ng} 3rdparty/dlrm/dlrm_s_pytorch.py --dist-backend=nccl "
-      graph_filename_pattern="${_ng}_${_mb_size}_distributed_[0-$((_ng-1))]_graph.json"
-    fi
-    cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
-    echo "-------------------"
-    echo "Using GPUS: "$_gpus
-    echo "-------------------"
-    mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
-    echo "-------------------------------"
-    echo "Running PT (log file: $outf)"
-    echo "-------------------------------"
-    cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
-    if [[ ${_ng} != `ls data/${GPU_NAME}/e2e/${model_name} | grep -e $graph_filename_pattern | wc -l` ]];
-    then
-      echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-batches 1 --collect-execution-graph --enable-profiling --test-freq=-1 &> /dev/null" # Collect execution graph
-      if [ ${_ng} = 1 ];
-      then
-        cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
-      else
-        count=0
-        for g in `ls /tmp/pytorch_execution_graph*`
-        do
-          cp $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}_graph.json"
-          count=$((count+1))
-        done
-      fi
-    fi
-    eval "$cmd --num-batches ${num_batches} --enable-profiling &> /dev/null" # Profile to get trace
-    # move profiling file(s)
-    if [ ${_ng} = 1 ];
-    then
-      outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}.log"
-      outp="dlrm_s_pytorch.prof"
-      mv $outp ${outf//".log"/".prof"}
-      mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
-    else
-      outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed.log"
       count=0
-      for g in `ls dlrm_s_pytorch*.prof`
+      for g in `ls /tmp/pytorch_execution_graph*`
       do
-        mv $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.prof"
-        mv ${g//".prof"/".json"} "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.json"
+        cp $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}_graph.json"
         count=$((count+1))
       done
     fi
-    eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
-    min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $8) best=$8} END{print best}')
-    echo "Min time per iteration = $min ms"
-  done
-fi
+  fi
+  eval "$cmd --num-batches ${num_batches} --enable-profiling &> /dev/null" # Profile to get trace
+  # move profiling file(s)
+  if [ ${_ng} = 1 ];
+  then
+    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}.log"
+    outp="dlrm_s_pytorch.prof"
+    mv $outp ${outf//".log"/".prof"}
+    mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+  else
+    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed.log"
+    count=0
+    for g in `ls dlrm_s_pytorch*.prof`
+    do
+      mv $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.prof"
+      mv ${g//".prof"/".json"} "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.json"
+      count=$((count+1))
+    done
+  fi
+  eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
+  min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $8) best=$8} END{print best}')
+  echo "Min time per iteration = $min ms"
+done

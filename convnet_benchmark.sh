@@ -15,7 +15,7 @@ mb_size=$2
 
 gpu="1"
 ngpus="1" #"1 2 4"
-num_steps="100"
+num_steps="500"
 
 CORES=`lscpu | grep "Core(s)" | awk '{print $4}'`
 SOCKETS=`lscpu | grep Socket | awk '{print $2}'`
