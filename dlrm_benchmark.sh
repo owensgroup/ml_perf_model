@@ -24,19 +24,16 @@ else
 fi
 # echo $dlrm_extra_option
 
-cpu=0
 gpu=1
-ncores=8
-nsockets="0"
 ngpus="1" #"1 2 4"
+tnworkers=0
+tmb_size=-1 #256
+num_batches=100
 common_args="   --use-gpu\
                 --print-freq=5\
-                --print-time\
                 --batched-emb\
+                --print-time\
                 --pin-memory "
-
-numa_cmd="numactl --physcpubind=0-$((ncores-1)) -m $nsockets" #run on one socket, without HT
-dlrm_pt_bin="python 3rdparty/dlrm/dlrm_s_pytorch.py" # fil-profile run
 
 # Get GPU type
 ./get_gpu_name.sh
@@ -46,7 +43,6 @@ export GPU_NAME=`cat /tmp/gpu_name.txt`
 _args=""
 if [[ $model_name == "DLRM_vipul" ]]; # From Vipul
 then
-    num_batches=50
     _args=" --data-generation=random\
             --arch-mlp-bot=13-512-256-64-16\
             --arch-mlp-top=512-256-128-1\
@@ -58,7 +54,6 @@ then
             --num-workers=2 "
 elif [[ $model_name == "DLRM_default" ]]; # DLRM original
 then
-    num_batches=100
     _args=" --data-generation=random\
             --processed-data-file=/nvme/deep-learning/dlrm_random\
             --round-targets\
@@ -71,9 +66,20 @@ then
             --arch-interaction-op=dot\
             --numpy-rand-seed=727\
             --num-worker=0 "
+elif [[ $model_name == "DLRM_DDP" ]]; # DLRM DDP example
+then
+    _args=" --data-generation=random\
+            --processed-data-file=/nvme/deep-learning/dlrm_random\
+            --round-targets\
+            --arch-mlp-bot=128-128-128-128\
+            --arch-mlp-top=512-512-512-256-1\
+            --arch-sparse-feature-size=128\
+            --arch-embedding-size=80000-80000-80000-80000-80000-80000-80000-80000\
+            --max-ind-range=40000000\
+            --loss-function=bce\
+            --learning-rate=1.0 "
 elif [[ $model_name == "DLRM_MLPerf" ]]; # DLRM_MLPerf
 then
-    num_batches=100
     _args=" --data-generation=dataset\
             --data-set=terabyte\
             --raw-data-file=/nvme/deep-learning/criteo_terabyte/day\
@@ -95,10 +101,6 @@ then
         # " --test-mini-batch-size=16384"
 fi
 
-interaction="dot"
-tnworkers=0
-tmb_size=-1 #256
-
 # GPU Benchmarking
 if [ $gpu = 1 ];
 then
@@ -113,27 +115,57 @@ then
     # strong scaling
     _mb_size=$((mb_size*1))
     _gpus=$(seq -s, 0 $((_ng-1)))
+    if [ ${_ng} = 1 ];
+    then
+      dlrm_pt_bin="python 3rdparty/dlrm/dlrm_s_pytorch.py"
+      graph_filename_pattern="${_ng}_${_mb_size}_graph.json"
+    else
+      dlrm_pt_bin="python -m torch.distributed.run --nproc_per_node=${_ng} 3rdparty/dlrm/dlrm_s_pytorch.py --dist-backend=nccl "
+      graph_filename_pattern="${_ng}_${_mb_size}_distributed_[0-$((_ng-1))]_graph.json"
+    fi
     cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
     echo "-------------------"
     echo "Using GPUS: "$_gpus
     echo "-------------------"
     mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
-    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}.log"
-    outp="dlrm_s_pytorch.prof"
     echo "-------------------------------"
     echo "Running PT (log file: $outf)"
     echo "-------------------------------"
     cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
-    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json" ];
+    if [[ ${_ng} != `ls data/${GPU_NAME}/e2e/${model_name} | grep -e $graph_filename_pattern | wc -l` ]];
     then
       echo "Execution graph doesn't exist! Extract it..."
       eval "$cmd --num-batches 1 --collect-execution-graph --enable-profiling --test-freq=-1 &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
+      if [ ${_ng} = 1 ];
+      then
+        cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
+      else
+        count=0
+        for g in `ls /tmp/pytorch_execution_graph*`
+        do
+          cp $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}_graph.json"
+          count=$((count+1))
+        done
+      fi
     fi
-    eval "$cmd --num-batches ${num_batches} --enable-profiling > $outf" # Profile to get trace
+    eval "$cmd --num-batches ${num_batches} --enable-profiling &> /dev/null" # Profile to get trace
     # move profiling file(s)
-    mv $outp ${outf//".log"/".prof"}
-    mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+    if [ ${_ng} = 1 ];
+    then
+      outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}.log"
+      outp="dlrm_s_pytorch.prof"
+      mv $outp ${outf//".log"/".prof"}
+      mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+    else
+      outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed.log"
+      count=0
+      for g in `ls dlrm_s_pytorch*.prof`
+      do
+        mv $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.prof"
+        mv ${g//".prof"/".json"} "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.json"
+        count=$((count+1))
+      done
+    fi
     eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
     min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $8) best=$8} END{print best}')
     echo "Min time per iteration = $min ms"
