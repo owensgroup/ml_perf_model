@@ -28,7 +28,7 @@ GPU_NAME = get_gpu_name()
 HW_PARAMS = {
     "V100": {
         "peak_throughput": 15441.524,
-        "peak_PCIe_BW": 8.11, # 16
+        "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
         "peak_DRAM_BW": 804.497,
         "peak_L2_BW": 2847.457,
         "peak_SMEM_BW": 3918.911,
@@ -37,7 +37,7 @@ HW_PARAMS = {
     },
     "Xp": {
         "peak_throughput": 13422.779,
-        "peak_PCIe_BW": 3.43, # 8
+        "peak_PCIe_BW": 3.43, # Roughly the per direction of PCIe 3.0 x8 (8 GB/s)
         "peak_DRAM_BW": 438.699,
         "peak_L2_BW": 1406.454,
         "peak_SMEM_BW": 1831.258,
@@ -46,7 +46,7 @@ HW_PARAMS = {
     },
     "P100": {
         "peak_throughput": 9343.711,
-        "peak_PCIe_BW": 7.86, # 16
+        "peak_PCIe_BW": 8.2, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
         "peak_DRAM_BW": 547.798,
         "peak_L2_BW": 1591.259,
         "peak_SMEM_BW": 2384.979,
@@ -69,6 +69,24 @@ GPU_PARAMS = HW_PARAMS[GPU_NAME]
 CPU_EVENT_OVERHEAD = 1
 GPU_EVENT_OVERHEAD = 4
 KERNEL_LAUNCH_LENGTH = 10
+
+
+CONSIDER = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten::matmul", "MmBackward", \
+                "aten::conv2d", "CudnnConvolutionBackward", \
+                "LookupFunction", "LookupFunctionBackward", \
+                "aten::batch_norm", "CudnnBatchNormBackward", \
+                "aten::index", "IndexBackward", \
+                "aten::relu", "aten::relu_", "ReluBackward0", "ReluBackward1", \
+                "aten::sigmoid", "SigmoidBackward", \
+                "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
+                "aten::mse_loss", "MseLossBackward", \
+                "aten::avg_pool2d", "AvgPool2D", \
+                "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
+                "aten::add", "aten::add_", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
+                "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
+
+SKIP = ["aten::ones", "SliceBackward", "FusedDropoutBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
+# FusedDropoutBackward somehow occurs in DeepFM graph
 
 
 def dash_separated_ints(value):

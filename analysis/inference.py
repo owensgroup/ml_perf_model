@@ -2,7 +2,7 @@ import torch
 import pandas as pd
 import numpy as np
 import json
-from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS
+from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS, CONSIDER, SKIP
 from .exec_graph_utils import NodeType
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
@@ -223,7 +223,9 @@ def infer_memcpy():
     memcpy_data = pd.read_csv('{}/data/{}/kernel/memcpy_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
     memcpy_data = preprocessing(memcpy_data)
     tensor_size = memcpy_data['batch_size'] * memcpy_data['M'] * memcpy_data['N']
-    estimated_time = memcpy_predictor(tensor_size=tensor_size)
+    filter = (tensor_size * 4 / memcpy_data['kernel_runtime'] / 1e3 < peak_PCIe_BW) # Filter out samples with unreasonable timing
+    memcpy_data = memcpy_data[filter]
+    estimated_time = memcpy_predictor(tensor_size=tensor_size[filter])
     error = abs_err(estimated_time, memcpy_data['kernel_runtime'])
     print("Memcpy: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
     return None, error
@@ -588,23 +590,6 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
     gpu_time = 0
     gpu_active_time = 0
 
-    consider = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten::matmul", "MmBackward", \
-                "aten::conv2d", "CudnnConvolutionBackward", \
-                "LookupFunction", "LookupFunctionBackward", \
-                "aten::batch_norm", "CudnnBatchNormBackward", \
-                "aten::index", "IndexBackward", \
-                "aten::relu", "aten::relu_", "ReluBackward0", "ReluBackward1", \
-                "aten::sigmoid", "SigmoidBackward", \
-                "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
-                "aten::mse_loss", "MseLossBackward", \
-                "aten::avg_pool2d", "AvgPool2D", \
-                "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-                "aten::add", "aten::add_", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
-                "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
-
-    skip = ["aten::ones", "SliceBackward", "FusedDropoutBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
-    # FusedDropoutBackward somehow occurs in DeepFM graph
-
     forward_found = False
     for _, op in sorted_nodes:
         if op.name == module_marker:
@@ -613,7 +598,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
             continue
         is_op = (op.type == NodeType.OPERATOR and op.parent.type != NodeType.OPERATOR)
         if is_op:
-            if op.name in skip:
+            if op.name in SKIP:
                 continue
             cpu_time += overheads["t1"][0] # T1: between two ops
             if debug:
@@ -624,7 +609,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                 if debug:
                     print("    t2:", overheads["t2"][op.name][0])
                 launches = overheads["launches"][op.name]
-                if op.name in consider:
+                if op.name in CONSIDER:
                     t = get_kernel_time(op, op_lists) # Get kernel time
                     gpu_active_time += np.sum(t)
 
