@@ -592,7 +592,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
 
     forward_found = False
     for _, op in sorted_nodes:
-        if op.name == module_marker:
+        if module_marker in op.name:
             forward_found = True
         if not forward_found:
             continue
@@ -603,11 +603,11 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
             cpu_time += overheads["t1"][0] # T1: between two ops
             if debug:
                 print(" ", op.name, "--------")
-                print("    t1:", overheads["t1"][0])
+                print("    t1: {:.2f}".format(overheads["t1"][0]))
             if op.name in overheads["launches"].keys(): # Has kernel calls
                 cpu_time += overheads["t2"][op.name][0] # T2: before the first kernel call
                 if debug:
-                    print("    t2:", overheads["t2"][op.name][0])
+                    print("    t2: {:.2f}".format(overheads["t2"][op.name][0]))
                 launches = overheads["launches"][op.name]
                 if op.name in CONSIDER:
                     t = get_kernel_time(op, op_lists) # Get kernel time
@@ -624,7 +624,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                         if idx < len(t):
                             gpu_time += t[idx]
                             if debug:
-                                print("    kernel:", t[idx])
+                                print("    kernel: {:.2f}".format(t[idx]))
 
                         if "aten::to" == op.name and len(op.children) == 0:
                             cpu_time += 2 # Some aten::to doesn't have children
@@ -635,22 +635,23 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                         if idx < len(launches) - 1:
                             cpu_time += t5
                         if debug:
-                            print("    t4:", t4)
-                            print("    t5:", t5)
+                            print("    t4: {:.2f}".format(t4))
+                            print("    t5: {:.2f}".format(t5))
                 else:
+                    print("not consider", op.name)
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
                     cpu_time += np.sum([overheads["t4"][x][0] for x in launches]) # T4
                     cpu_time += overheads["t5"][op.name][0] * (len(launches) - 1) # T5
                     if debug:
-                        print("    t4:", np.sum([overheads["t4"][x][0] for x in launches]))
-                        print("    t5:", overheads["t5"][op.name][0] * (len(launches) - 1))
+                        print("    t4: {:.2f}".format(np.sum([overheads["t4"][x][0] for x in launches])))
+                        print("    t5: {:.2f}".format(overheads["t5"][op.name][0] * (len(launches) - 1)))
                 cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
                 if debug:
-                    print("    t3:", overheads["t3"][op.name][0])
+                    print("    t3: {:.2f}".format(overheads["t3"][op.name][0]))
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
                 if debug:
-                    print("    t5:", overheads["t5"][op.name][0])
+                    print("    t5: {:.2f}".format(overheads["t5"][op.name][0]))
             if debug:
                 print(op.name, cpu_time, gpu_time, op.input_shapes)
     total_time = max(gpu_time, cpu_time)

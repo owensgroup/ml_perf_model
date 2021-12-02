@@ -2,8 +2,15 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import json, sys
 from itertools import compress
 
+from analysis.utils import SKIP
+
 # Label markers
 LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
+
+# Launches to be skip
+SKIP_RUNTIME_EVENTS = ["cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags", \
+                    "cudaPeakAtLastError", "cudaStreamGetCaptureInfo", \
+                    "cudaEventQuery", "cudaEventRecord"]
 
 
 def is_module(op):
@@ -304,7 +311,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
         event_duration = x.duration()
         external_id = x.external_id()
         correlation_id = x.correlation_id()
-        
+
         # Skip all events in skipped intervals
         should_skip = False
         for s, e in skipped_intervals:
@@ -408,7 +415,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                         cc[external_id]["callees"][correlation_id]["launcher"] = None
                         cc[external_id]["callees"][correlation_id]["executor"] = None
                     cc[external_id]["callees"][correlation_id]["executor"] = x
-            
+
     # Update 'has_device_calls' for all events in the tree
     def update_has_device_calls(roots):
         for r in roots:
@@ -435,10 +442,7 @@ def get_event_all_kernel_launches(event):
     def get_launches(event, lst):
         nonlocal count
         if len(event.children) == 0:
-            if event.category() == 'Runtime' and \
-                    event.name() not in ["cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags", \
-                                        "cudaStreamSynchronize", \
-                                        "cudaPeakAtLastError"]:
+            if event.category() == 'Runtime' and event.name() not in SKIP_RUNTIME_EVENTS:
                 lst.append((event, count-1))
                 count = 0
             return
@@ -457,8 +461,10 @@ def get_sub_event_count(event):
         nonlocal count
         count += 1
         for r in event.children:
-            get_count(r)
-        
+            # Skip a few runtime events
+            if r.name() not in SKIP_RUNTIME_EVENTS:
+                get_count(r)
+
     get_count(event)
     return count
 

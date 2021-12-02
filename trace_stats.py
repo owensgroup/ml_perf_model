@@ -111,21 +111,25 @@ if __name__ == '__main__':
         count = 0
         for x, y in tmp_launches:
             count += y
-            if x.name() in ["cudaMemcpyAsync", "cudaLaunchKernel"]:
+            if x.name() in ["cudaLaunchKernel", "cudaMemcpyAsync", "cudaStreamSynchronize"]:
                 launches.append((x, count))
                 count = 0
-        
+
         if len(launches) > 0:
             overheads[name]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
             trailing_sub_event_count = sub_event_count - sum([y+1 for _, y in launches]) # And kernel launches themselves
-            overheads[name]['t3'].append(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD) # T3 has all overheads after the last launch
+            overheads[name]['t3'].append(max(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD, 0)) # T3 has all overheads after the last launch
+            t3 = op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD
             if len(launches) > 1:
                 overheads[name]['t5'].extend([launches[i][0].start_time() - launches[i-1][0].end_time() - launches[i][1] * CPU_EVENT_OVERHEAD for i in range(1, len(launches))]) # T5 has all overheads between each pair of launches
             else:
                 overheads[name]['t5'].append(0)
-            
+
             # T4 is launch-type-dependent
             for x, _ in launches:
+                # Skip T4 for synchronization
+                if x.name() in ["cudaStreamSynchronize"]:
+                    continue
                 if x.name() not in overheads['independent']['t4']:
                     overheads['independent']['t4'][x.name()] = []
                 overheads['independent']['t4'][x.name()].append(KERNEL_LAUNCH_LENGTH - CPU_EVENT_OVERHEAD - GPU_EVENT_OVERHEAD) # T4 has 1 overhead
@@ -133,7 +137,9 @@ if __name__ == '__main__':
             if op.name() not in launches_dict.keys():
                 launches_dict[op.name()] = []
                 for x, _ in launches:
-                    launches_dict[op.name()].append(x.name())
+                    # Don't record synchronization
+                    if x.name() not in ["cudaStreamSynchronize"]:
+                        launches_dict[op.name()].append(x.name())
         else:
             if name not in overheads.keys():
                 overheads[name] = {}
@@ -172,7 +178,7 @@ if __name__ == '__main__':
     # # T4
     # for t, l in overheads['independent']['t4'].items():
         # print(t, np.mean(l), np.std(l), len(l))
-        
+
     o = {
         "t1": (np.mean(overheads['independent']['t1']), np.std(overheads['independent']['t1']), len(overheads['independent']['t1'])),
         "t2": t2,
