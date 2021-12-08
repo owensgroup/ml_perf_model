@@ -22,7 +22,7 @@ if __name__ == '__main__':
         dataset=op_dataset,
         batch_size=args.batch_size,
         shuffle=True, num_workers=0)
-    print("Op type: {}, dataset length: {}, batch size: {}, epoch: {}".format(args.op_type, y.shape[0], args.batch_size, args.epoch))
+    print("Device: {}, op type: {}, dataset length: {}, batch size: {}, epoch: {}".format(GPU_NAME, args.op_type, y.shape[0], args.batch_size, args.epoch))
 
     suffix = "{}_{}".format(args.op_type, 1 if not args.backward else 0)
     if os.path.exists("{}/analysis/ml_predictors/{}/best_config_{}.json".format(PM_HOME, GPU_NAME, suffix)):
