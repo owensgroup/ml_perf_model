@@ -36,18 +36,18 @@ HW_PARAMS = {
         "L2_size": 6 * 1024 * 1024,
     },
     "Xp": {
-        "peak_throughput": 13422.779,
+        "peak_throughput": 10768.622,
         "peak_PCIe_BW": 3.43, # Roughly the per direction of PCIe 3.0 x8 (8 GB/s)
         "peak_DRAM_BW": 438.699,
         "peak_L2_BW": 1406.454,
         "peak_SMEM_BW": 1831.258,
-        "num_SM": 60,
+        "num_SM": 30,
         "L2_size": 3 * 1024 * 1024,
     },
     "P100": {
         "peak_throughput": 9343.711,
         "peak_PCIe_BW": 8.2, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
-        "peak_DRAM_BW": 547.798,
+        "peak_DRAM_BW": 732.2,
         "peak_L2_BW": 1591.259,
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,
