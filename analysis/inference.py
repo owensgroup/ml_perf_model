@@ -2,7 +2,7 @@ import torch
 import pandas as pd
 import numpy as np
 import json
-from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS, CONSIDER, SKIP
+from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS, CONSIDER, SKIP, GPU_EVENT_OVERHEAD
 from .exec_graph_utils import NodeType
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
@@ -353,9 +353,8 @@ def get_kernel_time(op, op_lists):
         t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m1, N=n1, K=k1)
         kernel_times.append(t1)
         t2 = 0
-        if M != N:
-            t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
-            kernel_times.append(t2)
+        t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
+        kernel_times.append(t2)
         t = t1 + t2
         # print(" -- ", addmm_op.name, M, K, N, addmm_op.input_shapes, t)
     elif op.name == "MmBackward":
@@ -365,10 +364,8 @@ def get_kernel_time(op, op_lists):
         m2, k2, n2 = N, M, K
         t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m1, N=n1, K=k1)
         kernel_times.append(t1)
-        t2 = 0
-        if M != N:
-            t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
-            kernel_times.append(t2)
+        t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
+        kernel_times.append(t2)
         t = t1 + t2
         # print(" -- ", mm_op.name, M, K, N, mm_op.input_shapes, t)
     elif op.name == "aten::matmul":
@@ -610,7 +607,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                     print("    t2: {:.2f}".format(overheads["t2"][op.name][0]))
                 launches = overheads["launches"][op.name]
                 if op.name in CONSIDER:
-                    t = get_kernel_time(op, op_lists) # Get kernel time
+                    t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(op, op_lists)] # Get kernel time and (arguably) compensate with the overheads
                     gpu_active_time += np.sum(t)
 
                     for idx, l in enumerate(launches):
