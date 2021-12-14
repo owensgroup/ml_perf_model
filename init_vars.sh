@@ -20,7 +20,7 @@ then
   sudo nvidia-smi -lgc 1297
 elif [[ $GPU_NAME == "P100" ]];
 then
-  sudo nvidia-smi -lgc 1189
+  sudo nvidia-smi -ac 715,1189
 elif [[ $GPU_NAME == "Xp" ]];
 then
   sudo nvidia-smi -ac 5505,1404

@@ -42,7 +42,7 @@ do
     sum_runtime="$( echo "scale=4; $sum_runtime + $sum_kernel" | bc )"
 done < "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
 
-echo "Sum of kernel runtime: $sum_runtime"
+echo "Sum of kernel runtime: $sum_runtime us."
 
 # Get dominating kernels
 sum_perc="0.0"

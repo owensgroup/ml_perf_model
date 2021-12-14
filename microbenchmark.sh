@@ -190,18 +190,18 @@ do
     echo "$bench_param"
 
     # Benchmark operator runtime: no nvprof
-    python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
+    python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
     op_time="$( < /tmp/${CUDA_VISIBLE_DEVICES}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
 
     # Benchmark general: get the major kernel names
     nvprof --openacc-profiling off --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" \
-    python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters \
+    python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters \
     --warmup-iters $warmup_iters >& /dev/null
 
     # Get gpu trace
     echo "Get GPU trace of kernels ..."
     nvprof --openacc-profiling off --print-gpu-trace --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
-    python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
+    python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
     --warmup-iters $warmup_iters >& /dev/null
 
     ./get_kernel_names.sh "$op_type"

@@ -2,7 +2,7 @@ import torch
 import pandas as pd
 import numpy as np
 import json
-from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS
+from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS, CONSIDER, SKIP, GPU_EVENT_OVERHEAD
 from .exec_graph_utils import NodeType
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
@@ -223,7 +223,9 @@ def infer_memcpy():
     memcpy_data = pd.read_csv('{}/data/{}/kernel/memcpy_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
     memcpy_data = preprocessing(memcpy_data)
     tensor_size = memcpy_data['batch_size'] * memcpy_data['M'] * memcpy_data['N']
-    estimated_time = memcpy_predictor(tensor_size=tensor_size)
+    filter = (tensor_size * 4 / memcpy_data['kernel_runtime'] / 1e3 < peak_PCIe_BW) # Filter out samples with unreasonable timing
+    memcpy_data = memcpy_data[filter]
+    estimated_time = memcpy_predictor(tensor_size=tensor_size[filter])
     error = abs_err(estimated_time, memcpy_data['kernel_runtime'])
     print("Memcpy: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
     return None, error
@@ -350,10 +352,8 @@ def get_kernel_time(op, op_lists):
         m2, k2, n2 = N, M, K
         t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m1, N=n1, K=k1)
         kernel_times.append(t1)
-        t2 = 0
-        if M != N:
-            t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
-            kernel_times.append(t2)
+        t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
+        kernel_times.append(t2)
         t = t1 + t2
         # print(" -- ", addmm_op.name, M, K, N, addmm_op.input_shapes, t)
     elif op.name == "MmBackward":
@@ -363,10 +363,8 @@ def get_kernel_time(op, op_lists):
         m2, k2, n2 = N, M, K
         t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m1, N=n1, K=k1)
         kernel_times.append(t1)
-        t2 = 0
-        if M != N:
-            t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
-            kernel_times.append(t2)
+        t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
+        kernel_times.append(t2)
         t = t1 + t2
         # print(" -- ", mm_op.name, M, K, N, mm_op.input_shapes, t)
     elif op.name == "aten::matmul":
@@ -588,44 +586,27 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
     gpu_time = 0
     gpu_active_time = 0
 
-    consider = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten::matmul", "MmBackward", \
-                "aten::conv2d", "CudnnConvolutionBackward", \
-                "LookupFunction", "LookupFunctionBackward", \
-                "aten::batch_norm", "CudnnBatchNormBackward", \
-                "aten::index", "IndexBackward", \
-                "aten::relu", "aten::relu_", "ReluBackward0", "ReluBackward1", \
-                "aten::sigmoid", "SigmoidBackward", \
-                "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
-                "aten::mse_loss", "MseLossBackward", \
-                "aten::avg_pool2d", "AvgPool2D", \
-                "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-                "aten::add", "aten::add_", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
-                "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
-
-    skip = ["aten::ones", "SliceBackward", "FusedDropoutBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
-    # FusedDropoutBackward somehow occurs in DeepFM graph
-
     forward_found = False
     for _, op in sorted_nodes:
-        if op.name == module_marker:
+        if module_marker in op.name:
             forward_found = True
         if not forward_found:
             continue
         is_op = (op.type == NodeType.OPERATOR and op.parent.type != NodeType.OPERATOR)
         if is_op:
-            if op.name in skip:
+            if op.name in SKIP:
                 continue
             cpu_time += overheads["t1"][0] # T1: between two ops
             if debug:
                 print(" ", op.name, "--------")
-                print("    t1:", overheads["t1"][0])
+                print("    t1: {:.2f}".format(overheads["t1"][0]))
             if op.name in overheads["launches"].keys(): # Has kernel calls
                 cpu_time += overheads["t2"][op.name][0] # T2: before the first kernel call
                 if debug:
-                    print("    t2:", overheads["t2"][op.name][0])
+                    print("    t2: {:.2f}".format(overheads["t2"][op.name][0]))
                 launches = overheads["launches"][op.name]
-                if op.name in consider:
-                    t = get_kernel_time(op, op_lists) # Get kernel time
+                if op.name in CONSIDER:
+                    t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(op, op_lists)] # Get kernel time and (arguably) compensate with the overheads
                     gpu_active_time += np.sum(t)
 
                     for idx, l in enumerate(launches):
@@ -639,7 +620,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                         if idx < len(t):
                             gpu_time += t[idx]
                             if debug:
-                                print("    kernel:", t[idx])
+                                print("    kernel: {:.2f}".format(t[idx]))
 
                         if "aten::to" == op.name and len(op.children) == 0:
                             cpu_time += 2 # Some aten::to doesn't have children
@@ -650,22 +631,24 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                         if idx < len(launches) - 1:
                             cpu_time += t5
                         if debug:
-                            print("    t4:", t4)
-                            print("    t5:", t5)
+                            print("    t4: {:.2f}".format(t4))
+                            print("    t5: {:.2f}".format(t5))
+                    # print(op.name, t)
                 else:
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
                     cpu_time += np.sum([overheads["t4"][x][0] for x in launches]) # T4
                     cpu_time += overheads["t5"][op.name][0] * (len(launches) - 1) # T5
                     if debug:
-                        print("    t4:", np.sum([overheads["t4"][x][0] for x in launches]))
-                        print("    t5:", overheads["t5"][op.name][0] * (len(launches) - 1))
+                        print("    t4: {:.2f}".format(np.sum([overheads["t4"][x][0] for x in launches])))
+                        print("    t5: {:.2f}".format(overheads["t5"][op.name][0] * (len(launches) - 1)))
                 cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
                 if debug:
-                    print("    t3:", overheads["t3"][op.name][0])
+                    print("    t3: {:.2f}".format(overheads["t3"][op.name][0]))
+                # print(op.name, ["{:.2f}".format(tt) for tt in t], gpu_active_time)
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
                 if debug:
-                    print("    t5:", overheads["t5"][op.name][0])
+                    print("    t5: {:.2f}".format(overheads["t5"][op.name][0]))
             if debug:
                 print(op.name, cpu_time, gpu_time, op.input_shapes)
     total_time = max(gpu_time, cpu_time)

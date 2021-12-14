@@ -53,7 +53,8 @@ cd ../ml_perf_model
 ### Training ML-based kernel performance model
 ```bash
 python mlp.py --op-type fully_connected --batch-size 64
-python mlp.py --op-type conv --batch-size 64
+python mlp.py --op-type conv --batch-size 16 --epoch 1200
+python mlp.py --op-type conv --backward --batch-size 16 --epoch 1200
 python mlp.py --op-type transpose --batch-size 32
 python mlp.py --op-type bn --batch-size 32
 python mlp.py --op-type bn --backward --batch-size 32
