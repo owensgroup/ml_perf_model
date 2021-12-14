@@ -634,6 +634,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                         if debug:
                             print("    t4: {:.2f}".format(t4))
                             print("    t5: {:.2f}".format(t5))
+                    # print(op.name, t)
                 else:
                     print("not consider", op.name)
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
@@ -645,6 +646,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                 cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
                 if debug:
                     print("    t3: {:.2f}".format(overheads["t3"][op.name][0]))
+                # print(op.name, ["{:.2f}".format(tt) for tt in t], gpu_active_time)
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
                 if debug:
