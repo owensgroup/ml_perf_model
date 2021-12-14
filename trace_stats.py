@@ -40,7 +40,7 @@ if __name__ == '__main__':
     # print("Device runtime: {} us".format(device_runtime))
     ops = []
     get_operators(roots, ops)
-    QPS = 1000000 / host_runtime * args.iters * 2048
+    QPS = 1000000 / host_runtime * args.iters * args.batch_size
     print(f"QPS: {QPS:.2f}")
 
     op_device_runtime = get_device_runtime(ops, cc)
