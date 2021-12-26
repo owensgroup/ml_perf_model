@@ -103,7 +103,7 @@ fi
 
 # GPU Benchmarking
 echo "--------------------------------------------"
-echo "GPU Benchmarking - running on $ngpus GPUs"
+echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
 echo "--------------------------------------------"
 for _ng in $ngpus
 do

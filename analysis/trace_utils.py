@@ -266,9 +266,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     # Start the analysis from the first module detected, if module is not to be skipped
     for idx, x in enumerate(sorted_events):
         ######## IMPORTANT ########
-        # Find the start of an iteration started with "##" without ":". The first module should be "## zero_grad ##" though, 
-        # but the current ATC code couldn't start the extraction exactly at there. 
-        # Change TORCH_AUTOGRAD_GRAPHROOT in ATC's trace_utils.py does the trick
+        # Find the start of an iteration started with "##" without ":".
         if not skip_module and x.name().startswith(module_marker) and ":" not in x.name():
             # The actual start time is the start time of the profiler enter call right before "zero_grad"
             for idy, y in enumerate(reversed(sorted_events[:idx])):

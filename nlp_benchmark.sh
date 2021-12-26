@@ -45,7 +45,7 @@ fi
 if [ $gpu = 1 ];
 then
   echo "--------------------------------------------"
-  echo "GPU Benchmarking - running on $ngpus GPUs"
+  echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
   echo "--------------------------------------------"
   for _ng in $ngpus
   do
@@ -69,7 +69,7 @@ then
       eval "$cmd -epoch 1 -collect_execution_graph -profile &> /dev/null" # Collect execution graph
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
-    eval "$cmd -epoch 1 -profile -num_batches 100 # > $outf" # Profile to get trace
+    eval "$cmd -epoch 1 -profile -num_batches 500 # > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}

@@ -32,7 +32,7 @@ export GPU_NAME=`cat /tmp/gpu_name.txt`
 if [ $gpu = 1 ];
 then
   echo "--------------------------------------------"
-  echo "GPU Benchmarking - running on $ngpus GPUs"
+  echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
   echo "--------------------------------------------"
   for _ng in $ngpus
   do
