@@ -12,7 +12,9 @@ cd ../sparse-ads-baselines
 python setup.py install # Install table batched embedding lookup kernel.
 cd ../mlperf-logging
 python setup.py install # Install MLPerf logging for DLRM
-cd ../../
+cd ../param/train/comms/pt
+./init.sh # Initialization for PARAM
+cd ../../../../../
 source ./init_vars.sh # Turn off turbo, turn on performance, lock frequency, etc.
 
 # Torchvision for ConvNet benchmark
