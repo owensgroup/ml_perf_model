@@ -128,7 +128,11 @@ then
             done
         done
     done
+fi
 
+if [ ! -f fc_params.txt ];
+then
+    touch fc_params_big.txt
     # Bmm F&B
     for batch_size in 64 128 256 512 1024 2048 4096;
     do
@@ -145,7 +149,7 @@ then
 
                     if [ "$total_size" -lt "$GPU_memory" ];
                     then
-                        echo "$batch_size $M $N $K" >> fc_params.txt
+                        echo "$batch_size $M $N $K" >> fc_params_big.txt
                     fi
                 done
             done
@@ -491,6 +495,57 @@ then
                                     echo "$batch_size $HW $HW $OC $stride $dilation $FHW $is_dw" >> pool_params.txt
                                 fi
                             done
+                        done
+                    done
+                done
+            done
+        done
+    done
+fi
+
+
+if [ ! -f a2a_2_params.txt ];
+then
+    touch a2a_2_params.txt
+    for batch_size in 256 512 1024 2048 4096;
+    do
+        for T1 in 1 2 3 4 5 6 7 8 9 10;
+        do
+            for T2 in 1 2 3 4 5 6 7 8 9 10;
+            do
+                for D in 32 64 128 256;
+                do
+                    input_size="$( echo "$batch_size * $T1 * $T2 * $D * 4" | bc -l )"
+                    if [ "$input_size" -lt "$GPU_memory" ];
+                    then
+                        echo "$batch_size $T1 $T2 $D" >> a2a_2_params.txt
+                    fi
+                done
+            done
+        done
+    done
+fi
+
+if [ ! -f a2a_4_params.txt ];
+then
+    touch a2a_4_params.txt
+    for batch_size in 256 512 1024 2048 4096;
+    do
+        for T1 in 1 2 3 4 5 6 7 8 9 10;
+        do
+            for T2 in 1 2 3 4 5 6 7 8 9 10;
+            do
+                for T3 in 1 2 3 4 5 6 7 8 9 10;
+                do
+                    for T4 in 1 2 3 4 5 6 7 8 9 10;
+                    do
+                        for D in 32 64 128 256;
+                        do
+                            input_size="$( echo "$batch_size * $T1 * $T2 * $T3 * $T4 * $D * 4" | bc -l )"
+                            if [ "$input_size" -lt "$GPU_memory" ];
+                            then
+                                echo "$batch_size $T1 $T2 $T3 $T4 $D" >> a2a_4_params.txt
+                            fi
                         done
                     done
                 done
