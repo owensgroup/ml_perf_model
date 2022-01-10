@@ -2,8 +2,8 @@ import torch
 import pandas as pd
 import numpy as np
 import json
+from exec_graph_utils import NodeType
 from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS, CONSIDER, SKIP, GPU_EVENT_OVERHEAD
-from .exec_graph_utils import NodeType
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
 peak_PCIe_BW = GPU_PARAMS["peak_PCIe_BW"]
