@@ -82,7 +82,8 @@ CONSIDER = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten:
                 "aten::mse_loss", "MseLossBackward", \
                 "aten::avg_pool2d", "AvgPool2D", \
                 "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-                "aten::add", "aten::add_", "aten::__and__", "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
+                "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", \
+                "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
                 "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
 
 SKIP = ["aten::ones", "SliceBackward", "FusedDropoutBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)

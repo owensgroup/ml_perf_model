@@ -510,7 +510,7 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(t)
     elif op.name == "aten::t":
         kernel_times.append(0) # T is handled under addmm
-    elif op.name in ["aten::add", "aten::add_", "aten::__and__"]:
+    elif op.name in ["aten::add", "aten::add_", "aten::__and__", "aten::mul"]:
         s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
         kernel_times.append(t)

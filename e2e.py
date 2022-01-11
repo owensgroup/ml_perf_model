@@ -1,5 +1,5 @@
 import argparse, json, re, os
-from analysis.exec_graph_utils import ExecutionGraph
+from exec_graph_utils import ExecutionGraph
 from analysis.utils import PM_HOME, GPU_NAME
 from analysis.inference import get_e2e_time
 
