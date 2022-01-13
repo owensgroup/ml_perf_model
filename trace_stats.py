@@ -24,7 +24,7 @@ if __name__ == '__main__':
     with open(trimmed_trace_file) as f:
         trace = json.load(f)
 
-    roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker=module_marker)
+    roots, cc, streams, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker=module_marker)
     print("Number of iterations: {}".format(args.iters))
     print('Num of events: {}, num of root events: {}, num of caller/callee pairs: {}'.format(len(trace['traceEvents']), len(roots), len(cc)))
     print('Sum of dataloading time: {} us'.format(sum_skipped_intervals))
@@ -42,45 +42,60 @@ if __name__ == '__main__':
     get_operators(roots, ops)
     QPS = 1000000 / host_runtime * args.iters * args.batch_size
     print(f"QPS: {QPS:.2f}")
+    print("Totally {} GPU stream(s).".format(len(streams)))
 
-    op_device_runtime = get_device_runtime(ops, cc)
-    dt_breakdown = device_runtime_breakdown(roots, op_device_runtime, depth=0)
-    flatten = {}
-    print("Totally {} GPU streams.".format(len(dt_breakdown.items())))
-    gpu_time = 0
-    for stream, v in dt_breakdown.items():
-        flatten[stream] = {}
-        get_major_device_results(device_runtime, dt_breakdown[stream], flatten[stream])
-        print("  Stream {}: average per-batch time: {:.2f} us".format(stream, flatten[stream]["total"]["runtime"] / args.iters))
-        runtime_no_pf = -1
-        log_file = "{}/data/{}/e2e/{}/1_{}.log".format(PM_HOME, GPU_NAME, args.model_name, args.batch_size)
-        if os.path.exists(log_file):
-            for line in open(log_file, 'r'):
-                if re.search("Overall per-batch", line):
-                    runtime_no_pf = float(line.split(' ')[4]) * 1000 * args.iters # us
+    # All GPU kernels in start time order
+    all_kernels = sorted([x['executor'] for _, d in cc.items() for _, x in d['callees'].items() if x['executor'] is not None], key=lambda x: x.start_time())
 
-            per_op = {}
-            total = 0.0
-            for k, vv in flatten[stream].items():
-                if k == 'total' or 'DLRM ' in k[0] or 'module' in k[0]: # Skip all labels
-                    continue
-                k0 = k[0] if '#' not in k[0] else k[0].split('#')[0]
-                if k0 not in per_op.keys():
-                    per_op[k0] = 0.0
-                per_op[k0] += vv['runtime']
-                total += vv['runtime']
+    gpu_time = {
+        "total": 0
+    }
+    idx = 0
+    while 1:
+        k = all_kernels[idx]
+        k_start, k_end = k.start_time(), k.start_time() + k.duration()
+        k_stream = k.stream()
+        if k_stream not in gpu_time.keys(): # Initialization
+            gpu_time[k_stream] = k.duration()
 
-            tmp = sorted(per_op.items(), key=lambda x: x[1], reverse=True)
-            op = [x[0] for x in tmp]
-            p = [x[1] / total for x in tmp]
+        front = k_end # The time front of a group of overlapped kernels
+        idx_incr = 1 # How many kernels are already processed in the following loop
+        for tmp_idx, kk in enumerate(all_kernels[(idx+1):]):
+            kk_stream = kk.stream()
+            kk_duration = kk.duration()
+            if kk_stream not in gpu_time.keys(): # Initialization
+                gpu_time[kk_stream] = kk_duration
+            gpu_time[kk_stream] += kk_duration
+            if kk.start_time() >= front: # No overlaps
+                break
+            assert kk_stream != k_stream # Two kernels from the same stream should never overlap
+            # Overlapped
+            front = max(front, kk.start_time() + kk_duration)
+            idx_incr = tmp_idx + 1
 
-            active_time_perc = flatten[stream]['total']['runtime'] / runtime_no_pf
-            idle_time_perc = 1 - flatten[stream]['total']['runtime'] / runtime_no_pf
-            print("  Stream {}: active time perc {:.2f}%, idle time perc {:.2f}%".format(
-                stream, active_time_perc * 100, idle_time_perc * 100))
-        
-        gpu_time += flatten[stream]["total"]["runtime"] # TODO: Deal with stream overlapping.
-    print("Total per-batch GPU time: {:.2f} us".format(gpu_time / args.iters))
+        gpu_time['total'] += front - k_start
+        idx += idx_incr
+
+        if idx >= len(all_kernels):
+            break
+
+    # Get overall per-batch time
+    runtime_no_pf = -1
+    log_file = "{}/data/{}/e2e/{}/1_{}.log".format(PM_HOME, GPU_NAME, args.model_name, args.batch_size)
+    if os.path.exists(log_file):
+        for line in open(log_file, 'r'):
+            if re.search("Overall per-batch", line):
+                runtime_no_pf = float(line.split(' ')[4]) * 1000 * args.iters # us
+    assert runtime_no_pf != -1
+
+    # Each stream and total GPU time
+    for s in streams:
+        print("  Stream {}: average per-batch time: {:.2f} us".format(s, gpu_time[s] / args.iters))
+        active_time_perc = gpu_time[s] / runtime_no_pf
+        idle_time_perc = 1 - gpu_time[s] / runtime_no_pf
+        print("  Stream {}: active time perc {:.2f}%, idle time perc {:.2f}%".format(
+            s, active_time_perc * 100, idle_time_perc * 100))
+    print("Total per-batch GPU time: {:.2f} us".format(gpu_time['total'] / args.iters))
 
     # Type 1 overhead: between two op calls
     # Type 2 overhead: before the first device call, op-specific

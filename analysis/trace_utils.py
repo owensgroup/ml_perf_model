@@ -2,8 +2,6 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import json, sys
 from itertools import compress
 
-from analysis.utils import SKIP
-
 # Label markers
 LABEL_MARKERS = ["##", "__", "module::", "DLRM "]
 
@@ -220,7 +218,7 @@ class Event:
 #     ex_id1 : {
 #         caller: - (an op that has one or multiple device calls)
 #         callees: {
-#             cr_id1: {
+#             correlation_id1: {
 #                 launcher: - (cudaKernelLaunch)
 #                 executor: - (device kernel)
 #             }
@@ -252,6 +250,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     unaccounted = [] # Unaccounted events (not being used now)
     cc = {} # caller / callee: key = external id, value = { caller event, callee events }
     main_tid = -1 # ID of the main thread that executes data loading, module events, etc
+    streams = set() # GPU streams in this trace
 
     # Remove all events without a duration and sort the event lists by start time (increasing order) and duration (decreasing order)
     sorted_events = [Event(e) for e in raw_trace if "dur" in e.keys()]
@@ -309,6 +308,8 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
         event_duration = x.duration()
         external_id = x.external_id()
         correlation_id = x.correlation_id()
+        if x.stream() is not None:
+            streams.add(x.stream())
 
         # Skip all events in skipped intervals
         should_skip = False
@@ -432,7 +433,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     
     sum_skipped_intervals = sum([e-s for s, e in skipped_intervals])
 
-    return roots, cc, corrected_start_time, corrected_end_time, sum_skipped_intervals
+    return roots, cc, tuple(streams), corrected_start_time, corrected_end_time, sum_skipped_intervals
 
 
 def get_event_all_kernel_launches(event):
