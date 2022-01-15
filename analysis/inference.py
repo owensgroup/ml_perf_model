@@ -2,8 +2,8 @@ import torch
 import pandas as pd
 import numpy as np
 import json
-from exec_graph_utils import NodeType
-from .utils import preprocessing, abs_err, div_round_up, gmae, get_pretrained_net, get_data, PM_HOME, GPU_NAME, GPU_PARAMS, CONSIDER, SKIP, GPU_EVENT_OVERHEAD
+from .utils import PM_HOME, GPU_NAME, GPU_PARAMS, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, CONSIDER, SKIP, MUL_FACTOR_FUNCS, COMMS
+from .utils import preprocessing, abs_err, div_round_up, gmae, get_sigmoid_bw, get_pretrained_net, get_data
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
 peak_PCIe_BW = GPU_PARAMS["peak_PCIe_BW"]
@@ -12,6 +12,11 @@ peak_L2_BW = GPU_PARAMS["peak_L2_BW"]
 peak_SMEM_BW = GPU_PARAMS["peak_SMEM_BW"]
 num_SM = GPU_PARAMS["num_SM"]
 L2_size = GPU_PARAMS["L2_size"]
+
+
+COMPUTE_STREAM = 0
+MEMORY_STREAM = 1
+ADDITIONAL = 2
 
 
 def embedding_forward_predictor_simple(**kwargs):
@@ -168,10 +173,9 @@ def embedding_backward_sgd_predictor(**kwargs):
 
 
 def concat_predictor(**kwargs):
-    A_size = kwargs["A_size"]
-    B_size = kwargs["B_size"]
+    sum_size = kwargs["sum_size"]
     actual_peak_DRAM_BW = 0.79 * peak_DRAM_BW
-    return 2 * (A_size + B_size) * 4 / actual_peak_DRAM_BW / 1000
+    return 2 * (sum_size) * 4 / actual_peak_DRAM_BW / 1000
 
 
 def memcpy_predictor(**kwargs):
@@ -185,6 +189,49 @@ def mlp_predictor_tensor(x, op_type, backward=False):
     if result.shape == torch.Size((1,)):
         result = result.item()
     return result
+
+
+def predict_collective_time(size, mul_factor, incr_p, sats_p, max_bw, overhead, sigmoid_param):
+    log_size = np.log2(size)
+    if log_size <= incr_p:
+        return overhead
+    elif log_size >= sats_p:
+        return size / max_bw * mul_factor / 1e3 + overhead
+    else:
+        bw = get_sigmoid_bw(log_size, sigmoid_param)
+        return size / bw * mul_factor / 1e3
+
+
+# 4-V100 DGX-1
+def all_to_all_predictor(**kwargs):
+    # Hardcoded for now
+    incr_p = 13 # 2^13 bytes
+    sats_p = 27 # 2^27 bytes
+    max_bw = 56.7134 # GB/s
+    overhead = 85.6 # us
+    sigmoid_param = (5.97878216, 13.33976161, 0.22551425, -3.99731681)
+
+    f = MUL_FACTOR_FUNCS["all_to_allv"]
+    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["num_gpus"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+
+# 4-V100 DGX-1
+def all_reduce_predictor(**kwargs):
+    # Hardcoded for now
+    incr_p = 12 # 2^12 bytes
+    sats_p = 26 # 2^26 bytes
+    max_bw = 75.6704 # GB/s
+    overhead = 84.2 # us
+    sigmoid_param = (6.04564109, 12.70417428, 0.2242347, -3.94164857)
+
+    f = MUL_FACTOR_FUNCS["all_reduce"]
+    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["num_gpus"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+
+
+def collective_predictor(c, **kwargs):
+    if c == "nccl:all_to_all":
+        return all_to_all_predictor(**kwargs)
+    else: # "nccl:all_reduce"
+        return all_reduce_predictor(**kwargs)
 
 
 def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
@@ -213,7 +260,7 @@ def infer_concat():
     concat_data = concat_data[concat_data["batch_size"] > 1]
     A_size = concat_data["batch_size"] * concat_data["M"] * concat_data["K"]
     B_size = concat_data["batch_size"] * concat_data["N"] * concat_data["K"]
-    estimated_time = concat_predictor(A_size=A_size, B_size=B_size)
+    estimated_time = concat_predictor(sum_size=A_size+B_size)
     error = abs_err(estimated_time, concat_data['kernel_runtime'])
     print("Concat: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
     return None, error
@@ -372,7 +419,7 @@ def get_kernel_time(op, op_lists):
             if child.name == "aten::reshape": # Equivalent to concat
                 sa = np.prod(child.input_shapes[0][0])
                 sb = np.prod(child.input_shapes[0][1])
-                t = concat_predictor(A_size=sa, B_size=sb)
+                t = concat_predictor(sum_size=sa+sb)
                 kernel_times.append(t)
             elif "aten::bmm" in child.name: # aten::bmm
                 op_lists["bmm"].append(child)
@@ -467,6 +514,19 @@ def get_kernel_time(op, op_lists):
             diag = 0
         t = mlp_predictor_kwargs("tril", backward=True, batch_size=batch_size, M=M, N=N, diag=diag)
         kernel_times.append(t)
+    elif op.name == "record_param_comms" or "All2All" in op.name:
+        collective_op = None
+        # Get the collective op
+        def dfs(n):
+            nonlocal collective_op
+            if n.name in COMMS:
+                collective_op = n
+            for c in n.children:
+                dfs(c)
+        dfs(op)
+        tensor_size = np.prod(collective_op.input_shapes[0])
+        t = collective_predictor(collective_op.name, tensor_size=tensor_size, num_gpus=4) # TODO: Replace 4 with world size
+        kernel_times.append(t)
     # Minor ops staring from here: ----
     elif op.name in ["aten::relu", "aten::relu_"]:
         op_lists["relu"].append(op)
@@ -510,14 +570,13 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(t)
     elif op.name == "aten::t":
         kernel_times.append(0) # T is handled under addmm
-    elif op.name in ["aten::add", "aten::add_", "aten::__and__", "aten::mul"]:
+    elif op.name in ["aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul"]:
         s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
         kernel_times.append(t)
     elif op.name == "aten::cat":
-        sa = np.prod(op.input_shapes[0][0])
-        sb = np.prod(op.input_shapes[0][1])
-        t = concat_predictor(A_size=sa, B_size=sb)
+        sum_size = sum([np.prod(s) for s in op.input_shapes[0]])
+        t = concat_predictor(sum_size=sum_size)
         kernel_times.append(t)
     elif op.name == "aten::sum":
         s = np.prod(op.input_shapes[0])
@@ -564,6 +623,19 @@ def get_kernel_time(op, op_lists):
     return kernel_times
 
 
+def is_collective(op):
+    if op.name == "record_param_comms" or "All2All" in op.name:
+        return True
+    return False
+
+
+# Simple heuristic to infer if an op will schedule a kernel in a new stream
+def infer_multi_stream(op):
+    if is_collective(op):
+        return MEMORY_STREAM
+    return COMPUTE_STREAM
+
+
 # Infer E2E time from an execution graph and an overhead file
 def get_e2e_time(graph, overheads, module_marker, debug=False):
     nodes = graph.get_nodes(clean=True)
@@ -583,47 +655,59 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
         "tril": [],
     }
     cpu_time = 0
-    gpu_time = 0
-    gpu_active_time = 0
+    gpu_time = {
+        "active": 0,
+        COMPUTE_STREAM: 0,
+        MEMORY_STREAM: 0
+    }
+    stream = COMPUTE_STREAM
+    gpu_all_streams_front = 0
 
     forward_found = False
-    for _, op in sorted_nodes:
-        if module_marker in op.name:
+    for _, node in sorted_nodes:
+        if module_marker in node.name:
             forward_found = True
         if not forward_found:
             continue
-        is_op = (op.type == NodeType.OPERATOR and op.parent.type != NodeType.OPERATOR)
-        if is_op:
-            if op.name in SKIP:
+        if node.is_op():
+            if (node.name in SKIP or node.get_grandest_parent().name in SKIP):
                 continue
-            cpu_time += overheads["t1"][0] # T1: between two ops
+            stream = infer_multi_stream(node)
+            cpu_time += overheads["t1"][0] # T1: between two nodes
             if debug:
-                print(" ", op.name, "--------")
+                print(" ", node.name, "--------")
                 print("    t1: {:.2f}".format(overheads["t1"][0]))
-            if op.name in overheads["launches"].keys(): # Has kernel calls
-                cpu_time += overheads["t2"][op.name][0] # T2: before the first kernel call
+            if node.name in overheads["launches"].keys(): # Has kernel calls
+                cpu_time += overheads["t2"][node.name][0] # T2: before the first kernel call
                 if debug:
-                    print("    t2: {:.2f}".format(overheads["t2"][op.name][0]))
-                launches = overheads["launches"][op.name]
-                if op.name in CONSIDER:
-                    t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(op, op_lists)] # Get kernel time and (arguably) compensate with the overheads
-                    gpu_active_time += np.sum(t)
+                    print("    t2: {:.2f}".format(overheads["t2"][node.name][0]))
+                launches = overheads["launches"][node.name]
+                if node.name in CONSIDER or is_collective(node):
+                    t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(node, op_lists)] # Get kernel time and (arguably) compensate with the overheads
 
                     for idx, l in enumerate(launches):
                         t4 = overheads["t4"][l][0] # Kernel launches
-                        t5 = overheads["t5"][op.name][0] # Avg overhead between
+                        t5 = overheads["t5"][node.name][0] # Avg overhead between
 
                         # Contribution of CPU overheads on GPU idle time
-                        gpu_time = max(gpu_time + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
+                        gpu_time[stream] = max(gpu_time[stream] + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
 
                         # Kernel launches like cudaStreamSynchronize do not have actual kernel calls
                         if idx < len(t):
-                            gpu_time += t[idx]
+                            # GPU active time:
+                            # cases of max:   (stream front)   [     ]|  or  [     ]|
+                            #                 (current stream)   |[-]          |[-------]
+                            # cases of min:   current stream is the stream front
+                            gpu_time["active"] += min(max(gpu_time[stream] + t[idx] - gpu_all_streams_front, 0), t[idx])
+
+                            # Current stream
+                            gpu_time[stream] += t[idx]
+
                             if debug:
                                 print("    kernel: {:.2f}".format(t[idx]))
 
-                        if "aten::to" == op.name and len(op.children) == 0:
-                            cpu_time += 2 # Some aten::to doesn't have children
+                        if "aten::to" == node.name and len(node.children) == 0:
+                            cpu_time += CPU_EVENT_OVERHEAD # Some aten::to doesn't have children
                         else:
                             cpu_time += t4
 
@@ -633,24 +717,28 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                         if debug:
                             print("    t4: {:.2f}".format(t4))
                             print("    t5: {:.2f}".format(t5))
-                    # print(op.name, t)
+
+                    # print(node.name, t)
                 else:
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
                     cpu_time += np.sum([overheads["t4"][x][0] for x in launches]) # T4
-                    cpu_time += overheads["t5"][op.name][0] * (len(launches) - 1) # T5
+                    cpu_time += overheads["t5"][node.name][0] * (len(launches) - 1) # T5
                     if debug:
                         print("    t4: {:.2f}".format(np.sum([overheads["t4"][x][0] for x in launches])))
-                        print("    t5: {:.2f}".format(overheads["t5"][op.name][0] * (len(launches) - 1)))
-                cpu_time += overheads["t3"][op.name][0] # T3: after the last kernel call
+                        print("    t5: {:.2f}".format(overheads["t5"][node.name][0] * (len(launches) - 1)))
+                cpu_time += overheads["t3"][node.name][0] # T3: after the last kernel call
+                gpu_all_streams_front = max(gpu_time.values()) # Track the GPU front among all streams
                 if debug:
-                    print("    t3: {:.2f}".format(overheads["t3"][op.name][0]))
-                # print(op.name, ["{:.2f}".format(tt) for tt in t], gpu_active_time)
+                    print("    t3: {:.2f}".format(overheads["t3"][node.name][0]))
+                # print(node.name, ["{:.2f}".format(tt) for tt in t], gpu_time["active"])
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
-                cpu_time += overheads["t5"][op.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
+                cpu_time += overheads["t5"][node.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
                 if debug:
-                    print("    t5: {:.2f}".format(overheads["t5"][op.name][0]))
+                    print("    t5: {:.2f}".format(overheads["t5"][node.name][0]))
             if debug:
-                print(op.name, cpu_time, gpu_time, op.input_shapes)
-    total_time = max(gpu_time, cpu_time)
+                print(node.name, cpu_time, gpu_time, node.input_shapes)
 
-    return total_time, gpu_active_time
+    # It's safe because gpu_time["active"] won't be the maximum
+    total_time = max(max(gpu_time.values()), cpu_time)
+
+    return total_time, gpu_time["active"]

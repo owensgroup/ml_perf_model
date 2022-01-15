@@ -71,7 +71,8 @@ GPU_EVENT_OVERHEAD = 4
 KERNEL_LAUNCH_LENGTH = 10
 
 
-CONSIDER = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten::matmul", "MmBackward", \
+CONSIDER = [    
+                "aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten::matmul", "MmBackward", \
                 "aten::conv2d", "CudnnConvolutionBackward", \
                 "LookupFunction", "LookupFunctionBackward", \
                 "aten::batch_norm", "CudnnBatchNormBackward", \
@@ -84,10 +85,32 @@ CONSIDER = ["aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten:
                 "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
                 "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", \
                 "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
-                "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"]
+                "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
+]
 
-SKIP = ["aten::ones", "SliceBackward", "FusedDropoutBackward"] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
+
+SKIP = [    "SliceBackward",
+            "FusedDropoutBackward",
+            "DLRM distribute emb data",
+            "aten::as_strided"
+] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
 # FusedDropoutBackward somehow occurs in DeepFM graph
+
+
+# alg_bw -> bus_bw for multi-gpu collectives
+MUL_FACTOR_FUNCS = {
+    'all_to_all': lambda n: (n-1) / n,
+    'all_to_allv': lambda n: (n-1) / n,
+    'all_reduce': lambda n: 2 * (n-1) / n,
+    'all_gather': lambda n: (n-1) / n,
+    'all_gather_base': lambda n: (n-1) / n,
+    'reduce': lambda n: 1,
+    'reduce_scatter': lambda n: (n-1) / n
+}
+
+
+# Currently only support All2All and AllReduce
+COMMS = ["nccl:all_to_all", "nccl:all_reduce"]
 
 
 def dash_separated_ints(value):
@@ -113,6 +136,15 @@ def err(pred, real):
 
 def gmae(x):
     return np.exp(np.log(abs(x)).mean())
+
+
+def sigmoid(x, L, x0, k, b):
+    y = L / (1 + np.exp(-k*(x-x0)))+b
+    return y
+
+
+def get_sigmoid_bw(s, sigmoid_param):
+    return 10 ** sigmoid(s, *sigmoid_param) # L, x0, k, b
 
 
 def histogram(df, perc=True, is_abs=False, bins=[0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0]):

@@ -73,6 +73,8 @@ python kernel_pm_acc.py
 ./dlrm_benchmark.sh <model_name> <batch_size>
 ./convnet_benchmark.sh <model_name> <batch_size>
 ./nlp_benchmark.sh <model_name> <batch_size>
+# Or run all above together
+./run_experiments.sh
 ```
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
 
