@@ -4,6 +4,7 @@ import numpy as np
 import json
 from .utils import PM_HOME, GPU_NAME, GPU_PARAMS, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, CONSIDER, SKIP, MUL_FACTOR_FUNCS, COMMS
 from .utils import preprocessing, abs_err, div_round_up, gmae, get_sigmoid_bw, get_pretrained_net, get_data
+import analysis.extend_distributed as ext_dist
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
 peak_PCIe_BW = GPU_PARAMS["peak_PCIe_BW"]
@@ -702,7 +703,11 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
 
                             # Current stream
                             gpu_time[stream] += t[idx]
-
+                            if ext_dist.my_size > 1 and is_collective(node): # Only sync after a multi-GPU collective
+                                ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float) # On the CPU
+                                opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
+                                ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+                                gpu_time[stream] = max([x.item() for x in opTensorList])
                             if debug:
                                 print("    kernel: {:.2f}".format(t[idx]))
 
@@ -740,5 +745,19 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
 
     # It's safe because gpu_time["active"] won't be the maximum
     total_time = max(max(gpu_time.values()), cpu_time)
+
+    # Sync all the processes
+    if ext_dist.my_size > 1:
+        # Sync total_time and take the max. Gather to rank 0 is enough though but all_gather is convenient
+        ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float)
+        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
+        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+        total_time = max([x.item() for x in opTensorList])
+
+        # Sync GPU active time
+        ipTensor = torch.tensor([gpu_time["active"]], dtype=torch.float)
+        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
+        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+        gpu_time["active"] = max([x.item() for x in opTensorList])
 
     return total_time, gpu_time["active"]
