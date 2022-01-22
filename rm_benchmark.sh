@@ -55,7 +55,7 @@ then
         num_epoch=1
     else # DeepFM
         cd 3rdparty/deepfm
-        cmd="python main.py --batch-size ${mb_size}"
+        cmd="python main.py --batch-size ${mb_size} --embedding-dim 128 --mlp-hidden-size 64-64"
         num_epoch=500
     fi
     if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
