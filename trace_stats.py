@@ -36,10 +36,12 @@ if __name__ == '__main__':
 
     # Extract and save overheads
     overhead = get_overheads(ops)
-    overhead_name = "{}{}_overheads.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "")
-    print("Rank {}: export overheads to JSON...".format(ext_dist.my_local_rank))
-    with open(overhead_name, "w") as f:
-        json.dump(overhead, f)
+    # Workaround: use the overheads of rank 0 for all
+    if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
+        overhead_name = "{}{}_overheads.json".format(prefix, "") # ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else ""
+        print("Rank {}: export overheads to JSON...".format(ext_dist.my_local_rank))
+        with open(overhead_name, "w") as f:
+            json.dump(overhead, f)
 
     # Get overall per-batch time
     runtime_no_pf = -1
@@ -65,9 +67,12 @@ Totally {len(streams)} GPU stream(s)."""
 
     # Each stream and total GPU time
     for s in streams:
-        print("    Stream {}: average per-batch time: {:.2f} us".format(s, gpu_time[s] / args.iters))
         active_time_perc = gpu_time[s] / runtime_no_pf
         idle_time_perc = 1 - gpu_time[s] / runtime_no_pf
-        print("    Stream {}: active time perc {:.2f}%, idle time perc {:.2f}%".format(
-            s, active_time_perc * 100, idle_time_perc * 100))
+        print("    Stream {}: average per-batch time: {:.2f} us, active perc {:.2f}%, idle perc {:.2f}%".format(
+            s,
+            gpu_time[s] / args.iters,
+            active_time_perc * 100,
+            idle_time_perc * 100)
+        )
     print("Total per-batch GPU time: {:.2f} us".format(gpu_time['total'] / args.iters))

@@ -123,12 +123,9 @@ do
   fi
   cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
   echo "-------------------"
-  echo "Using GPUS: "$_gpus
+  echo "Using GPUS: $_gpus, batch size: $_mb_size"
   echo "-------------------"
   mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
-  echo "-------------------------------"
-  echo "Running PT (log file: $outf)"
-  echo "-------------------------------"
   cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
   if [[ ${_ng} != `ls data/${GPU_NAME}/e2e/${model_name} | grep -e $graph_filename_pattern | wc -l` ]];
   then

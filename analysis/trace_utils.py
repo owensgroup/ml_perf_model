@@ -116,6 +116,15 @@ def list_to_tuple(lst):
     return tuple(list_to_tuple(l) if isinstance(l, list) else l for l in lst) if lst is not None else None
 
 
+# Tell if the tid is normal
+def abnormal_tid(e):
+    try:
+        int(e.tid())
+    except ValueError:
+        return False
+    return abs(int(e.tid()) / int(e.pid())) > 2
+
+
 class Event:
     def __init__(self, e, dummy=False):
         if dummy:
@@ -182,12 +191,12 @@ class Event:
              "external id" not in self.event["args"].keys()):
             raise TypeError("External id lost!")
         
-        if self.category() == "Operator":
+        if self.category() == "Operator" or self.category() == "cpu_op":
             return self.event["args"]["External id"]
         else:
             return self.event["args"]["external id"]
     def correlation_id(self):
-        if "args" not in self.event.keys() or self.category() == "Operator":
+        if "args" not in self.event.keys() or self.category() == "Operator" or self.category() == "cpu_op":
             return None
 
         if ("correlation" not in self.event["args"].keys()):
@@ -256,6 +265,8 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
 
     # Remove all events without a duration and sort the event lists by start time (increasing order) and duration (decreasing order)
     sorted_events = [Event(e) for e in raw_trace if "dur" in e.keys()]
+    # Workaround: filter out some runtime events like cudaEventQuery and cudaEventDestroy that appear in a thread with huge tid. TODO: Fix this.
+    sorted_events = [e for e in sorted_events if not (e.category() == "Runtime" and abnormal_tid(e))] 
     sorted_events = sorted(sorted_events, key=lambda x: (x.start_time(), -x.duration()))
     
     # Remove all leftovers from the last iteration and next iteration
@@ -310,8 +321,9 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
         event_duration = x.duration()
         external_id = x.external_id()
         correlation_id = x.correlation_id()
-        if x.stream() is not None:
-            streams.add(x.stream())
+        stream = x.stream()
+        if stream is not None:
+            streams.add(stream)
 
         # Skip all events in skipped intervals
         should_skip = False
@@ -323,7 +335,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
             continue
 
         # Runtime events e.g. cudaLaunchKernel counted as host events
-        if x.category() == "Operator" or x.category() == "Runtime":
+        if x.category() == "Operator" or x.category() == "cpu_op" or x.category() == "Runtime":
             if event_start is None or event_duration is None:
                 print("Unaccounted event: {}".format(x.event))
                 unaccounted.append(x)
@@ -348,7 +360,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                 leaf_start = l.start_time()
                 leaf_end = leaf_start + l.duration()
 
-                # The current event has no overlap with leaf
+                # The current event has no overlap with the leaf
                 if event_start > leaf_end:
                     active_leaves.append(False) # Mark this leaf as outdated
                     continue
@@ -366,7 +378,8 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                     active_leaves.append(True) # Mark this leaf as active
                 # Crossover shouldn't happen
                 else:
-                    raise ValueError("\tCrossover happens to {}!".format(str(x)))
+                    import analysis.extend_distributed as ext_dist
+                    raise ValueError("\tCrossover happens to {} and {} in {}!".format(str(x), str(l), ext_dist.my_local_rank))
             # Delete all outdated leaves
             leaves = list(compress(leaves, active_leaves))
 
@@ -380,7 +393,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                 leaves.append(add_to_leaf)
             
             # Add op to caller or unaccounted
-            if x.category() == "Operator":
+            if x.category() == "Operator" or x.category() == "cpu_op":
                 if external_id != 0:
                     if external_id not in cc.keys():
                         cc[external_id] = {}  
@@ -565,7 +578,7 @@ def get_operators(roots, ops):
         # Is an operator, and
         # Not a module or submodule, and
         # (Parent is a module, or, is simply a root operator)
-        if r.category() == "Operator" and\
+        if (r.category() == "Operator" or r.category() == "cpu_op") and \
             (not is_module(r)) and ((\
             r.parent is not None
         ) or (\
@@ -873,19 +886,19 @@ def get_gpu_stream_stats(cc):
         k_start, k_end = k.start_time(), k.start_time() + k.duration()
         k_stream = k.stream()
         if k_stream not in gpu_time.keys(): # Initialization
-            gpu_time[k_stream] = k.duration()
+            gpu_time[k_stream] = 0
+        gpu_time[k_stream] += k.duration()
 
         front = k_end # The time front of a group of overlapped kernels
         idx_incr = 1 # How many kernels are already processed in the following loop
         for tmp_idx, kk in enumerate(all_kernels[(idx+1):]):
             kk_stream = kk.stream()
-            kk_duration = kk.duration()
-            if kk_stream not in gpu_time.keys(): # Initialization
-                gpu_time[kk_stream] = kk_duration
-            gpu_time[kk_stream] += kk_duration
             if kk.start_time() >= front: # No overlaps
                 break
-            assert kk_stream != k_stream # Two kernels from the same stream should never overlap
+            kk_duration = kk.duration()
+            if kk_stream not in gpu_time.keys(): # Initialization
+                gpu_time[kk_stream] = 0
+            gpu_time[kk_stream] += kk_duration
             # Overlapped
             front = max(front, kk.start_time() + kk_duration)
             idx_incr = tmp_idx + 1
