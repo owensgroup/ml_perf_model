@@ -3,7 +3,7 @@
 # Get model name
 model_name=$1
 list="alexnet vgg11 inception_v3 resnet18 resnet50 resnext101 wide_resnet50_2 mnasnet_a1 mnasnet0_5 \
-        squeezenet1_0 densenet121 mobilenet_v1 mobilenet_v2 shufflenet unet unet3d"
+        squeezenet1_0 densenet121 mobilenet_v1 mobilenet_v2 mobilenet_v3_large shufflenet efficientnet_b7 unet unet3d"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
