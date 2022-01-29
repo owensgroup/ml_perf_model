@@ -4,13 +4,13 @@ then
     CUDA_VISIBLE_DEVICES="0"
 fi
 
-< "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" awk '/GPU activities: /,/API calls:/' | grep -v "API calls:" > "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
 rm -f "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
 op_type=$1
 threshold="0.98"
 sum_perc="0.0"
 touch "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
 
+< "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" awk '/GPU activities: /,/API calls:/' | grep -v "API calls:" > "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
 sum_runtime="0.0"
 while IFS= read -r line
 do
