@@ -200,7 +200,7 @@ do
 
     # Get gpu trace
     echo "Get GPU trace of kernels ..."
-    nvprof --openacc-profiling off --print-gpu-trace --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
+    nvprof --openacc-profiling off --print-gpu-trace --csv --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
     python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
     --warmup-iters $warmup_iters >& /dev/null
 
@@ -243,14 +243,14 @@ do
 
             # Get thread grid / block info
             kernel_count="$( echo "$kernel_count + 1" | bc )"
-            IFS=', ' read -r -a x <<< "$line"
+            IFS=',' read -r -a x <<< "$line"
             if [ "$trace_values" == "" ];
             then
                 if [ "$op_type" == "memcpy" ];
                 then
                     trace_values="${x[8]}"
                 else
-                    trace_values="${x[2]/(/},${x[3]},${x[4]/)/},${x[5]/(/},${x[6]},${x[7]/)/},${x[8]},${x[9]},${x[10]}"
+                    trace_values="${x[2]},${x[3]},${x[4]},${x[5]},${x[6]},${x[7]},${x[8]},${x[9]},${x[10]}"
                 fi
             fi
 

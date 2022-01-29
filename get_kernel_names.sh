@@ -6,10 +6,12 @@ fi
 
 < "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" awk '/GPU activities: /,/API calls:/' | grep -v "API calls:" > "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
 rm -f "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
-
-threshold="0.98"
-sum_runtime="0.0"
 op_type=$1
+threshold="0.98"
+sum_perc="0.0"
+touch "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
+
+sum_runtime="0.0"
 while IFS= read -r line
 do
     line="${line/GPU activities: /}"
@@ -45,8 +47,6 @@ done < "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
 echo "Sum of kernel runtime: $sum_runtime us."
 
 # Get dominating kernels
-sum_perc="0.0"
-touch "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
 while IFS= read -r line
 do
     line="${line/GPU activities: /}"
