@@ -1,11 +1,5 @@
 #!/bin/bash
 
-if [ ! -f nvprof_metrics.txt ];
-then
-    echo "no nvprof metrics file"
-    exit
-fi
-
 # Get GPU name
 ./get_gpu_name.sh
 export GPU_NAME=`cat /tmp/gpu_name.txt`
@@ -18,6 +12,7 @@ benchmark_metrics="0"
 op_type=$1
 is_forward=$2
 is_big=${3:0}
+benchmark_metrics=${4:0}
 shmem="1"
 sgd="1"
 fc_test="0"
@@ -27,6 +22,12 @@ file_prefix="./data/${GPU_NAME}/kernel/${op_type}_${is_forward}"
 if [ "${CUDA_VISIBLE_DEVICES}" == "" ];
 then
     CUDA_VISIBLE_DEVICES="0"
+fi
+
+if [ ! -f nvprof_metrics.txt ] && [ "$benchmark_metrics" == "1" ];
+then
+    echo "no nvprof metrics file"
+    exit
 fi
 
 if [ "$op_type" == "embedding_lookup" ];
@@ -104,9 +105,7 @@ else # memcpy
 fi
 if [ "$is_big" == "1" ];
 then
-    file_name="${file_prefix}_big.csv"
-else
-    file_name="${file_prefix}.csv"
+    file_prefix="${file_prefix}_big"
 fi
 
 header="${header},kernel_runtime,op_runtime"
@@ -116,6 +115,7 @@ then
 
     if [ "$benchmark_metrics" == "1" ];
     then
+        file_prefix="${file_prefix}_big_with_metrics"
         metrics_args=""
         metrics=()
         while IFS= read -r line
@@ -128,6 +128,8 @@ then
 else
     header="${header},throughput"
 fi
+
+file_name="${file_prefix}.csv"
 if [ ! -f "$file_name" ];
 then
     touch "$file_name"
@@ -275,14 +277,14 @@ do
         avg_kernel_time="$( echo "scale=4; $avg_kernel_time / ($kernel_count - $warmup_iters) * ($kernel_count / ($runtime_batch_iters + $warmup_iters))" | bc )" # In case 1 op = multiple identical kernel calls, e.g. big transpose
         stats_row="${stats_row},${avg_kernel_time},${op_time},${trace_values}"
 
-        if [ "$benchmark_metrics" == "1" ];
+        if [ "$benchmark_metrics" == "1" ] && [ "$op_type" != "memcpy" ];
         then
             # Benchmark kernel metrics
             echo "Benchmark kernel $kernel"
             nvprof --openacc-profiling off --kernels $kernel \
             $metrics_args \
             --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt" \
-            python sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters $warmup_iters >& /dev/null
+            python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters 0 # >& /dev/null
 
             metric_values=()
             for (( j=0; j<${#metrics[@]}; j++ ));
