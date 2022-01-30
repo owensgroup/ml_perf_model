@@ -35,6 +35,7 @@ cd ../ml_perf_model
 
 ### Microbenchmark
 ```bash
+cd microbenchmark/nvprof # Or microbenchmark/nsight, depending on the choice of profiler
 ./microbenchmark.sh fully_connected 1 # 1 for forward
 ./microbenchmark.sh fully_connected 1 1 # The second 1 for big batch size.
 ./microbenchmark.sh concat 1

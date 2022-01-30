@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get GPU name
-./get_gpu_name.sh
+${PM_HOME}/get_gpu_name.sh
 export GPU_NAME=`cat /tmp/gpu_name.txt`
 
 runtime_batch_iters=30
@@ -18,15 +18,15 @@ sgd="1"
 fc_test="0"
 header=""
 param_file_name=""
-file_prefix="./data/${GPU_NAME}/kernel/${op_type}_${is_forward}"
+file_prefix="${PM_HOME}/data/${GPU_NAME}/kernel/${op_type}_${is_forward}"
 if [ "${CUDA_VISIBLE_DEVICES}" == "" ];
 then
     CUDA_VISIBLE_DEVICES="0"
 fi
 
-if [ ! -f nsight_metrics.txt ] && [ "$benchmark_metrics" == "1" ];
+if [ ! -f nvprof_metrics.txt ] && [ "$benchmark_metrics" == "1" ];
 then
-    echo "no nsight metrics file"
+    echo "no nvprof metrics file"
     exit
 fi
 
@@ -35,9 +35,9 @@ then
     header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
     if [ "$is_big" == "1" ];
     then
-        param_file_name="./bench_params/embedding_lookup_params_big.txt"
+        param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_big.txt"
     else
-        param_file_name="./bench_params/embedding_lookup_params.txt"
+        param_file_name="${PM_HOME}/bench_params/embedding_lookup_params.txt"
     fi
     if [ "$is_forward" == "1" ] && [ "$shmem" == "1" ];
     then
@@ -61,13 +61,13 @@ then
     header="kernel_name,batch_size,M,N,K"
     if [ "$is_big" == "1" ];
     then
-        param_file_name="./bench_params/fc_params_big.txt"
+        param_file_name="${PM_HOME}/bench_params/fc_params_big.txt"
     else
-        param_file_name="./bench_params/fc_params.txt"
+        param_file_name="${PM_HOME}/bench_params/fc_params.txt"
     fi
     if [ "$fc_test" == "1" ];
     then
-        param_file_name="./bench_params/fc_test_params.txt"
+        param_file_name="${PM_HOME}/bench_params/fc_test_params.txt"
         file_prefix="${file_prefix}_test"
     fi
 elif [ "$op_type" == "conv" ];
@@ -75,33 +75,33 @@ then
     header="kernel_name,batch_size,H,W,IC,OC,stride,dilation,FH,FW,is_dw"
     if [ "$is_big" == "1" ];
     then
-        param_file_name="./bench_params/conv_params_big.txt"
+        param_file_name="${PM_HOME}/bench_params/conv_params_big.txt"
     else
-        param_file_name="./bench_params/conv_only.txt"
+        param_file_name="${PM_HOME}/bench_params/conv_only.txt"
     fi
 elif [ "$op_type" == "concat" ];
 then
     header="kernel_name,batch_size,M,N,K"
-    param_file_name="./bench_params/concat_params.txt"
+    param_file_name="${PM_HOME}/bench_params/concat_params.txt"
 elif [ "$op_type" == "cross_entropy" ];
 then
     header="kernel_name,batch_size"
-    param_file_name="./bench_params/ce_params.txt"
+    param_file_name="${PM_HOME}/bench_params/ce_params.txt"
 elif [ "$op_type" == "transpose" ];
 then
     header="kernel_name,batch_size,M,N,trans_type"
-    param_file_name="./bench_params/transpose_params.txt"
+    param_file_name="${PM_HOME}/bench_params/transpose_params.txt"
 elif [ "$op_type" == "tril" ];
 then
     header="kernel_name,batch_size,M,N,diag"
-    param_file_name="./bench_params/tril_params.txt"
+    param_file_name="${PM_HOME}/bench_params/tril_params.txt"
 elif [ "$op_type" == "bn" ];
 then
     header="kernel_name,batch_size,H,W,OC"
-    param_file_name="./bench_params/bn_params.txt"
+    param_file_name="${PM_HOME}/bench_params/bn_params.txt"
 else # memcpy
     header="kernel_name,batch_size,M,N"
-    param_file_name="./bench_params/memcpy_params.txt"
+    param_file_name="${PM_HOME}/bench_params/memcpy_params.txt"
 fi
 if [ "$is_big" == "1" ];
 then
@@ -192,26 +192,21 @@ do
     echo "$bench_param"
 
     # Benchmark operator runtime: no nvprof
-    python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
+    python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
     op_time="$( < /tmp/${CUDA_VISIBLE_DEVICES}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
+
+    # Benchmark general: get the major kernel names
+    nvprof --openacc-profiling off --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" \
+    python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters \
+    --warmup-iters $warmup_iters >& /dev/null
 
     # Get gpu trace
     echo "Get GPU trace of kernels ..."
-    nsys profile --trace=cuda --force-overwrite true --output "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep" \
-    python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
+    nvprof --openacc-profiling off --print-gpu-trace --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt" \
+    python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
     --warmup-iters $warmup_iters >& /dev/null
 
-    # Extract stats
-    if [ "$op_type" != "memcpy" ];
-    then
-        nsys stats --report gpukernsum --format csv --output . --force-overwrite true /tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep >& /dev/null
-    else
-        nsys stats --report gpumemtimesum --format csv --output . --force-overwrite true /tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep >& /dev/null
-    fi
-    nsys stats --report gputrace --format csv --output . --force-overwrite true /tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep >& /dev/null
-    mv /tmp/${CUDA_VISIBLE_DEVICES}_profile_results_gputrace.csv /tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.csv
-
-    ./get_kernel_names_nsight.sh "$op_type"
+    ./get_kernel_names.sh "$op_type"
     kernels=()
     while IFS= read -r line
     do
@@ -236,73 +231,73 @@ do
             stats_row="$stats_row,${array[j]}"
         done
 
-        if [ "$op_type" == "memcpy" ];
-        then
-            result_file="/tmp/${CUDA_VISIBLE_DEVICES}_profile_results_gpumemtimesum.csv"
-        else
-            result_file="/tmp/${CUDA_VISIBLE_DEVICES}_profile_results_gpukernsum.csv"
-        fi
-
-        # Get kernel time
-        first_line=$( head -n 1 $result_file )
-        IFS=',' read -r -a x <<< "$first_line"
-        duration_unit="$( echo ${x[1]} | awk '{gsub(/^[^(]*\(|\)[^)]*$/,"",$0);print $0}' )" # Extract unit inside parentheses
-        related_line=$( cat $result_file | grep "$kernel" )
-        IFS=',' read -r -a x <<< "$related_line"
-        avg_kernel_time="${x[4]}"
-        if [[ "$duration_unit" == "ns" ]]; # Convert to us
-        then
-            avg_kernel_time="$( echo "scale=4; $avg_kernel_time / 1000.0" | bc )"
-        elif [[ "$duration_unit" == "ms" ]];
-        then
-            avg_kernel_time="$( echo "scale=4; $avg_kernel_time * 1000.0" | bc )"
-        else # in second
-            avg_kernel_time="$( echo "scale=4; $avg_kernel_time * 1000000.0" | bc )"
-        fi
-
         # Get trace info
         trace_values=""
-        first_line=$( head -n 1 "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.csv" )
-        IFS=',' read -r -a x <<< "$first_line"
-        throughput_unit="$( echo ${x[13]} | awk '{gsub(/^[^(]*\(|\)[^)]*$/,"",$0);print $0}' )" # Ditto
-        related_line=$( cat "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.csv" | grep "$kernel" | head -n 1 )
-        IFS=',' read -r -a x <<< "$related_line"
-        if [ "$op_type" == "memcpy" ];
-        then
-            trace_values="${x[13]}"
-            # Convert to GB/s
-            if [[ "$throughput_unit" == "MB/s" ]];
+        avg_kernel_time=0
+        kernel_count=0
+        while IFS= read -r line
+        do
+            # Skip the first few lines
+            if [ "$( echo "$line" | grep "$kernel" )" == "" ];
             then
-                trace_values="$( echo "scale=4; $trace_values / 1000.0" | bc )"
+                continue
             fi
-            trace_values="${trace_values}GB/s"
-        else
-            trace_values="${x[3]},${x[4]},${x[5]},${x[6]},${x[7]},${x[8]},${x[9]},${x[10]}B,${x[11]}B"
-        fi
+
+            # Get thread grid / block info
+            kernel_count="$( echo "$kernel_count + 1" | bc )"
+            IFS=', ' read -r -a x <<< "$line"
+            if [ "$trace_values" == "" ];
+            then
+                if [ "$op_type" == "memcpy" ];
+                then
+                    trace_values="${x[8]}"
+                else
+                    trace_values="${x[2]/(/},${x[3]},${x[4]/)/},${x[5]/(/},${x[6]},${x[7]/)/},${x[8]},${x[9]},${x[10]}"
+                fi
+            fi
+
+            # Get average kernel time excluding warmup runs, and convert to us
+            kernel_time="${x[1]}"
+            if [[ "$kernel_time" == *"us"* ]];
+            then
+                kernel_time="$( echo "$kernel_time" | tr --delete 'us' )"
+            elif [[ "$kernel_time" == *"ms"* ]];
+            then
+                kernel_time="$( echo "$kernel_time" | tr --delete 'ms' )"
+                kernel_time="$( echo "scale=4; $kernel_time * 1000.0" | bc )"
+            else # in second
+                kernel_time="$( echo "$kernel_time" | tr --delete 's' )"
+                kernel_time="$( echo "scale=4; $kernel_time * 1000000.0" | bc )"
+            fi
+            if [ "$kernel_count" -gt "$warmup_iters" ];
+            then
+                avg_kernel_time="$( echo "scale=4; $avg_kernel_time + $kernel_time" | bc )"
+            fi
+        done < "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.txt"
+        avg_kernel_time="$( echo "scale=4; $avg_kernel_time / ($kernel_count - $warmup_iters) * ($kernel_count / ($runtime_batch_iters + $warmup_iters))" | bc )" # In case 1 op = multiple identical kernel calls, e.g. big transpose
         stats_row="${stats_row},${avg_kernel_time},${op_time},${trace_values}"
 
-        # TODO: Fix this for ncu/nsys
-        # if [ "$benchmark_metrics" == "1" ];
-        # then
-        #     # Benchmark kernel metrics
-        #     echo "Benchmark kernel $kernel"
-        #     nvprof --openacc-profiling off --kernels $kernel \
-        #     $metrics_args \
-        #     --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt" \
-        #     python 3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters $warmup_iters >& /dev/null
+        if [ "$benchmark_metrics" == "1" ] && [ "$op_type" != "memcpy" ];
+        then
+            # Benchmark kernel metrics
+            echo "Benchmark kernel $kernel"
+            nvprof --openacc-profiling off --kernels $kernel \
+            $metrics_args \
+            --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt" \
+            python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters 0 # >& /dev/null
 
-        #     metric_values=()
-        #     for (( j=0; j<${#metrics[@]}; j++ ));
-        #     do
-        #         value="$( < /tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt grep -m1 "${metrics[j]}" | awk '{ x=gensub("    ","","G",$NF); printf x }' )"
-        #         metric_values+=( "$value" )
-        #     done
+            metric_values=()
+            for (( j=0; j<${#metrics[@]}; j++ ));
+            do
+                value="$( < /tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt grep -m1 "${metrics[j]}" | awk '{ x=gensub("    ","","G",$NF); printf x }' )"
+                metric_values+=( "$value" )
+            done
 
-        #     for (( j=0; j<${#metrics[@]}; j++ ));
-        #     do
-        #         stats_row="$stats_row,${metric_values[j]}"
-        #     done
-        # fi
+            for (( j=0; j<${#metrics[@]}; j++ ));
+            do
+                stats_row="$stats_row,${metric_values[j]}"
+            done
+        fi
         echo "$stats_row" >> "$file_name"
     done
 done < "$param_file_name"
