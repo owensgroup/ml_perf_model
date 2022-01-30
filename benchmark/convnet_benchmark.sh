@@ -26,10 +26,6 @@ export OMP_NUM_THREADS=$TOTAL_CORES
 export $KMP_SETTING
 export KMP_BLOCKTIME=$KMP_BLOCKTIME
 
-# Get GPU type
-./get_gpu_name.sh
-export GPU_NAME=`cat /tmp/gpu_name.txt`
-
 # ----------------------- Model param -----------------------
 # GPU Benchmarking
 if [ $gpu = 1 ];
@@ -45,18 +41,18 @@ then
     echo "-------------------"
     echo "Using GPUS: "$_gpus
     echo "-------------------"
-    mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
-    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}.log"
+    mkdir -p "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}"
+    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}.log"
     outp="convnet_benchmark.prof"
     echo "-------------------------------"
     echo "Running benchmark (log file: $outf)"
     echo "-------------------------------"
     cmd="python -u 3rdparty/convnet-benchmark-py/benchmark.py --arch ${model_name} --batch-size ${mb_size}"
-    if [ ! -f "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
+    if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
       eval "$cmd --num-steps 2 --collect-execution-graph --profile &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
     eval "$cmd --num-steps ${num_steps} --profile > $outf" # Profile to get trace
     # move profiling file(s)

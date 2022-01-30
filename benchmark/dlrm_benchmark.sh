@@ -34,10 +34,6 @@ common_args="   --use-gpu\
                 --print-time\
                 --pin-memory "
 
-# Get GPU type
-./get_gpu_name.sh
-export GPU_NAME=`cat /tmp/gpu_name.txt`
-
 # ----------------------- Model param -----------------------
 _args=""
 if [[ $model_name == "DLRM_vipul" ]]; # From Vipul
@@ -115,30 +111,30 @@ do
   _gpus=$(seq -s, 0 $((_ng-1)))
   if [ ${_ng} = 1 ];
   then
-    dlrm_pt_bin="python 3rdparty/dlrm/dlrm_s_pytorch.py"
+    dlrm_pt_bin="python ${PM_HOME}/3rdparty/dlrm/dlrm_s_pytorch.py"
     graph_filename_pattern="${_ng}_${_mb_size}_graph.json"
   else
-    dlrm_pt_bin="python -m torch.distributed.run --nproc_per_node=${_ng} 3rdparty/dlrm/dlrm_s_pytorch.py --dist-backend=nccl "
+    dlrm_pt_bin="python -m torch.distributed.run --nproc_per_node=${_ng} ${PM_HOME}/3rdparty/dlrm/dlrm_s_pytorch.py --dist-backend=nccl "
     graph_filename_pattern="${_ng}_${_mb_size}_distributed_[0-$((_ng-1))]_graph.json"
   fi
   cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
   echo "-------------------"
   echo "Using GPUS: $_gpus, batch size: $_mb_size"
   echo "-------------------"
-  mkdir -p "data/${GPU_NAME}/e2e/${model_name}"
+  mkdir -p "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}"
   cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$_mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
-  if [[ ${_ng} != `ls data/${GPU_NAME}/e2e/${model_name} | grep -e $graph_filename_pattern | wc -l` ]];
+  if [[ ${_ng} != `ls ${PM_HOME}/data/${GPU_NAME}/e2e/${model_name} | grep -e $graph_filename_pattern | wc -l` ]];
   then
     echo "Execution graph doesn't exist! Extract it..."
     eval "$cmd --num-batches 1 --collect-execution-graph --enable-profiling --test-freq=-1 &> /dev/null" # Collect execution graph
     if [ ${_ng} = 1 ];
     then
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
+      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
     else
       count=0
       for g in `ls /tmp/pytorch_execution_graph*`
       do
-        cp $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}_graph.json"
+        cp $g "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}_graph.json"
         count=$((count+1))
       done
     fi
@@ -147,17 +143,17 @@ do
   # move profiling file(s)
   if [ ${_ng} = 1 ];
   then
-    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}.log"
+    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}.log"
     outp="dlrm_s_pytorch.prof"
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
   else
-    outf="data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed.log"
+    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed.log"
     count=0
     for g in `ls dlrm_s_pytorch*.prof`
     do
-      mv $g "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.prof"
-      mv ${g//".prof"/".json"} "data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.json"
+      mv $g "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.prof"
+      mv ${g//".prof"/".json"} "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_distributed_${count}.json"
       count=$((count+1))
     done
   fi

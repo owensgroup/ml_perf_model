@@ -1,4 +1,5 @@
 export PM_HOME=`pwd`
+export PYTHONPATH=${PM_HOME}:${PYTHONPATH}
 mkdir -p data
 conda activate zhongyi
 echo "localhost" > 3rdparty/param/train/comms/pt/hfile.txt

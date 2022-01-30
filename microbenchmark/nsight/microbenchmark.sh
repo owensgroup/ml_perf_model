@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# Get GPU name
-${PM_HOME}/get_gpu_name.sh
-export GPU_NAME=`cat /tmp/gpu_name.txt`
-
 runtime_batch_iters=30
 metrics_bench_iters=3
 warmup_iters=5

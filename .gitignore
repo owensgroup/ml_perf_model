@@ -11,3 +11,4 @@ analysis/ml_predictors/*
 */*.png
 analysis/*.json
 run_kaggle_pt/*
+benchmark/run_kaggle_pt/*

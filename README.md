@@ -35,7 +35,7 @@ cd ../ml_perf_model
 
 ### Microbenchmark
 ```bash
-cd microbenchmark/nvprof # Or microbenchmark/nsight, depending on the choice of profiler
+cd ${PM_HOME}/microbenchmark/nvprof # Or ${PM_HOME}/microbenchmark/nsight, depending on the choice of profiler
 ./microbenchmark.sh fully_connected 1 # 1 for forward
 ./microbenchmark.sh fully_connected 1 1 # The second 1 for big batch size.
 ./microbenchmark.sh concat 1
@@ -71,16 +71,22 @@ python kernel_pm_acc.py
 
 ### Execution graph extraction and profiler trace generation
 ```bash
+cd ${PM_HOME}/benchmark
 ./dlrm_benchmark.sh <model_name> <batch_size>
 ./convnet_benchmark.sh <model_name> <batch_size>
 ./nlp_benchmark.sh <model_name> <batch_size>
-# Or run all above together
-./run_experiments.sh
 ```
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
 
 ### Trace analysis and E2E runtime prediction
 ```bash
+cd ${PM_HOME}/benchmark
 python trace_stats.py --model-name <model_name> --num-gpus <num> # Currently only single-GPU is supported
 python e2e.py --model-name <model_name> --num-gpus <num> # Ditto
+```
+
+### One-liner for E2E benchmark, trace analysis and runtime prediction
+```bash
+# Run all above together
+./run_experiments.sh
 ```

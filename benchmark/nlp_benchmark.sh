@@ -2,7 +2,7 @@
 
 # Get model name
 model_name=$1
-list="ncf deepfm"
+list="transformer"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -24,9 +24,18 @@ export OMP_NUM_THREADS=$TOTAL_CORES
 export $KMP_SETTING
 export KMP_BLOCKTIME=$KMP_BLOCKTIME
 
-# Get GPU type
-./get_gpu_name.sh
-export GPU_NAME=`cat /tmp/gpu_name.txt`
+if [ ${model_name} == "transformer" ];
+then
+    if [[ ! -d "${PM_HOME}/3rdparty/transformer-pt/.data" ]]; # Data preprocessing
+    then
+
+        cd ${PM_HOME}/3rdparty/transformer-pt
+        python -m spacy download en_core_web_sm
+        python -m spacy download de_core_news_sm
+        python preprocess.py -lang_src de -lang_trg en -share_vocab -save_data m30k_deen_shr.pkl
+        cd ${PM_HOME}
+    fi
+fi
 
 # GPU Benchmarking
 if [ $gpu = 1 ];
@@ -37,6 +46,7 @@ then
   for _ng in $ngpus
   do
     rm -f /tmp/pytorch_execution_graph*
+    cd ${PM_HOME}/3rdparty/transformer-pt
     _gpus=$(seq -s, 0 $((_ng-1)))
     cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
     echo "-------------------"
@@ -48,27 +58,18 @@ then
     echo "-------------------------------"
     echo "Running benchmark (log file: $outf)"
     echo "-------------------------------"
-    if [ $model_name = "ncf" ];
-    then
-        cd 3rdparty/ncf/src
-        cmd="python train.py --batch-size ${mb_size}"
-        num_epoch=1
-    else # DeepFM
-        cd 3rdparty/deepfm
-        cmd="python main.py --batch-size ${mb_size} --embedding-dim 128 --mlp-hidden-size 64-64"
-        num_epoch=500
-    fi
+    cmd="python train.py -data_pkl m30k_deen_shr.pkl -embs_share_weight -proj_share_weight -label_smoothing -output_dir output -b ${mb_size} -warmup 5000 -no_eval"
     if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-epoch 1 --collect-execution-graph --profile --num-batches 1 &> /dev/null" # Collect execution graph
+      eval "$cmd -epoch 1 -collect_execution_graph -profile &> /dev/null" # Collect execution graph
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
-    eval "$cmd --num-epoch ${num_epoch} --profile --num-batches 500 > $outf" # Profile to get trace
+    eval "$cmd -epoch 1 -profile -num_batches 500 # > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
-    eval "$cmd --num-epoch ${num_epoch} --num-batches 100 > $outf" # No profile to get E2E time
-    cd "${PM_HOME}"
+    eval "$cmd -epoch 1 > $outf" # No profile to get E2E time
+    cd ${PM_HOME}
   done
 fi
