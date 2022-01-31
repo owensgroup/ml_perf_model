@@ -1,5 +1,4 @@
-# dlrm_gpu_perf_model
-DLRM GPU Training Performance Model
+A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) models on single-GPU and multi-GPU platforms.
 
 ### Prerequisites and Installation
 ```bash
