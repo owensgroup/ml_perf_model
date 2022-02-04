@@ -102,12 +102,14 @@ KERNEL_LAUNCH_LENGTH = 10
 
 
 CONSIDER = [    
-                "aten::linear", "AddmmBackward", "aten::bmm", "BmmBackward0", "aten::matmul", "MmBackward", \
+                "aten::linear", "AddmmBackward", \
+                "aten::bmm", "BmmBackward", \
+                "aten::matmul", "MmBackward", \
                 "aten::conv2d", "CudnnConvolutionBackward", \
                 "LookupFunction", "LookupFunctionBackward", \
                 "aten::batch_norm", "CudnnBatchNormBackward", \
                 "aten::index", "IndexBackward", \
-                "aten::relu", "aten::relu_", "ReluBackward0", "ReluBackward1", \
+                "aten::relu", "aten::relu_", "ReluBackward", \
                 "aten::sigmoid", "SigmoidBackward", \
                 "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
                 "aten::mse_loss", "MseLossBackward", \
@@ -125,6 +127,32 @@ SKIP = [    "SliceBackward",
             "aten::as_strided"
 ] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
 # FusedDropoutBackward somehow occurs in DeepFM graph
+
+
+def is_collective(op):
+    if op.name == "record_param_comms" or "All2All" in op.name:
+        return True
+    return False
+
+
+def to_consider(op):
+    if op.name in CONSIDER:
+        return True
+    if "autograd::engine::evaluate_function: " in op.name:
+        bw_truncated_name = op.name.split("autograd::engine::evaluate_function: ")[-1]
+        return bw_truncated_name in CONSIDER or \
+                bw_truncated_name[:-1] in CONSIDER # Truncate trailing 0/1
+    return False
+
+
+def to_skip(op):
+    if op.name in SKIP or op.get_grandest_parent().name in SKIP:
+        return True
+    if "autograd::engine::evaluate_function: " in op.name:
+        bw_truncated_name = op.name.split("autograd::engine::evaluate_function: ")[-1]
+        return bw_truncated_name in SKIP or \
+                bw_truncated_name[:-1] in SKIP # Truncate trailing 0/1
+    return False
 
 
 # alg_bw -> bus_bw for multi-gpu collectives
