@@ -77,7 +77,7 @@ then
     echo "-------------------------------"
     echo "Running benchmark (log file: $outf)"
     echo "-------------------------------"
-    cmd="python -u 3rdparty/convnet-benchmark-py/benchmark.py --arch ${model_name} --batch-size ${mb_size}"
+    cmd="python -u ${PM_HOME}/3rdparty/convnet-benchmark-py/benchmark.py --arch ${model_name} --batch-size ${mb_size}"
     if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
