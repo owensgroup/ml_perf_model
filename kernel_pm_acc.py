@@ -38,7 +38,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.op_type == 'all':
-        op_list = ['embedding_lookup', 'fully_connected', 'conv', 'concat', 'memcpy', 'transpose', 'bn', 'tril']
+        op_list = ['embedding_lookup', 'fully_connected', 'conv2d', 'conv1d', 'concat', 'memcpy', 'transpose', 'bn', 'tril']
         pass_list = ['forward', 'backward']
     else:
         op_list = [args.op_type]
@@ -47,7 +47,6 @@ if __name__ == '__main__':
     for op_type in op_list:
         for p in pass_list:
             if (op_type == 'fully_connected' or \
-                    op_type == 'conv' or \
                     op_type == 'transpose' or \
                     op_type == 'concat' or \
                     op_type == 'memcpy') and \

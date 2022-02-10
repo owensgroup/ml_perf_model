@@ -96,15 +96,19 @@ then
         param_file_name="${PM_HOME}/bench_params/fc_test_params.txt"
         file_prefix="${file_prefix}_test"
     fi
-elif [ "$op_type" == "conv" ];
+elif [ "$op_type" == "conv2d" ];
 then
     header="kernel_name,batch_size,H,W,IC,OC,stride,dilation,FH,FW,is_dw"
     if [ "$is_big" == "1" ];
     then
-        param_file_name="${PM_HOME}/bench_params/conv_params_big.txt"
+        param_file_name="${PM_HOME}/bench_params/conv2d_params_big.txt"
     else
-        param_file_name="${PM_HOME}/bench_params/conv_only.txt"
+        param_file_name="${PM_HOME}/bench_params/conv2d_only.txt"
     fi
+elif [ "$op_type" == "conv1d" ];
+then
+    header="kernel_name,batch_size,L,IC,OC,groups"
+    param_file_name="${PM_HOME}/bench_params/conv1d_params.txt"
 elif [ "$op_type" == "concat" ];
 then
     header="kernel_name,batch_size,M,N,K"
@@ -186,13 +190,16 @@ do
     elif [ "$op_type" == "fully_connected" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
-    elif [ "$op_type" == "conv" ];
+    elif [ "$op_type" == "conv2d" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]} --stride ${array[5]} --dilation ${array[6]} --FH ${array[7]} --FW ${array[8]}"
         if [ "${array[9]}" == "1" ];
         then
             bench_param="${bench_param} --is-dw"
         fi
+    elif [ "$op_type" == "conv1d" ];
+    then
+        bench_param="--op-type $op_type --batch-size ${array[0]} --L ${array[1]} --IC ${array[2]} --OC ${array[3]} --groups ${array[4]}"
     elif [ "$op_type" == "concat" ];
     then
         bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"

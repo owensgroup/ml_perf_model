@@ -35,16 +35,17 @@ import argparse, json, os
 from analysis.utils import *
 from analysis.inference import infer
 
+# TODO: All backward models should be trained with an extra version of weight-only for topologically the first ops in a model
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser("Training MLP performance model for FC, transpose, and tril.")
+    parser = argparse.ArgumentParser("Training MLP performance model for FC, conv2d, conv1d, transpose, BN, and tril.")
     parser.add_argument("--op-type", type=str, required=True)
-    parser.add_argument("--backward", action="store_true", default=False) # For tril
+    parser.add_argument("--backward", action="store_true", default=False) # For conv2d/conv1d/bn/tril
     parser.add_argument("--inference", action="store_true", default=False)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--epoch", type=int, default=800)
     args = parser.parse_args()
 
-    assert args.op_type in ["fully_connected", "conv", "transpose", "bn", "tril"]
+    assert args.op_type in ["fully_connected", "conv2d", "conv1d", "transpose", "bn", "tril"]
     suffix = "{}_{}".format(args.op_type, 1 if not args.backward else 0)
     n_feature, x, y = get_data(op_type=args.op_type, backward=args.backward)
     op_dataset = Data.TensorDataset(x, y)

@@ -46,8 +46,10 @@ cd ${PM_HOME}/microbenchmark/nvprof # Or ${PM_HOME}/microbenchmark/nsight, depen
 ./microbenchmark.sh embedding_lookup 0 1
 ./microbenchmark.sh tril 1
 ./microbenchmark.sh tril 0
-./microbenchmark.sh conv 1 # We also support convolution and BN for comparison with other performance models on DL models other the DLRM.
-./microbenchmark.sh conv 1 1
+./microbenchmark.sh conv2d 1 # We also support convolution and BN for comparison with other performance models on DL models other the DLRM.
+./microbenchmark.sh conv2d 1 1
+./microbenchmark.sh conv1d 1
+./microbenchmark.sh conv1d 0
 ./microbenchmark.sh bn 1
 ./microbenchmark.sh bn 0
 ```
@@ -55,13 +57,15 @@ cd ${PM_HOME}/microbenchmark/nvprof # Or ${PM_HOME}/microbenchmark/nsight, depen
 ### Training ML-based kernel performance model
 ```bash
 python mlp.py --op-type fully_connected --batch-size 64
-python mlp.py --op-type conv --batch-size 16 --epoch 1200
-python mlp.py --op-type conv --backward --batch-size 16 --epoch 1200
+python mlp.py --op-type conv2d --batch-size 16 --epoch 1200
+python mlp.py --op-type conv2d --batch-size 16 --epoch 1200 --backward 
+python mlp.py --op-type conv1d --batch-size 32
+python mlp.py --op-type conv1d --batch-size 32 --backward 
 python mlp.py --op-type transpose --batch-size 32
 python mlp.py --op-type bn --batch-size 32
-python mlp.py --op-type bn --backward --batch-size 32
+python mlp.py --op-type bn --batch-size 32 --backward 
 python mlp.py --op-type tril --epoch 1000
-python mlp.py --op-type tril --backward --epoch 2000
+python mlp.py --op-type tril --epoch 2000 --backward 
 ```
 To print all performance model error rates after training is done, run:
 ```bash
@@ -74,6 +78,7 @@ cd ${PM_HOME}/benchmark
 ./dlrm_benchmark.sh <model_name> <batch_size>
 ./convnet_benchmark.sh <model_name> <batch_size>
 ./nlp_benchmark.sh <model_name> <batch_size>
+./rm_benchmark.sh <model_name> <batch_size>
 ```
 Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
 

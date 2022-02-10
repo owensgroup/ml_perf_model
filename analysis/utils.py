@@ -101,10 +101,12 @@ GPU_EVENT_OVERHEAD = 4
 KERNEL_LAUNCH_LENGTH = 10
 
 
-CONSIDER = [    
+# TODO: Distinguish conv1d and conv2d for ConvolutionBackward
+CONSIDER = [
                 "aten::linear", "AddmmBackward", \
                 "aten::bmm", "BmmBackward", \
                 "aten::matmul", "MmBackward", \
+                "aten::conv1d", "ConvolutionBackward", \
                 "aten::conv2d", "CudnnConvolutionBackward", \
                 "LookupFunction", "LookupFunctionBackward", \
                 "aten::batch_norm", "CudnnBatchNormBackward", \
@@ -115,7 +117,7 @@ CONSIDER = [
                 "aten::mse_loss", "MseLossBackward", \
                 "aten::avg_pool2d", "AvgPool2D", \
                 "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-                "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", \
+                "aten::add", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
                 "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
                 "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
 ]
@@ -135,24 +137,22 @@ def is_collective(op):
     return False
 
 
-def to_consider(op):
-    if op.name in CONSIDER:
+def op_name_in_list(op, lst):
+    if op.name in lst:
         return True
     if "autograd::engine::evaluate_function: " in op.name:
         bw_truncated_name = op.name.split("autograd::engine::evaluate_function: ")[-1]
-        return bw_truncated_name in CONSIDER or \
-                bw_truncated_name[:-1] in CONSIDER # Truncate trailing 0/1
+        return bw_truncated_name in lst or \
+                bw_truncated_name[:-1] in lst # Truncate trailing 0/1
     return False
+
+
+def to_consider(op):
+    return op_name_in_list(op, CONSIDER)
 
 
 def to_skip(op):
-    if op.name in SKIP or op.get_grandest_parent().name in SKIP:
-        return True
-    if "autograd::engine::evaluate_function: " in op.name:
-        bw_truncated_name = op.name.split("autograd::engine::evaluate_function: ")[-1]
-        return bw_truncated_name in SKIP or \
-                bw_truncated_name[:-1] in SKIP # Truncate trailing 0/1
-    return False
+    return op_name_in_list(op, SKIP)
 
 
 # alg_bw -> bus_bw for multi-gpu collectives
@@ -326,8 +326,10 @@ def get_pretrained_net(op_type, backward=False):
         n_hidden = [best_config["size"]] * best_config["num_layers"]
     if op_type == "fully_connected":
         n_feature = 4
-    if op_type == "conv":
+    if op_type == "conv2d":
         n_feature = 9
+    if op_type == "conv1d":
+        n_feature = 5
     elif op_type == "transpose":
         n_feature = 3
     elif op_type == "bn":
@@ -375,8 +377,8 @@ def get_data(op_type, backward=False, gpu=True):
             'N': np.log(data['N']),
             'K': np.log(data['K'])
         })
-    elif op_type == 'conv':
-        data = data[data['kernel_name'].str.contains("at::") == False] # Exclude ATen kernels for training
+    elif op_type == 'conv2d':
+        data = data[~(data['kernel_name'].str.contains("at::"))] # Exclude ATen kernels for training
         data = data[['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw', 'kernel_runtime']].groupby(['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw'], as_index=False).sum() # Sum up all kernels
         input_df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
@@ -388,6 +390,16 @@ def get_data(op_type, backward=False, gpu=True):
             'FH': data['FH'],
             'FW': data['FW'],
             'is_dw': data['is_dw'],
+        })
+    elif op_type == 'conv1d':
+        data = data[~((data['kernel_name'].str.contains("at::")) & (~(data['kernel_name'].str.contains("conv"))))] # Exclude ATen kernels that are not conv for training
+        data = data[['batch_size', 'L', 'IC', 'OC', 'groups', 'kernel_runtime']].groupby(['batch_size', 'L', 'IC', 'OC', 'groups'], as_index=False).sum() # Sum up all kernels
+        input_df = pd.DataFrame({
+            'batch_size': np.log(data['batch_size']),
+            'L': np.log(data['L']),
+            'IC': np.log(data['IC']),
+            'OC': np.log(data['OC']),
+            'groups': data['groups'],
         })
     elif op_type == 'transpose':
         input_df = pd.DataFrame({

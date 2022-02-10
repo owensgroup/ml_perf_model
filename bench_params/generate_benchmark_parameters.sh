@@ -160,7 +160,7 @@ then
     done
 fi
 
-if [ ! -f fc_params.txt ];
+if [ ! -f fc_params_big.txt ];
 then
     touch fc_params_big.txt
     # Bmm F&B
@@ -275,9 +275,37 @@ then
     done
 fi
 
-if [ ! -f conv_params.txt ];
+# Conv1d for parallel multi-head mm: stride = 1, padding = 0, dilation = 1, groups = num of mm groups
+if [ ! -f conv1d_params.txt ];
 then
-    touch conv_params.txt
+    touch conv1d_params.txt
+    for batch_size in 1 128 256 512 1024 2048 4096;
+    do
+        for L in 1 2 4 8 16 24 32 40 48 56 64;
+        do
+            for OC in 32 64 128 256;
+            do
+                for groups in 2 5 8 11 14 17 20 23 26 29 32;
+                do
+                    # IC = 1 for now
+                    input_size="$( echo "$batch_size * 1 * $groups * $L * 4" | bc -l )"
+                    filter_size="$( echo "$OC * 1 * $groups * 4" | bc -l )"
+                    output_size="$( echo "$batch_size * $OC * $groups * $L * 4" | bc -l )"
+                    total_size="$( echo "$input_size + $filter_size + $output_size" | bc -l )"
+
+                    if [ "$total_size" -lt "$GPU_memory" ];
+                    then
+                        echo "$batch_size $L 1 $OC $groups" >> conv1d_params.txt
+                    fi
+                done
+            done
+        done
+    done
+fi
+
+if [ ! -f conv2d_params.txt ];
+then
+    touch conv2d_params.txt
     for batch_size in 1 8 16 32;
     do
         for HW in 7 8 14 17 28 35 56 71 73 112 147 149 224 299;
@@ -294,19 +322,19 @@ then
                             do
                                 for is_dw in 0 1;
                                 do
-                                    if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv only has stride = 1
+                                    if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv2d only has stride = 1
                                     then
                                         continue
                                     fi
-                                    if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv doesn't exist
+                                    if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv2d doesn't exist
                                     then
                                         continue
                                     fi
-                                    if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv
+                                    if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv2d
                                     then
                                         continue
                                     fi
-                                    if [[ $is_dw == "1" && $dilation != "2" ]]; # No dilation for in dw-conv
+                                    if [[ $is_dw == "1" && $dilation != "2" ]]; # No dilation for in dw-conv2d
                                     then
                                         continue
                                     fi
@@ -359,7 +387,7 @@ then
 
                                     if [ "$total_size" -lt "$GPU_memory" ];
                                     then
-                                        echo "$batch_size $HW $HW $IC $OC $stride $dilation $FHW $is_dw" >> conv_params.txt
+                                        echo "$batch_size $HW $HW $IC $OC $stride $dilation $FHW $is_dw" >> conv2d_params.txt
                                     fi
                                 done
                             done
@@ -371,9 +399,9 @@ then
     done
 fi
 
-if [ ! -f conv_params_big.txt ];
+if [ ! -f conv2d_params_big.txt ];
 then
-    touch conv_params_big.txt
+    touch conv2d_params_big.txt
     for batch_size in 64 128;
     do
         for HW in 7 8 14 17 28 35 56 71 73 112 147 149 224 299;
@@ -390,19 +418,19 @@ then
                             do
                                 for is_dw in 0 1;
                                 do
-                                    if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv only has stride = 1
+                                    if [[ $stride == "2" && $FHW == "1" ]]; # 1x1 conv2d only has stride = 1
                                     then
                                         continue
                                     fi
-                                    if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv doesn't exist
+                                    if [[ $is_dw == "1" && $FHW == "1" ]]; # 1x1 dw-conv2d doesn't exist
                                     then
                                         continue
                                     fi
-                                    if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv
+                                    if [[ $is_dw == "1" && $IC != $OC ]]; # IC = OC in dw-conv2d
                                     then
                                         continue
                                     fi
-                                    if [[ $is_dw == "1" && $dilation != "2" ]]; # No dilation for in dw-conv
+                                    if [[ $is_dw == "1" && $dilation != "2" ]]; # No dilation for in dw-conv2d
                                     then
                                         continue
                                     fi
@@ -455,7 +483,7 @@ then
 
                                     if [ "$total_size" -lt "$GPU_memory" ];
                                     then
-                                        echo "$batch_size $HW $HW $IC $OC $stride $dilation $FHW $is_dw" >> conv_params_big.txt
+                                        echo "$batch_size $HW $HW $IC $OC $stride $dilation $FHW $is_dw" >> conv2d_params_big.txt
                                     fi
                                 done
                             done

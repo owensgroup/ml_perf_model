@@ -244,6 +244,7 @@ def all_to_all_predictor(**kwargs):
     f = MUL_FACTOR_FUNCS["all_to_allv"]
     return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["num_gpus"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
 
+
 # 4-V100 DGX-1
 def all_reduce_predictor(**kwargs):
     # Hardcoded for now
@@ -268,9 +269,12 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
     if op_type == "fully_connected":
         n_feature = 4
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N", "K"]]
-    elif op_type == "conv":
+    elif op_type == "conv2d":
         n_feature = 9
         input_size = [np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FH', 'FW', 'is_dw']]
+    elif op_type == "conv1d":
+        n_feature = 5
+        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'L', 'IC', 'OC']] + [kwargs['groups']]
     elif op_type == "transpose":
         n_feature = 3
         input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N"]]
@@ -393,7 +397,7 @@ def infer(op_type, backward=False, **kwargs):
         big = kwargs["big"] 
         hit_rate_estimation = kwargs["hit_rate_estimation"]
         best_config, error = infer_el(backward=backward, big=big, hit_rate_estimation=hit_rate_estimation)
-    else: # fully_connected / conv / transpose / bn / tril
+    else: # fully_connected / conv2d / conv1d / transpose / bn / tril
         best_config, error = infer_from_model(op_type, backward)
     return best_config, gmae(error)
 
@@ -475,18 +479,34 @@ def get_kernel_time(op, op_lists):
         t = t1 + t2
         # print(" -- ", bmm_op.name, batch_size, M, K, N, bmm_op.input_shapes, t)
     elif op.name == "aten::conv2d":
-        op_lists["conv"].append(op)
+        op_lists["conv2d"].append(op)
         batch_size, IC, IH, _ = op.input_shapes[0]
         OC, FH, FW = op.input_shapes[1][0], op.input_shapes[1][2], op.input_shapes[1][3]
         stride, padding_h, dilation, is_dw = op.inputs[3][0], op.inputs[4][0], op.inputs[5][0], int(op.inputs[6] != 1)
-        t = mlp_predictor_kwargs("conv", backward=False, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
+        t = mlp_predictor_kwargs("conv2d", backward=False, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
         kernel_times.append(t)
-    elif "CudnnConvolutionBackward" in op.name:
-        conv_op = op_lists["conv"].pop()
+    elif op_name_in_list(op, ["CudnnConvolutionBackward"]):
+        conv_op = op_lists["conv2d"].pop()
         batch_size, IC, IH, _ = conv_op.input_shapes[0]
         OC, FH, FW = conv_op.input_shapes[1][0], conv_op.input_shapes[1][2], conv_op.input_shapes[1][3]
         stride, padding_h, dilation, is_dw = conv_op.inputs[3][0], conv_op.inputs[4][0], conv_op.inputs[5][0], int(conv_op.inputs[6] != 1)
-        t = mlp_predictor_kwargs("conv", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
+        t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
+        kernel_times.append(t)
+    elif op.name == "aten::conv1d":
+        op_lists["conv1d"].append(op)
+        batch_size, ic_x_groups, L = op.input_shapes[0] # IC = 1 for now so ic_x_groups = groups
+        oc_x_groups, _, _ = op.input_shapes[1]
+        groups = ic_x_groups
+        OC = oc_x_groups // groups
+        t = mlp_predictor_kwargs("conv1d", batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
+        kernel_times.append(t)
+    elif op_name_in_list(op, ["ConvolutionBackward"]):
+        conv_op = op_lists["conv1d"].pop()
+        batch_size, ic_x_groups, L = conv_op.input_shapes[0] # IC = 1 for now so ic_x_groups = groups
+        oc_x_groups, _, _ = conv_op.input_shapes[1]
+        groups = ic_x_groups
+        OC = oc_x_groups // groups
+        t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
         kernel_times.append(t)
     elif op.name == "LookupFunction":
         op_lists["el"].append(op)
@@ -581,35 +601,35 @@ def get_kernel_time(op, op_lists):
         tensor_size = np.prod(collective_op.input_shapes[0])
         t = collective_predictor(collective_op.name, tensor_size=tensor_size, num_gpus=4) # TODO: Replace 4 with world size
         kernel_times.append(t)
-    # Minor ops staring from here: ----
-    elif "aten::relu" in op.name:
-        op_lists["relu"].append(op)
-        s = np.prod(op.input_shapes[0])
-        t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
+    elif op.name == "aten::cat":
+        sum_size = sum([np.prod(s) for s in op.input_shapes[0]])
+        t = concat_predictor(sum_size=sum_size)
         kernel_times.append(t)
-    elif "ReluBackward" in op.name:
-        relu_op = op_lists["relu"].pop()
-        s = np.prod(relu_op.input_shapes[0])
+    elif op.name == "aten::to":
+        s = np.prod(op.input_shapes[0])
+        t = memcpy_predictor(tensor_size=s)
+        kernel_times.append(t)
+    # Minor ops staring from here: ----
+    elif op.name == "aten::t":
+        kernel_times.append(0) # T is handled under addmm
+    elif op_name_in_list(op, ["aten::relu", "ReluBackward"]):
+        s = np.prod(op.input_shapes[0] if op.input_shapes else op.children[0].input_shapes[0])
         t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
         kernel_times.append(t)
     elif op.name == "aten::sigmoid":
-        op_lists["sigmoid"].append(op)
         s = np.prod(op.input_shapes[0])
         t = max(4 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per sigmoid (exp as one); one read one write
         kernel_times.append(t)
     elif "SigmoidBackward" in op.name:
-        sigmoid_op = op_lists["sigmoid"].pop()
-        s = np.prod(sigmoid_op.input_shapes[0])
+        s = np.prod(op.children[0].input_shapes[0])
         t = max(2 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 2 flops per sigmoid backward (f' = f*(1-f)); one read one write
         kernel_times.append(t)
     elif op.name == "aten::binary_cross_entropy":
-        op_lists["bce"].append(op)
         s = np.prod(op.input_shapes[0])
         t = max(7 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 7 flops per bce (log as one); two read one write
         kernel_times.append(t)
     elif "BinaryCrossEntropyBackward" in op.name:
-        bce_op = op_lists["bce"].pop()
-        s = np.prod(bce_op.input_shapes[0])
+        s = np.prod(op.children[0].input_shapes[0])
         t = max(4 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per bce backward (E' = (y-t)/y/(1-y)); two read one write
         kernel_times.append(t)
     elif op.name == "aten::mse_loss":
@@ -617,28 +637,13 @@ def get_kernel_time(op, op_lists):
         s = np.prod(op.input_shapes[0])
         t = max(3 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 3 flops per mse; two read one write
         kernel_times.append(t)
-    elif "MseLossBackward" in op.name:
-        mse_op = op_lists["mse"].pop()
-        s = np.prod(mse_op.input_shapes[0])
-        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per mse backward (M' = y-t); two read one write
-        kernel_times.append(t)
-    elif op.name == "aten::t":
-        kernel_times.append(0) # T is handled under addmm
-    elif op.name in ["aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul"]:
-        s = np.prod(op.input_shapes[0])
-        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
-        kernel_times.append(t)
-    elif op.name == "aten::cat":
-        sum_size = sum([np.prod(s) for s in op.input_shapes[0]])
-        t = concat_predictor(sum_size=sum_size)
+    elif op_name_in_list(op, ["aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", "MseLossBackward"]):
+        s = np.prod(op.input_shapes[0] if op.input_shapes else op.children[0].input_shapes[0])
+        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 1 flops per mse backward (M' = y-t); two read one write
         kernel_times.append(t)
     elif op.name == "aten::sum":
         s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, s * 4 / peak_DRAM_BW / 1000) # One reads
-        kernel_times.append(t)
-    elif op.name == "aten::to":
-        s = np.prod(op.input_shapes[0])
-        t = memcpy_predictor(tensor_size=s)
         kernel_times.append(t)
     elif op.name == "aten::ones_like":
         s = np.prod(op.children[0].input_shapes[0])
@@ -648,12 +653,12 @@ def get_kernel_time(op, op_lists):
         s = np.prod(op.output_shapes[0])
         t = max((np.prod(op.inputs[1]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
         kernel_times.append(t)
-    elif "MaxPool2DWithIndicesBackward" in op.name or "AvgPool2DBackward" in op.name:
+    elif op_name_in_list(op, ["MaxPool2DWithIndicesBackward", "AvgPool2DBackward"]):
         s = np.prod(op.children[0].output_shapes[0])
         t = max((2 * np.prod(op.children[0].inputs[2]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
         kernel_times.append(t)
     # Grad ops starting from here: ----
-    elif op.name == "torch::autograd::AccumulateGrad": # Mismatch: empty + clone, while in trace it's add
+    elif op_name_in_list(op, ["torch::autograd::AccumulateGrad"]): # Mismatch: empty + clone, while in trace it's add
         s = np.prod(op.children[0].input_shapes[0])
         t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
         t = 0 if s > 5e6 else t # Tmp solution to avoid dense add for embedding table lookup
@@ -691,15 +696,12 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
 
     op_lists = {
         "addmm": [],
-        "bce": [],
         "bmm": [],
         "bn": [],
-        "conv": [],
+        "conv2d": [],
+        "conv1d": [],
         "el": [],
         "mm": [],
-        "mse": [],
-        "relu": [],
-        "sigmoid": [],
         "tril": [],
     }
     cpu_time = 0
@@ -730,6 +732,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                 if debug:
                     print("    t2: {:.2f}".format(overheads["t2"][node.name][0]))
                 launches = overheads["launches"][node.name]
+                # print(node.name, to_consider(node))
                 if to_consider(node) or is_collective(node):
                     t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(node, op_lists)] # Get kernel time and (arguably) compensate with the overheads
 
