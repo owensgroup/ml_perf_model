@@ -633,7 +633,6 @@ def get_kernel_time(op, op_lists):
         t = max(4 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per bce backward (E' = (y-t)/y/(1-y)); two read one write
         kernel_times.append(t)
     elif op.name == "aten::mse_loss":
-        op_lists["mse"].append(op)
         s = np.prod(op.input_shapes[0])
         t = max(3 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 3 flops per mse; two read one write
         kernel_times.append(t)

@@ -55,8 +55,8 @@ do
 
             # Strong scaling
             ./dlrm_benchmark.sh ${model} $((batch_size*32)) ${ngpus}
-            eval "$cmd trace_stats.py --model-name ${model} --batch-size $((batch_size*32)) --iters 100"
-            eval "$cmd e2e.py --model-name ${model} --batch-size $((batch_size*32))"
+            eval "$cmd trace_stats.py --model-name ${model} --batch-size $((batch_size*32)) --iters 100 --num-gpus $ngpus"
+            eval "$cmd e2e.py --model-name ${model} --batch-size $((batch_size*32)) --num-gpus $ngpus"
 
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
