@@ -479,35 +479,34 @@ def get_kernel_time(op, op_lists):
         t = t1 + t2
         # print(" -- ", bmm_op.name, batch_size, M, K, N, bmm_op.input_shapes, t)
     elif op.name == "aten::conv2d":
-        op_lists["conv2d"].append(op)
         batch_size, IC, IH, _ = op.input_shapes[0]
         OC, FH, FW = op.input_shapes[1][0], op.input_shapes[1][2], op.input_shapes[1][3]
         stride, padding_h, dilation, is_dw = op.inputs[3][0], op.inputs[4][0], op.inputs[5][0], int(op.inputs[6] != 1)
         t = mlp_predictor_kwargs("conv2d", backward=False, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
         kernel_times.append(t)
-    elif op_name_in_list(op, ["CudnnConvolutionBackward"]):
-        conv_op = op_lists["conv2d"].pop()
-        batch_size, IC, IH, _ = conv_op.input_shapes[0]
-        OC, FH, FW = conv_op.input_shapes[1][0], conv_op.input_shapes[1][2], conv_op.input_shapes[1][3]
-        stride, padding_h, dilation, is_dw = conv_op.inputs[3][0], conv_op.inputs[4][0], conv_op.inputs[5][0], int(conv_op.inputs[6] != 1)
-        t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
-        kernel_times.append(t)
     elif op.name == "aten::conv1d":
-        op_lists["conv1d"].append(op)
         batch_size, ic_x_groups, L = op.input_shapes[0] # IC = 1 for now so ic_x_groups = groups
         oc_x_groups, _, _ = op.input_shapes[1]
         groups = ic_x_groups
         OC = oc_x_groups // groups
-        t = mlp_predictor_kwargs("conv1d", batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
+        t = mlp_predictor_kwargs("conv1d", backward=False, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
         kernel_times.append(t)
-    elif op_name_in_list(op, ["ConvolutionBackward"]):
-        conv_op = op_lists["conv1d"].pop()
-        batch_size, ic_x_groups, L = conv_op.input_shapes[0] # IC = 1 for now so ic_x_groups = groups
-        oc_x_groups, _, _ = conv_op.input_shapes[1]
-        groups = ic_x_groups
-        OC = oc_x_groups // groups
-        t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
-        kernel_times.append(t)
+    elif op_name_in_list(op, ["CudnnConvolutionBackward", "ConvolutionBackward"]):
+        conv_bw_op = op.get_child_by_name("aten::convolution_backward")
+        assert conv_bw_op is not None, "Cannot find the ATen convolution BW call"
+        if len(conv_bw_op.inputs[4]) == 2: # 2D stride -> conv2d
+            batch_size, IC, IH, _ = conv_bw_op.input_shapes[1] # [output, input, filter]
+            OC, FH, FW = conv_bw_op.input_shapes[0][1], conv_bw_op.input_shapes[2][2], conv_bw_op.input_shapes[2][3]
+            stride, padding_h, dilation, is_dw = conv_bw_op.inputs[4][0], conv_bw_op.inputs[5][0], conv_bw_op.inputs[6][0], int(conv_bw_op.inputs[9] != 1)
+            t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
+            kernel_times.append(t)
+        else: # 1D stride -> conv1d
+            batch_size, ic_x_groups, L = conv_bw_op.input_shapes[1] # [output, input, filter]
+            oc_x_groups = conv_bw_op.input_shapes[0][1]
+            groups = ic_x_groups
+            OC = oc_x_groups // groups
+            t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
+            kernel_times.append(t)
     elif op.name == "LookupFunction":
         op_lists["el"].append(op)
         T = op.input_shapes[1][0]
@@ -653,8 +652,10 @@ def get_kernel_time(op, op_lists):
         t = max((np.prod(op.inputs[1]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
         kernel_times.append(t)
     elif op_name_in_list(op, ["MaxPool2DWithIndicesBackward", "AvgPool2DBackward"]):
-        s = np.prod(op.children[0].output_shapes[0])
-        t = max((2 * np.prod(op.children[0].inputs[2]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
+        pool2d_bw_op = op.get_child_by_name("_pool2d_")
+        assert pool2d_bw_op is not None, "Cannot find the ATen pool2d BW call"
+        s = np.prod(pool2d_bw_op.output_shapes[0])
+        t = max((2 * np.prod(pool2d_bw_op.inputs[2]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
         kernel_times.append(t)
     # Grad ops starting from here: ----
     elif op_name_in_list(op, ["torch::autograd::AccumulateGrad"]): # Mismatch: empty + clone, while in trace it's add
@@ -693,12 +694,11 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
     nodes = graph.get_nodes(clean=True)
     sorted_nodes = sorted(nodes.items(), key=lambda x: x[0])
 
+    # TODO: Remove this as all input shapes can be obtained from children nodes
     op_lists = {
         "addmm": [],
         "bmm": [],
         "bn": [],
-        "conv2d": [],
-        "conv1d": [],
         "el": [],
         "mm": [],
         "tril": [],

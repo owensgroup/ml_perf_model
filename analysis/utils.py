@@ -117,7 +117,7 @@ CONSIDER = [
                 "aten::mse_loss", "MseLossBackward", \
                 "aten::avg_pool2d", "AvgPool2D", \
                 "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-                "aten::add", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
+                "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
                 "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
                 "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
 ]
@@ -326,9 +326,9 @@ def get_pretrained_net(op_type, backward=False):
         n_hidden = [best_config["size"]] * best_config["num_layers"]
     if op_type == "fully_connected":
         n_feature = 4
-    if op_type == "conv2d":
+    elif op_type == "conv2d":
         n_feature = 9
-    if op_type == "conv1d":
+    elif op_type == "conv1d":
         n_feature = 5
     elif op_type == "transpose":
         n_feature = 3
