@@ -83,7 +83,7 @@ do
     done
 
     for model in ncf deepfm
-    do 
+    do
         ./rm_benchmark.sh ${model} $((batch_size*32))
         python trace_stats.py --model-name ${model} --batch-size $((batch_size*32)) --iters 100
         python e2e.py --model-name ${model} --batch-size $((batch_size*32))
