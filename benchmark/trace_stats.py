@@ -69,7 +69,7 @@ if __name__ == '__main__':
     # Workaround: use the overheads of rank 0 for all
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
         overhead_name = "{}{}_overheads.json".format(prefix, "") # ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else ""
-        print("Rank {}: export overheads to JSON...".format(ext_dist.my_local_rank))
+        print("Rank {}: export overheads to JSON...".format(ext_dist.my_local_rank if ext_dist.my_size > 1 else 0))
         with open(overhead_name, "w") as f:
             json.dump(overhead, f)
 

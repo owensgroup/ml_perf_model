@@ -30,7 +30,7 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 from itertools import compress
-from analysis.utils import KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD
+from analysis.utils import KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, remove_outliers
 import numpy as np
 import json, sys, os, re
 
@@ -298,7 +298,36 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     # Workaround: filter out some runtime events like cudaEventQuery and cudaEventDestroy that appear in a thread with huge tid. TODO: Fix this.
     sorted_events = [e for e in sorted_events if not (e.category() == "Runtime" and abnormal_tid(e))] 
     sorted_events = sorted(sorted_events, key=lambda x: (x.start_time(), -x.duration()))
-    
+
+    # Skip data-loading ops and distribution of emb data
+    skipped_intervals = []
+    skipped_intervals_loader = []
+    skipped_intervals_distribute = []
+    def should_skip(x, skipped_intervals):
+        event_start = x.start_time()
+        for s, e in skipped_intervals:
+            if event_start >= s and event_start <= e:
+                return True
+        return False
+    for x in sorted_events:
+        event_start = x.start_time()
+        event_duration = x.duration()
+        if 'DataLoader' in x.name() and event_duration > 100:
+            skipped_intervals_loader.append((event_start, event_start+event_duration))
+        if 'distribute emb data' in x.name():
+            skipped_intervals_distribute.append((event_start, event_start+event_duration))
+        # Find the thread ID of the main thread btw
+        if main_tid == -1 and x.name().startswith(module_marker):
+            main_tid = x.tid()
+    assert main_tid != -1, "Main tid (data loading) not found!"
+    assert len(skipped_intervals_loader) == len(skipped_intervals_distribute) or len(skipped_intervals_distribute) == 0, \
+            "DataLoader and emb data distribution counts wrong ({} vs. {})!".format(len(skipped_intervals_loader), len(skipped_intervals_distribute))
+    for x, y in zip(skipped_intervals_loader, skipped_intervals_distribute):
+        skipped_intervals.append((x[0], y[1]))
+
+    # Skip all events in skipped intervals
+    sorted_events = [s for s in sorted_events if not should_skip(s, skipped_intervals)]
+
     # Remove all leftovers from the last iteration and next iteration
     start_idx = 0
     end_idx = len(sorted_events) - 1
@@ -307,7 +336,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
 
     # Start the analysis from the first module detected, if module is not to be skipped
     for idx, x in enumerate(sorted_events):
-        ######## IMPORTANT ########
+        ######## IMPORTANT ######## (Probably out-of-date. TODO: Fix this.)
         # Find the start of an iteration started with "##" without ":".
         if not skip_module and x.name().startswith(module_marker) and ":" not in x.name():
             # The actual start time is the start time of the profiler enter call right before "zero_grad"
@@ -324,26 +353,10 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
             end_idx = idx
             break
     sorted_events = sorted_events[start_idx:(len(sorted_events) - 1 - end_idx)]
-    skipped_intervals = []
-    skipped_intervals_loader = []
-    skipped_intervals_distribute = []
 
-    # Skip data-loading ops and DLRM distribute emb data
-    for x in sorted_events:
-        event_start = x.start_time()
-        event_duration = x.duration()
-        external_id = x.external_id()
-        correlation_id = x.correlation_id()
-        if 'DataLoader' in x.name() and event_duration > 100:
-            skipped_intervals_loader.append((event_start, event_start+event_duration))
-        if 'distribute emb data' in x.name():
-            skipped_intervals_distribute.append((event_start, event_start+event_duration))
-        # Find the thread ID of the main thread btw
-        if main_tid == -1 and x.name().startswith(module_marker):
-            main_tid = x.tid()
-    assert main_tid != -1
-    for x, y in zip(skipped_intervals_loader, skipped_intervals_distribute):
-        skipped_intervals.append((x[0], y[1]))
+    # # For debugging purpose
+    # with open("sorted_events.json", 'w') as f:
+    #     json.dump([e.event for e in sorted_events], f)
 
     for x in sorted_events:
         # Get start, duration and end time of the current event
@@ -354,15 +367,6 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
         stream = x.stream()
         if stream is not None:
             streams.add(stream)
-
-        # Skip all events in skipped intervals
-        should_skip = False
-        for s, e in skipped_intervals:
-            if event_start >= s and event_start <= e:
-                should_skip = True
-                break
-        if should_skip:
-            continue
 
         # Runtime events e.g. cudaLaunchKernel counted as host events
         if x.category() == "Operator" or x.category() == "cpu_op" or x.category() == "Runtime":
@@ -994,7 +998,7 @@ def get_overheads(ops):
                 if x.name() not in overheads['independent']['t4']:
                     overheads['independent']['t4'][x.name()] = []
                 overheads['independent']['t4'][x.name()].append(KERNEL_LAUNCH_LENGTH - CPU_EVENT_OVERHEAD - GPU_EVENT_OVERHEAD) # T4 has 1 overhead
-            
+
             if op.name() not in launches_dict.keys():
                 launches_dict[op.name()] = []
                 for x, _ in launches:
@@ -1018,10 +1022,19 @@ def get_overheads(ops):
             # Only consider adjacent ops under the SAME MODULE
             if prev_op.parent != op.parent:
                 continue
-                
+
             gap = op.start_time() - prev_op.end_time()
-            if gap < 200: # Skip dataloading gaps
+            if gap < 50 and gap > 0: # Skip dataloading gaps
                 overheads['independent']['t1'].append(gap - CPU_EVENT_OVERHEAD) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
+
+    # Remove outliers (skip t4 as we set them to constants)
+    for k, v in overheads.items():
+        if k != 'independent':
+            for t in ['t2', 't3', 't5']:
+                if len(v[t]) > 0:
+                    v[t] = remove_outliers(v[t])
+        else:
+            v['t1'] = remove_outliers(v['t1'])
 
     # # T1: mean ~= 21, std ~= 20
     # from analysis.utils import histogram

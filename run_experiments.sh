@@ -75,12 +75,12 @@ do
         python e2e.py --model-name ${model} --batch-size ${batch_size}
     done
 
-    for model in transformer
-    do
-        ./nlp_benchmark.sh transformer $((batch_size*4))
-        python trace_stats.py --model-name ${model} --batch-size $((batch_size*4)) --iters 100
-        python e2e.py --model-name ${model} --batch-size $((batch_size*4))
-    done
+    # for model in transformer
+    # do
+    #     ./nlp_benchmark.sh transformer $((batch_size*4))
+    #     python trace_stats.py --model-name ${model} --batch-size $((batch_size*4)) --iters 100
+    #     python e2e.py --model-name ${model} --batch-size $((batch_size*4))
+    # done
 
     for model in ncf deepfm
     do

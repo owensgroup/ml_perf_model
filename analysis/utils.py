@@ -125,10 +125,9 @@ CONSIDER = [
 
 SKIP = [    "SliceBackward",
             "FusedDropoutBackward",
-            "DLRM distribute emb data",
-            "aten::as_strided"
+            "DLRM distribute emb data"
 ] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
-# FusedDropoutBackward somehow occurs in DeepFM graph
+# FusedDropoutBackward somehow occurs in DeepFM exgrs
 
 
 def is_collective(op):
@@ -317,6 +316,13 @@ def choose(n, k):
 #     x = abs((output - target) / target)
 #     loss = torch.mean(x)
 #     return loss
+
+
+def remove_outliers(data):
+    Q1 = np.quantile(data, 0.25)
+    Q3 = np.quantile(data, 0.75)
+    IQR = Q3 - Q1
+    return [x for x in data if x >= Q1 - 1.5 * IQR and x <= Q3 + 1.5 * IQR]
 
 
 def get_pretrained_net(op_type, backward=False):
