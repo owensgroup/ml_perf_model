@@ -32,7 +32,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from itertools import compress
 from analysis.utils import KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, remove_outliers
 import numpy as np
-import json, sys, os, re
+import pandas as pd
+import json, sys
 
 # Label markers
 LABEL_MARKERS = ["##", "__", "module::", "DLRM ", "DistributedDataParallel"]
@@ -207,12 +208,18 @@ class Event:
         return ls <= es and le >= ee
     def input_shape(self):
         if "args" not in self.event.keys() or "Input Dims" not in self.event["args"].keys():
-            return (-1,)
-        return list_to_tuple(self.event["args"]["Input Dims"])
+            return ((-1,),)
+        shape = list_to_tuple(self.event["args"]["Input Dims"])
+        if not shape or all([not x for x in shape]): # Empty
+            return ((-1,),)
+        return tuple([x for x in shape if x])
     def output_shape(self):
         if "args" not in self.event.keys() or "Output dims" not in self.event["args"].keys():
-            return (-1,)
-        return list_to_tuple(self.event["args"]["Output dims"])
+            return ((-1,),)
+        shape = list_to_tuple(self.event["args"]["Output Dims"])
+        if not shape or all([not x for x in shape]): # Empty
+            return ((-1,),)
+        return tuple([x for x in shape if x])
     def external_id(self):
         if "args" not in self.event.keys():
             return None
@@ -946,6 +953,37 @@ def get_gpu_stream_stats(cc):
     return gpu_time
 
 
+def save_raw_overhead_data(overheads, file_name, model_name, batch_size):
+    df = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
+    # T1
+    tmp = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
+    tmp.loc[0] = [model_name, batch_size, '', 't1', 0]
+    tmp = pd.DataFrame(np.repeat(tmp.values, len(overheads['independent']['t1']), axis=0),
+        columns=["model_name", "batch_size", "op_name", "type", "time"])
+    tmp = tmp.assign(time=overheads['independent']['t1'])
+    df = pd.concat([df, tmp], ignore_index=True)
+    # T4
+    for k, v in overheads['independent']['t4'].items():
+        tmp = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
+        tmp.loc[0] = [model_name, batch_size, k, 't4', 0]
+        tmp = pd.DataFrame(np.repeat(tmp.values, len(v), axis=0),
+            columns=["model_name", "batch_size", "op_name", "type", "time"])
+        tmp = tmp.assign(time=v)
+        df = pd.concat([df, tmp], ignore_index=True)
+    # T2, T3, T5
+    for k, v in overheads.items():
+        if k != 'independent':
+            for t in ['t2', 't3', 't5']:
+                if len(v[t]) > 0:
+                    tmp = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
+                    tmp.loc[0] = [model_name, batch_size, k, t, 0]
+                    tmp = pd.DataFrame(np.repeat(tmp.values, len(v[t]), axis=0),
+                        columns=["model_name", "batch_size", "op_name", "type", "time"])
+                    tmp = tmp.assign(time=v[t])
+                    df = pd.concat([df, tmp], ignore_index=True)
+    df.to_csv(file_name)
+
+
 def get_overheads(ops):
     # Type 1 overhead: between two op calls
     # Type 2 overhead: before the first device call, op-specific
@@ -1062,4 +1100,4 @@ def get_overheads(ops):
         },
         "t5": t5,
         "launches": launches_dict
-    }
+    }, overheads
