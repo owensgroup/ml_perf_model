@@ -28,7 +28,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import argparse, json, os, re
+import argparse, glob, json, os, re
 import analysis.extend_distributed as ext_dist
 from analysis.trace_utils import *
 from analysis.utils import PM_HOME, GPU_NAME
@@ -40,7 +40,8 @@ if __name__ == '__main__':
     parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--iters", type=int, default=10)
     args = parser.parse_args()
-    print("======= {}, {} GPU(s), batch size: {} =======".format(args.model_name, args.num_gpus, args.batch_size))
+    print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
+            args.model_name, args.num_gpus, args.batch_size, args.iters))
     if args.num_gpus > 1:
         ext_dist.init_distributed(use_gpu=False) # Don't need GPU for E2E
     prefix = "{}/data/{}/e2e/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
@@ -66,14 +67,24 @@ if __name__ == '__main__':
 
     # Extract and save overheads
     overhead_stats, overhead_raw = get_overheads(ops)
-    # Workaround: use the overheads of rank 0 for all
-    if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
-        overhead_stats_name = "{}{}_overhead_stats_{}.json".format(prefix, "", args.iters) # ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else ""
-        overhead_raw_name = "{}{}_overhead_raw_{}.json".format(prefix, "", args.iters)
-        print("Rank {}: export overheads to JSON...".format(ext_dist.my_local_rank if ext_dist.my_size > 1 else 0))
-        with open(overhead_stats_name, "w") as f:
-            json.dump(overhead_stats, f)
-        save_raw_overhead_data(overhead_raw, overhead_raw_name, args.model_name, args.batch_size)
+    overhead_stats_name = "{}{}_overhead_stats_{}.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    overhead_raw_name = "{}{}_overhead_raw_{}.csv".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    print("Rank {}: export overheads to JSON...".format(ext_dist.my_local_rank if ext_dist.my_size > 1 else 0))
+    with open(overhead_stats_name, "w") as f:
+        json.dump(overhead_stats, f)
+    save_raw_overhead_data(overhead_raw, overhead_raw_name, args.model_name, args.batch_size)
+    # Merge raw overhead and stats from all processes
+    if ext_dist.my_size > 1 and ext_dist.my_local_rank == 0:
+        print("Rank {}: merge raw overhead and stats...".format(ext_dist.my_local_rank if ext_dist.my_size > 1 else 0))
+        overhead_stats_files = glob.glob("{}*_overhead_stats_{}.json".format(prefix, args.iters))
+        overhead_raw_files = glob.glob("{}*_overhead_raw_{}.csv".format(prefix, args.iters))
+
+        shared_overhead, shared_df = create_shared_overhead(overhead_raw_files, overhead_stats_files, return_df=True)
+
+        # Save shared raw overhead and stats
+        with open("{}_overhead_stats_{}.json".format(prefix, args.iters), 'w') as f:
+            json.dump(shared_overhead, f)
+        shared_df.to_csv("{}_overhead_raw_{}.csv".format(prefix, args.iters), index=False)
 
     # Get overall per-batch time
     runtime_no_pf = -1

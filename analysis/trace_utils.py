@@ -30,7 +30,7 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 from itertools import compress
-from analysis.utils import KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, remove_outliers
+from analysis.utils import DUMMY_SHAPES, KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, remove_outliers
 import numpy as np
 import pandas as pd
 import json, sys
@@ -46,6 +46,10 @@ SKIP_RUNTIME_EVENTS = ["cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags",
 
 def is_module(op):
     return any([op.name().startswith(x) for x in LABEL_MARKERS])
+
+
+def is_backward(op):
+    return op.name().startswith("autograd::engine::evaluate_function:")
 
 
 # From Louis. Trim a long trace so that it eases the ATC processing
@@ -954,34 +958,36 @@ def get_gpu_stream_stats(cc):
 
 
 def save_raw_overhead_data(overheads, file_name, model_name, batch_size):
-    df = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
+    header = ["model_name", "batch_size", "op_name", "shapes", "type", "time"]
+    df = pd.DataFrame(None, columns=header)
     # T1
-    tmp = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
-    tmp.loc[0] = [model_name, batch_size, '', 't1', 0]
+    tmp = pd.DataFrame(None, columns=header)
+    tmp.loc[0] = [model_name, batch_size, '', '((-1,),)', 't1', 0]
     tmp = pd.DataFrame(np.repeat(tmp.values, len(overheads['independent']['t1']), axis=0),
-        columns=["model_name", "batch_size", "op_name", "type", "time"])
+        columns=header)
     tmp = tmp.assign(time=overheads['independent']['t1'])
     df = pd.concat([df, tmp], ignore_index=True)
     # T4
     for k, v in overheads['independent']['t4'].items():
-        tmp = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
-        tmp.loc[0] = [model_name, batch_size, k, 't4', 0]
+        tmp = pd.DataFrame(None, columns=header)
+        tmp.loc[0] = [model_name, batch_size, k, '((-1,),)', 't4', 0]
         tmp = pd.DataFrame(np.repeat(tmp.values, len(v), axis=0),
-            columns=["model_name", "batch_size", "op_name", "type", "time"])
+            columns=header)
         tmp = tmp.assign(time=v)
         df = pd.concat([df, tmp], ignore_index=True)
     # T2, T3, T5
-    for k, v in overheads.items():
-        if k != 'independent':
-            for t in ['t2', 't3', 't5']:
-                if len(v[t]) > 0:
-                    tmp = pd.DataFrame(None, columns=["model_name", "batch_size", "op_name", "type", "time"])
-                    tmp.loc[0] = [model_name, batch_size, k, t, 0]
-                    tmp = pd.DataFrame(np.repeat(tmp.values, len(v[t]), axis=0),
-                        columns=["model_name", "batch_size", "op_name", "type", "time"])
-                    tmp = tmp.assign(time=v[t])
-                    df = pd.concat([df, tmp], ignore_index=True)
-    df.to_csv(file_name)
+    for op_name, v in overheads.items():
+        if op_name != 'independent':
+            for shapes, vv in v.items():
+                for t in ['t2', 't3', 't5']:
+                    if len(vv[t]) > 0:
+                        tmp = pd.DataFrame(None, columns=header)
+                        tmp.loc[0] = [model_name, batch_size, op_name, shapes, t, 0]
+                        tmp = pd.DataFrame(np.repeat(tmp.values, len(vv[t]), axis=0),
+                            columns=header)
+                        tmp = tmp.assign(time=vv[t])
+                        df = pd.concat([df, tmp], ignore_index=True)
+    df.to_csv(file_name, index=False)
 
 
 def get_overheads(ops):
@@ -997,15 +1003,19 @@ def get_overheads(ops):
 
     for i, op in enumerate(ops):
         name = op.name()
+        input_shape = op.input_shape()
+        output_shape = op.output_shape()
+        shapes = str((input_shape, output_shape))
         if name not in overheads.keys():
             overheads[name] = {}
-
-        if 't2' not in overheads[name].keys():
-            overheads[name]['t2'] = []
-        if 't3' not in overheads[name].keys():
-            overheads[name]['t3'] = []
-        if 't5' not in overheads[name].keys():
-            overheads[name]['t5'] = []
+        if shapes not in overheads[name].keys():
+            overheads[name][shapes] = {}
+        if 't2' not in overheads[name][shapes].keys():
+            overheads[name][shapes]['t2'] = []
+        if 't3' not in overheads[name][shapes].keys():
+            overheads[name][shapes]['t3'] = []
+        if 't5' not in overheads[name][shapes].keys():
+            overheads[name][shapes]['t5'] = []
 
         sub_event_count = get_sub_event_count(op)
         # Get the number of events before each kernel launch (to subtract corresponding amount of CPU overheads from estimated time)
@@ -1019,14 +1029,13 @@ def get_overheads(ops):
                 count = 0
 
         if len(launches) > 0:
-            overheads[name]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
+            overheads[name][shapes]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
             trailing_sub_event_count = sub_event_count - sum([y+1 for _, y in launches]) # And kernel launches themselves
-            overheads[name]['t3'].append(max(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD, 0)) # T3 has all overheads after the last launch
-            t3 = op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD
+            overheads[name][shapes]['t3'].append(max(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD, 0)) # T3 has all overheads after the last launch
             if len(launches) > 1:
-                overheads[name]['t5'].extend([launches[i][0].start_time() - launches[i-1][0].end_time() - launches[i][1] * CPU_EVENT_OVERHEAD for i in range(1, len(launches))]) # T5 has all overheads between each pair of launches
+                overheads[name][shapes]['t5'].extend([launches[i][0].start_time() - launches[i-1][0].end_time() - launches[i][1] * CPU_EVENT_OVERHEAD for i in range(1, len(launches))]) # T5 has all overheads between each pair of launches
             else:
-                overheads[name]['t5'].append(0)
+                overheads[name][shapes]['t5'].append(0)
 
             # T4 is launch-type-dependent
             for x, _ in launches:
@@ -1046,13 +1055,15 @@ def get_overheads(ops):
         else:
             if name not in overheads.keys():
                 overheads[name] = {}
+            if shapes not in overheads[name].keys():
+                overheads[name][shapes] = {}
             # If an op doesn't have kernel calls it has only one T5 overhead representing its CPU duration
-            if 't5' not in overheads[name].keys():
-                overheads[name]['t5'] = []
+            if 't5' not in overheads[name][shapes].keys():
+                overheads[name][shapes]['t5'] = []
             if name == "aten::to":
                 continue # Some aten::to doesn't have children
             else:
-                overheads[name]['t5'].append(op.duration() - sub_event_count * CPU_EVENT_OVERHEAD) # Remove cpu overhead for all sub events
+                overheads[name][shapes]['t5'].append(op.duration() - sub_event_count * CPU_EVENT_OVERHEAD) # Remove cpu overhead for all sub events
 
         if i > 0:
             prev_op = ops[i-1]
@@ -1062,15 +1073,16 @@ def get_overheads(ops):
                 continue
 
             gap = op.start_time() - prev_op.end_time()
-            if gap < 50 and gap > 0: # Skip dataloading gaps
+            if gap < 50 and gap > CPU_EVENT_OVERHEAD and is_backward(op): # Skip dataloading gaps and FW ops (too much manual interference)
                 overheads['independent']['t1'].append(gap - CPU_EVENT_OVERHEAD) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
 
     # Remove outliers (skip t4 as we set them to constants)
     for k, v in overheads.items():
         if k != 'independent':
-            for t in ['t2', 't3', 't5']:
-                if len(v[t]) > 0:
-                    v[t] = remove_outliers(v[t])
+            for shapes, vv in v.items():
+                for t in ['t2', 't3', 't5']:
+                    if len(vv[t]) > 0:
+                        vv[t] = remove_outliers(vv[t])
         else:
             v['t1'] = remove_outliers(v['t1'])
 
@@ -1080,12 +1092,17 @@ def get_overheads(ops):
     # print(np.mean(overheads['independent']['t1']), np.std(overheads['independent']['t1']))
 
     # T2, T3, T5
-    t2 = {k: (np.mean(v['t2']), np.std(v['t2']), len(v['t2'])) for k, v in overheads.items() if k != 'independent' and len(v['t2']) > 0}
-    # pprint(t2)
-    t3 = {k: (np.mean(v['t3']), np.std(v['t3']), len(v['t3'])) for k, v in overheads.items() if k != 'independent' and len(v['t3']) > 0}
-    # pprint(t3)
-    t5 = {k: (np.mean(v['t5']), np.std(v['t5']), len(v['t5'])) for k, v in overheads.items() if k != 'independent' and len(v['t5']) > 0}
-    # pprint(t5)
+    tmp_list = []
+    for t in ['t2', 't3', 't5']:
+        tmp_dict = {}
+        for name, v in overheads.items():
+            if name != 'independent':
+                for shapes, vv in v.items():
+                    if len(vv[t]) > 0:
+                        if name not in tmp_dict.keys():
+                            tmp_dict[name] = {}
+                        tmp_dict[name][shapes] = (np.mean(vv[t]), np.std(vv[t]), len(vv[t]))
+        tmp_list.append(tmp_dict)
 
     # # T4
     # for t, l in overheads['independent']['t4'].items():
@@ -1093,11 +1110,101 @@ def get_overheads(ops):
 
     return {
         "t1": (np.mean(overheads['independent']['t1']), np.std(overheads['independent']['t1']), len(overheads['independent']['t1'])),
-        "t2": t2,
-        "t3": t3,
+        "t2": tmp_list[0],
+        "t3": tmp_list[1],
         "t4": {
             t: (np.mean(l), np.std(l), len(l)) for t, l in overheads['independent']['t4'].items()
         },
-        "t5": t5,
+        "t5": tmp_list[2],
         "launches": launches_dict
     }, overheads
+
+
+def create_shared_overhead(overhead_raw_files, overhead_stats_files, return_df=False):
+    # Read raw data
+    df = None
+    for file in overhead_raw_files:
+        model_name = file.split('/')[-2]
+        batch_size = file.split('/')[-1].split('_')[1]
+        tmp = pd.read_csv(file)
+        tmp['model_name'] = [model_name] * len(tmp)
+        tmp['batch_size'] = [batch_size] * len(tmp)
+        if df is None:
+            df = tmp
+        else:
+            df = pd.concat([df, tmp], ignore_index=True)
+
+    # Read stats data for kernel launches details
+    launches = {}
+    for file in overhead_stats_files:
+        with open(file) as f:
+            overhead = json.load(f)
+        for k, v in overhead['launches'].items():
+            # Optimizer.step#SGD.step and Optimizer.zero_grad#SGD.zero_grad: handle during inference
+            if 'Optimizer' in k:
+                continue
+            if k not in launches.keys() or len(v) > len(launches[k]): # Take the longest
+                launches[k] = v
+
+    overhead = {}
+    # T1
+    t1 = df[df['type'] == 't1']
+    overhead['t1'] = (np.mean(t1['time']), np.std(t1['time']), len(t1['time']))
+    # T4
+    t4 = df[df['type'] == 't4']
+    overhead['t4'] = {}
+    runtime_funcs = t4['op_name'].unique()
+    for rf in runtime_funcs:
+        rf_data = t4[t4['op_name'] == rf]
+        overhead['t4'][rf] = (np.mean(rf_data['time']), np.std(rf_data['time']), len(rf_data['time']))
+    # T2, T3, T5
+    for t in ['t2', 't3', 't5']:
+        data = df[df['type'] == t]
+        overhead[t] = {}
+        op_names = data['op_name'].unique()
+        for op in op_names:
+            overhead[t][op] = {}
+            op_data = data[data['op_name'] == op]
+            overhead[t][op][str(DUMMY_SHAPES)] = (np.mean(op_data['time']), np.std(op_data['time']), len(op_data['time']))
+    # Launches
+    overhead['launches'] = launches
+
+    if return_df:
+        return overhead, df
+    return overhead
+
+
+def gather_overhead_raw(overhead_raw_files):
+    """
+        overhead_raw_files: a (regex) glob of all raw overhead files
+    """
+    df = None
+    for file in overhead_raw_files:
+        model_name = file.split('/')[-2]
+        batch_size = file.split('/')[-1].split('_')[1]
+        tmp = pd.read_csv(file, usecols=[1,2,3,4,5,6])
+        tmp['model_name'] = [model_name] * len(tmp)
+        tmp['batch_size'] = [batch_size] * len(tmp)
+        if df is None:
+            df = tmp
+        else:
+            df = pd.concat([df, tmp], ignore_index=True)
+    return df
+
+
+def gather_overhead_stats(overhead_stats_files):
+    """
+        overhead_stats_files: a (regex) glob of all overhead stats files
+    """
+    launches = {}
+    for file in overhead_stats_files:
+        with open(file) as f:
+            overhead = json.load(f)
+
+        for k, v in overhead['launches'].items():
+            # Optimizer.step#SGD.step and Optimizer.zero_grad#SGD.zero_grad: handle during inference
+            if 'Optimizer' in k:
+                continue
+            if k not in launches.keys() or len(v) > len(launches[k]): # Take the longest
+                launches[k] = v
+    return launches

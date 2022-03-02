@@ -40,9 +40,11 @@ if __name__ == '__main__':
     parser.add_argument("--num-gpus", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--iters", type=int, default=10)
+    parser.add_argument("--use-independent-overheads", action="store_true", default=False)
     parser.add_argument("--debug", action="store_true", default=False)
     args = parser.parse_args()
-    print("======= {}, {} GPU(s), batch size: {} =======".format(args.model_name, args.num_gpus, args.batch_size))
+    print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
+            args.model_name, args.num_gpus, args.batch_size, args.iters))
     if args.num_gpus > 1:
         ext_dist.init_distributed(use_gpu=False) # Don't need GPU for E2E
     prefix = "{}/data/{}/e2e/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
@@ -51,7 +53,10 @@ if __name__ == '__main__':
     exec_graph_file = "{}{}_graph.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if args.num_gpus > 1 else "")
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
-    overheads_file = "{}_overhead_stats_{}.json".format(prefix, args.iters)
+    if args.use_independent_overheads:
+        overheads_file = "{}_overhead_stats_{}.json".format(prefix, args.iters)
+    else:
+        overheads_file = "{}/data/{}/e2e/shared_overheads.json".format(PM_HOME, GPU_NAME)
     if not os.path.exists(overheads_file):
         print("Overheads file doesn't exist! Please run the trace analysis first.")
         exit(1)

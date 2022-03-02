@@ -719,6 +719,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
         if not forward_found:
             continue
         if node.is_op():
+            shapes = str(DUMMY_SHAPES)
             if (to_skip(node)):
                 continue
             stream = infer_multi_stream(node)
@@ -727,9 +728,9 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                 print(" ", node.name, "--------")
                 print("    t1: {:.2f}".format(overheads["t1"][0]))
             if node.name in overheads["launches"].keys(): # Has kernel calls
-                cpu_time += overheads["t2"][node.name][0] # T2: before the first kernel call
+                cpu_time += overheads["t2"][node.name][shapes][0] # T2: before the first kernel call
                 if debug:
-                    print("    t2: {:.2f}".format(overheads["t2"][node.name][0]))
+                    print("    t2: {:.2f}".format(overheads["t2"][node.name][shapes][0]))
                 launches = overheads["launches"][node.name]
                 # print(node.name, to_consider(node))
                 if to_consider(node) or is_collective(node):
@@ -737,7 +738,7 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
 
                     for idx, l in enumerate(launches):
                         t4 = overheads["t4"][l][0] # Kernel launches
-                        t5 = overheads["t5"][node.name][0] # Avg overhead between
+                        t5 = overheads["t5"][node.name][shapes][0] # Avg overhead between
 
                         # Contribution of CPU overheads on GPU idle time
                         gpu_time[stream] = max(gpu_time[stream] + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
@@ -777,24 +778,24 @@ def get_e2e_time(graph, overheads, module_marker, debug=False):
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
                     cpu_time += np.sum([overheads["t4"][x][0] for x in launches]) # T4
                     if node.name in overheads["t5"]:
-                        cpu_time += overheads["t5"][node.name][0] * (len(launches) - 1) # T5
+                        cpu_time += overheads["t5"][node.name][shapes][0] * (len(launches) - 1) # T5
                     if debug:
                         print("    t4: {:.2f}".format(np.sum([overheads["t4"][x][0] for x in launches])))
                         if node.name in overheads["t5"]:
-                            print("    t5: {:.2f}".format(overheads["t5"][node.name][0] * (len(launches) - 1)))
+                            print("    t5: {:.2f}".format(overheads["t5"][node.name][shapes][0] * (len(launches) - 1)))
                         else:
                             print("Warning: {} is skipped for not found in the overheads.".format(node.name))
-                cpu_time += overheads["t3"][node.name][0] # T3: after the last kernel call
+                cpu_time += overheads["t3"][node.name][shapes][0] # T3: after the last kernel call
                 gpu_all_streams_front = max(gpu_time.values()) # Track the GPU front among all streams
                 if debug:
-                    print("    t3: {:.2f}".format(overheads["t3"][node.name][0]))
+                    print("    t3: {:.2f}".format(overheads["t3"][node.name][shapes][0]))
                 # print(node.name, ["{:.2f}".format(tt) for tt in t], gpu_time["active"])
             else: # aten::view, aten::ones, aten::zeros, aten::empty, etc
                 if node.name in overheads["t5"]:
-                    cpu_time += overheads["t5"][node.name][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
+                    cpu_time += overheads["t5"][node.name][shapes][0] # Ops that have no kernel calls only have T5 overheads (total CPU overheads)
                 if debug:
                     if node.name in overheads["t5"]:
-                        print("    t5: {:.2f}".format(overheads["t5"][node.name][0]))
+                        print("    t5: {:.2f}".format(overheads["t5"][node.name][shapes][0]))
                     else:
                         print("Warning: {} is skipped for not found in the overheads.".format(node.name))
             if debug:

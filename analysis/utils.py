@@ -130,6 +130,10 @@ SKIP = [    "SliceBackward",
 # FusedDropoutBackward somehow occurs in DeepFM exgrs
 
 
+# Dummy shapes
+DUMMY_SHAPES = (((-1,),), ((-1,),))
+
+
 def is_collective(op):
     if op.name == "record_param_comms" or "All2All" in op.name:
         return True
