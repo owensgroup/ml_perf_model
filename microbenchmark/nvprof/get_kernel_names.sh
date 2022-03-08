@@ -29,18 +29,15 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-if [ "${CUDA_VISIBLE_DEVICES}" == "" ];
-then
-    CUDA_VISIBLE_DEVICES="0"
-fi
+BUS_ID="$( nvidia-smi --query-gpu=gpu_bus_id --format=csv,noheader )"
 
-rm -f "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
+rm -f "/tmp/${BUS_ID}_kernel_names.txt"
 op_type=$1
 threshold="0.98"
 sum_perc="0.0"
-touch "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
+touch "/tmp/${BUS_ID}_kernel_names.txt"
 
-< "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.txt" awk '/GPU activities: /,/API calls:/' | grep -v "API calls:" > "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
+< "/tmp/${BUS_ID}_profile_results.txt" awk '/GPU activities: /,/API calls:/' | grep -v "API calls:" > "/tmp/${BUS_ID}_all_names.txt"
 sum_runtime="0.0"
 while IFS= read -r line
 do
@@ -72,7 +69,7 @@ do
     fi
 
     sum_runtime="$( echo "scale=4; $sum_runtime + $sum_kernel" | bc )"
-done < "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
+done < "/tmp/${BUS_ID}_all_names.txt"
 
 echo "Sum of kernel runtime: $sum_runtime us."
 
@@ -118,10 +115,10 @@ do
 
     echo "Kernel name: $kernel_name"
     echo "Percentage: $perc"
-    echo "$kernel_name" >> "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
+    echo "$kernel_name" >> "/tmp/${BUS_ID}_kernel_names.txt"
 
     if (( "$( echo "$sum_perc > $threshold" | bc -l )" ));
     then
         break
     fi
-done < "/tmp/${CUDA_VISIBLE_DEVICES}_all_names.txt"
+done < "/tmp/${BUS_ID}_all_names.txt"

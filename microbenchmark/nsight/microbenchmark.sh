@@ -38,17 +38,15 @@ benchmark_metrics="0"
 op_type=$1
 is_forward=$2
 is_big=${3:0}
-benchmark_metrics=${4:0}
+fbgemm=${4:0}
+benchmark_metrics=${5:0}
 shmem="1"
 sgd="1"
 fc_test="0"
 header=""
 param_file_name=""
 file_prefix="${PM_HOME}/data/${GPU_NAME}/kernel/${op_type}_${is_forward}"
-if [ "${CUDA_VISIBLE_DEVICES}" == "" ];
-then
-    CUDA_VISIBLE_DEVICES="0"
-fi
+BUS_ID="$( nvidia-smi --query-gpu=gpu_bus_id --format=csv,noheader )"
 
 if [ ! -f nsight_metrics.txt ] && [ "$benchmark_metrics" == "1" ];
 then
@@ -58,16 +56,11 @@ fi
 
 if [ "$op_type" == "embedding_lookup" ];
 then
-    header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
     if [ "$is_big" == "1" ];
     then
         param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_big.txt"
     else
         param_file_name="${PM_HOME}/bench_params/embedding_lookup_params.txt"
-    fi
-    if [ "$is_forward" == "1" ] && [ "$shmem" == "1" ];
-    then
-        file_prefix="${file_prefix}_shmem"
     fi
     if [ "$is_forward" == "0" ];
     then
@@ -77,10 +70,17 @@ then
         else
             file_prefix="${file_prefix}_adagrad"
         fi
-	if [ "$shmem" == "1" ];
-	then
-	    file_prefix="${file_prefix}_shmem"
-	fi
+    fi
+    if [ "$fbgemm" == "1" ];
+    then
+        header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
+        file_prefix="${file_prefix}_fbgemm"
+    else
+        header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim"
+        if [ "$shmem" == "1" ];
+        then
+            file_prefix="${file_prefix}_shmem"
+        fi
     fi
 elif [ "$op_type" == "fully_connected" ];
 then
@@ -171,17 +171,32 @@ while IFS= read -r line
 do
     IFS=', ' read -r -a array <<< "$line"
     bench_param=""
+    last_array=""
 
     if [ "$op_type" == "embedding_lookup" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"
-        if [ "${array[5]}" -gt "32" ] && [ "$is_forward" == "0" ]; # Skip when backward and rows_per_block too big
+        if ["$last_array" != ""];
         then
-            continue
+            tmp="${array[@]:0:5}"
+            if [ "$tmp" == "$last_array" ];
+            then
+                continue
+            fi
         fi
-        if [ "$shmem" == "1" ];
+        last_array="${array[@]:0:5}"
+        if [ "$fbgemm" == "1" ];
         then
-            bench_param="${bench_param} --shmem"
+            bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --fbgemm"
+        else
+            bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"
+            if [ "${array[5]}" -gt "32" ] && [ "$is_forward" == "0" ]; # Skip when backward and rows_per_block too big
+            then
+                continue
+            fi
+            if [ "$shmem" == "1" ];
+            then
+                bench_param="${bench_param} --shmem"
+            fi
         fi
         if [ "$sgd" == "1" ];
         then
@@ -225,31 +240,31 @@ do
     echo "$bench_param"
 
     # Benchmark operator runtime: no nvprof
-    python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${CUDA_VISIBLE_DEVICES}_op.txt"
-    op_time="$( < /tmp/${CUDA_VISIBLE_DEVICES}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
+    python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${BUS_ID}_op.txt"
+    op_time="$( < /tmp/${BUS_ID}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
 
     # Get gpu trace
     echo "Get GPU trace of kernels ..."
-    nsys profile --trace=cuda --force-overwrite true --output "/tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep" \
+    nsys profile --trace=cuda --force-overwrite true --output "/tmp/${BUS_ID}_profile_results.qdrep" \
     python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
     --warmup-iters $warmup_iters >& /dev/null
 
     # Extract stats
     if [ "$op_type" != "memcpy" ];
     then
-        nsys stats --report gpukernsum --format csv --output . --force-overwrite true /tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep >& /dev/null
+        nsys stats --report gpukernsum --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.qdrep >& /dev/null
     else
-        nsys stats --report gpumemtimesum --format csv --output . --force-overwrite true /tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep >& /dev/null
+        nsys stats --report gpumemtimesum --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.qdrep >& /dev/null
     fi
-    nsys stats --report gputrace --format csv --output . --force-overwrite true /tmp/${CUDA_VISIBLE_DEVICES}_profile_results.qdrep >& /dev/null
-    mv /tmp/${CUDA_VISIBLE_DEVICES}_profile_results_gputrace.csv /tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.csv
+    nsys stats --report gputrace --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.qdrep >& /dev/null
+    mv /tmp/${BUS_ID}_profile_results_gputrace.csv /tmp/${BUS_ID}_kernel_trace.csv
 
     ./get_kernel_names.sh "$op_type"
     kernels=()
     while IFS= read -r line
     do
         kernels+=( "$line" )
-    done < "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_names.txt"
+    done < "/tmp/${BUS_ID}_kernel_names.txt"
     len=${#kernels[@]}
 
     for (( i=0; i<len; i++ ));
@@ -271,9 +286,9 @@ do
 
         if [ "$op_type" == "memcpy" ];
         then
-            result_file="/tmp/${CUDA_VISIBLE_DEVICES}_profile_results_gpumemtimesum.csv"
+            result_file="/tmp/${BUS_ID}_profile_results_gpumemtimesum.csv"
         else
-            result_file="/tmp/${CUDA_VISIBLE_DEVICES}_profile_results_gpukernsum.csv"
+            result_file="/tmp/${BUS_ID}_profile_results_gpukernsum.csv"
         fi
 
         # Get kernel time
@@ -295,10 +310,10 @@ do
 
         # Get trace info
         trace_values=""
-        first_line=$( head -n 1 "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.csv" )
+        first_line=$( head -n 1 "/tmp/${BUS_ID}_kernel_trace.csv" )
         IFS=',' read -r -a x <<< "$first_line"
         throughput_unit="$( echo ${x[13]} | awk '{gsub(/^[^(]*\(|\)[^)]*$/,"",$0);print $0}' )" # Ditto
-        related_line=$( cat "/tmp/${CUDA_VISIBLE_DEVICES}_kernel_trace.csv" | grep "$kernel" | head -n 1 )
+        related_line=$( cat "/tmp/${BUS_ID}_kernel_trace.csv" | grep "$kernel" | head -n 1 )
         IFS=',' read -r -a x <<< "$related_line"
         if [ "$op_type" == "memcpy" ];
         then
@@ -321,13 +336,13 @@ do
         #     echo "Benchmark kernel $kernel"
         #     nvprof --openacc-profiling off --kernels $kernel \
         #     $metrics_args \
-        #     --log-file "/tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt" \
+        #     --log-file "/tmp/${BUS_ID}_kernel.txt" \
         #     python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters $warmup_iters >& /dev/null
 
         #     metric_values=()
         #     for (( j=0; j<${#metrics[@]}; j++ ));
         #     do
-        #         value="$( < /tmp/${CUDA_VISIBLE_DEVICES}_kernel.txt grep -m1 "${metrics[j]}" | awk '{ x=gensub("    ","","G",$NF); printf x }' )"
+        #         value="$( < /tmp/${BUS_ID}_kernel.txt grep -m1 "${metrics[j]}" | awk '{ x=gensub("    ","","G",$NF); printf x }' )"
         #         metric_values+=( "$value" )
         #     done
 
