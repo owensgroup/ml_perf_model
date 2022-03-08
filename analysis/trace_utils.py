@@ -1122,29 +1122,10 @@ def get_overheads(ops):
 
 def create_shared_overhead(overhead_raw_files, overhead_stats_files, return_df=False):
     # Read raw data
-    df = None
-    for file in overhead_raw_files:
-        model_name = file.split('/')[-2]
-        batch_size = file.split('/')[-1].split('_')[1]
-        tmp = pd.read_csv(file)
-        tmp['model_name'] = [model_name] * len(tmp)
-        tmp['batch_size'] = [batch_size] * len(tmp)
-        if df is None:
-            df = tmp
-        else:
-            df = pd.concat([df, tmp], ignore_index=True)
+    df = gather_overhead_raw(overhead_raw_files)
 
     # Read stats data for kernel launches details
-    launches = {}
-    for file in overhead_stats_files:
-        with open(file) as f:
-            overhead = json.load(f)
-        for k, v in overhead['launches'].items():
-            # Optimizer.step#SGD.step and Optimizer.zero_grad#SGD.zero_grad: handle during inference
-            if 'Optimizer' in k:
-                continue
-            if k not in launches.keys() or len(v) > len(launches[k]): # Take the longest
-                launches[k] = v
+    launches = gather_overhead_stats(overhead_stats_files)
 
     overhead = {}
     # T1
@@ -1182,7 +1163,7 @@ def gather_overhead_raw(overhead_raw_files):
     for file in overhead_raw_files:
         model_name = file.split('/')[-2]
         batch_size = file.split('/')[-1].split('_')[1]
-        tmp = pd.read_csv(file, usecols=[1,2,3,4,5,6])
+        tmp = pd.read_csv(file)
         tmp['model_name'] = [model_name] * len(tmp)
         tmp['batch_size'] = [batch_size] * len(tmp)
         if df is None:
@@ -1200,7 +1181,6 @@ def gather_overhead_stats(overhead_stats_files):
     for file in overhead_stats_files:
         with open(file) as f:
             overhead = json.load(f)
-
         for k, v in overhead['launches'].items():
             # Optimizer.step#SGD.step and Optimizer.zero_grad#SGD.zero_grad: handle during inference
             if 'Optimizer' in k:
