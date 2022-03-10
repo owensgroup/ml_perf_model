@@ -63,21 +63,32 @@ if __name__ == '__main__':
     with open(overheads_file) as f:
         overheads = json.load(f)
 
-    real_e2e_time = -1
+    real_e2e_time, real_gpu_active_time = -1, -1
     log_file = "{}.log".format(prefix)
     if os.path.exists(log_file):
         for line in open(log_file, 'r'):
             if re.search("Overall per-batch", line):
                 real_e2e_time = float(line.split(' ')[4]) * 1000 # In us
+    assert real_e2e_time != -1
+    summary_file = "{}{}_summary_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    if os.path.exists(summary_file):
+        for line in open(summary_file, 'r'):
+            if re.search("Total per-batch GPU time", line):
+                real_gpu_active_time = float(line.split(' ')[-3]) # In us
+    assert real_gpu_active_time != -1
 
-    total_time, gpu_active_time = get_e2e_time(graph, overheads, module_marker, debug=args.debug)
+    e2e_time, gpu_active_time = get_e2e_time(graph, overheads, module_marker, debug=args.debug)
     # Only rank 0 prints
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
-        st = "Total time: {:.2f}, GPU time: {:.2f}".format(total_time, gpu_active_time)
+        st = "E2E time: {:.2f}, GPU time: {:.2f}".format(e2e_time, gpu_active_time)
         if real_e2e_time != -1:
-            st += "\nReference time: {:.2f}".format(real_e2e_time)
-            st += "\nPrediction error: {:.2f}%, {:.2f}%".format(
-                (total_time / real_e2e_time - 1) * 100,
+            st += "\nReference time: {:.2f}, {:.2f}".format(real_e2e_time, real_gpu_active_time)
+            st += "\nPrediction error: {:.2f}%, {:.2f}%, {:.2f}%".format(
+                (gpu_active_time / real_gpu_active_time - 1) * 100,
+                (e2e_time / real_e2e_time - 1) * 100,
                 (gpu_active_time / real_e2e_time - 1) * 100,
             )
         print(st)
+        prediction_name = "{}{}_prediction_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+        with open(prediction_name, 'w') as f:
+            f.write(st)

@@ -97,7 +97,7 @@ fi
 if [ ! -f embedding_lookup_params_big.txt ];
 then
     touch embedding_lookup_params_big.txt
-    for B in 1024 2048;
+    for B in 1024 2048 4096;
     do
         for E in 1000 2000 5000 7500 10000 20000 50000 75000 100000 200000 500000 750000 1000000 2000000 5000000 7500000 10000000 20000000 50000000;
         do

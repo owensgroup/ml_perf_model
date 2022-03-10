@@ -108,14 +108,17 @@ QPS: {QPS:.2f}
 
     # Each stream and total GPU time
     for s in streams:
-        active_time_perc = gpu_time[s] / runtime_no_pf
-        idle_time_perc = 1 - gpu_time[s] / runtime_no_pf
+        active_time_perc = min(gpu_time[s], runtime_no_pf) / runtime_no_pf
+        idle_time_perc = 1 - active_time_perc
         st += "\n    Stream {}: average per-batch time: {:.2f} us, active perc {:.2f}%, idle perc {:.2f}%".format(
             s,
-            gpu_time[s] / args.iters,
+            min(gpu_time[s], runtime_no_pf) / args.iters,
             active_time_perc * 100,
             idle_time_perc * 100)
-    st += "\nTotal per-batch GPU time: {:.2f} us".format(gpu_time['total'] / args.iters)
-    summary_name = "{}{}_summary_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
-    with open(summary_name, 'w') as f:
+    st += "\nTotal per-batch GPU time and percentage: {:.2f} us ({:.2f}%)".format(
+        min(gpu_time['total'], runtime_no_pf) / args.iters,
+        min(gpu_time['total'], runtime_no_pf) / runtime_no_pf * 100
+    )
+    summary_file = "{}{}_summary_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    with open(summary_file, 'w') as f:
         f.write(st)
