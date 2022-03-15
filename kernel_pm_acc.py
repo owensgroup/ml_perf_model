@@ -55,6 +55,7 @@ if __name__ == '__main__':
             if op_type == 'embedding_lookup':
                 for big in [False, True]:
                     for hit_rate_estimation in [False, True]:
-                        infer(op_type, p=='backward', big=big, hit_rate_estimation=hit_rate_estimation)
+                        for fbgemm in [False, True]:
+                            infer(op_type, p=='backward', big=big, hit_rate_estimation=hit_rate_estimation, fbgemm=fbgemm)
             else:
                 infer(op_type, p=='backward')

@@ -64,6 +64,7 @@ HW_PARAMS = {
         "peak_SMEM_BW": 3918.911,
         "num_SM": 80,
         "L2_size": 6 * 1024 * 1024,
+        "SMEM_size": 64 * 1024,
     },
     "Xp": {
         "peak_throughput": 10768.622,
@@ -73,6 +74,7 @@ HW_PARAMS = {
         "peak_SMEM_BW": 1831.258,
         "num_SM": 30,
         "L2_size": 3 * 1024 * 1024,
+        "SMEM_size": 48 * 1024,
     },
     "P100": {
         "peak_throughput": 9343.711,
@@ -82,15 +84,7 @@ HW_PARAMS = {
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,
         "L2_size": 4 * 1024 * 1024,
-    },
-    "1080": {
-        "peak_throughput": 9494.746,
-        "peak_PCIe_BW": 3.04, # 8
-        "peak_DRAM_BW": 246.890,
-        "peak_L2_BW": 1747.627,
-        "peak_SMEM_BW": 1200.361,
-        "num_SM": 20,
-        "L2_size": 2 * 1024 * 1024,
+        "SMEM_size": 64 * 1024,
     }
 }
 GPU_PARAMS = HW_PARAMS[GPU_NAME]
@@ -193,6 +187,10 @@ def abs_err(pred, real):
 
 def err(pred, real):
     return (pred - real) / real
+
+
+def geomean(x):
+    return np.exp(np.log(x).mean())
 
 
 def gmae(x):

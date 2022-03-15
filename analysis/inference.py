@@ -42,6 +42,7 @@ peak_L2_BW = GPU_PARAMS["peak_L2_BW"]
 peak_SMEM_BW = GPU_PARAMS["peak_SMEM_BW"]
 num_SM = GPU_PARAMS["num_SM"]
 L2_size = GPU_PARAMS["L2_size"]
+SMEM_size = GPU_PARAMS["SMEM_size"]
 
 
 COMPUTE_STREAM = 0
@@ -79,8 +80,15 @@ def embedding_forward_predictor(**kwargs):
 
     # Average number of rows per table in L2
     y = kwargs
-    # num_total_warps = y["batch_size"] * y["num_tables"] # Total warp number of the kernel
-    num_warps_per_sm = y["rows_per_block"] # Number of warps per sm
+    if "rows_per_block" in y.keys():
+        num_warps_per_sm = y["rows_per_block"] # Number of warps per sm
+    else: # FBGEMM
+        used_smem_bytes = int(SMEM_size / 3 * 2 / 16) * 16
+        num_warps_per_sm = 32
+        while num_warps_per_sm * 4 * 4 * 32 * div_round_up(y["embedding_dim"], 128) >= used_smem_bytes:
+            num_warps_per_sm = num_warps_per_sm // 2
+        assert num_warps_per_sm >= 1
+
     num_warps_simul = num_SM * num_warps_per_sm # Total number of warps simultaneously running on the device
     num_tables_simul = div_round_up(num_warps_simul, y["batch_size"]) # Number of tables simultaneously being accessed on the device
     avg_table_size = min(L2_size // num_tables_simul, y["num_embeddings"] * y["embedding_dim"] * 4) # Average table size that reside on the device
@@ -156,8 +164,15 @@ def embedding_backward_sgd_predictor(**kwargs):
 
     # Average number of rows per table in L2
     y = kwargs
-    # num_total_warps = y["batch_size"] * y["num_tables"] # Total warp number of the kernel
-    num_warps_per_sm = y["rows_per_block"] # Number of warps per sm
+    if "rows_per_block" in y.keys():
+        num_warps_per_sm = y["rows_per_block"] # Number of warps per sm
+    else: # FBGEMM
+        used_smem_bytes = int(SMEM_size / 3 * 2 / 16) * 16
+        num_warps_per_sm = 32
+        while num_warps_per_sm * 4 * 4 * 32 * div_round_up(y["embedding_dim"], 128) >= used_smem_bytes:
+            num_warps_per_sm = num_warps_per_sm // 2
+        assert num_warps_per_sm >= 1
+
     num_warps_simul = num_SM * num_warps_per_sm # Total number of warps simultaneously running on the device
     num_tables_simul = div_round_up(num_warps_simul, y["batch_size"]) # Number of tables simultaneously being accessed on the device
     avg_table_size = min(L2_size // num_tables_simul, y["num_embeddings"] * y["embedding_dim"] * 4) # Average table size that reside on the device
@@ -312,11 +327,21 @@ def infer_memcpy():
     return None, error
 
 
-def infer_elf(big=False, hit_rate_estimation=False):
-    data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_1_shmem.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
+def infer_elf(big=False, hit_rate_estimation=False, fbgemm=False):
+    data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_1_{}.csv'.format(PM_HOME, GPU_NAME, 'fbgemm' if fbgemm else 'shmem'), delimiter=',')
     data = preprocessing(data)
-    data = data[data["kernel_name"].str.contains("batched_embedding")]
     data = data[data['batch_size'] > 1]
+    if fbgemm: # Accuracy not satisfactory, no matter compute_only or not. TODO: Fix this.
+        # Filter all irrelavant kernels
+        data = data[~((data["kernel_name"].str.contains('native')) | (data["kernel_name"].str.contains('bounds_check')))]
+        # Keep compute kernels only
+        data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
+        # Sum up all related kernels
+        size_columns = data.columns[:6].to_list()
+        data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
+        data.insert(0, 'kernel_name', ['dummy'] * len(data))
+    else:
+        data = data[data["kernel_name"].str.contains("batched_embedding")]
 
     if not hit_rate_estimation:
         if not big:
@@ -340,11 +365,21 @@ def infer_elf(big=False, hit_rate_estimation=False):
     return None, error
 
 
-def infer_elb(big=False, hit_rate_estimation=False):
-    data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_0_sgd_shmem.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
+def infer_elb(big=False, hit_rate_estimation=False, fbgemm=False):
+    data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_0_sgd_{}.csv'.format(PM_HOME, GPU_NAME, 'fbgemm' if fbgemm else 'shmem'), delimiter=',')
     data = preprocessing(data)
-    data = data[data["kernel_name"].str.contains("batched_embedding")]
     data = data[data['batch_size'] > 1]
+    if fbgemm: # Accuracy not satisfactory, no matter compute_only or not. TODO: Fix this.
+        # Filter all irrelavant kernels
+        data = data[~((data["kernel_name"].str.contains('native')) | (data["kernel_name"].str.contains('bounds_check')))]
+        # Keep compute kernels only
+        data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
+        # Sum up all related kernels
+        size_columns = data.columns[:6].to_list()
+        data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
+        data.insert(0, 'kernel_name', ['dummy'] * len(data))
+    else:
+        data = data[data["kernel_name"].str.contains("batched_embedding")]
 
     if not hit_rate_estimation:
         if not big:
@@ -368,11 +403,11 @@ def infer_elb(big=False, hit_rate_estimation=False):
     return None, error
 
 
-def infer_el(backward=False, big=False, hit_rate_estimation=False):
+def infer_el(backward=False, big=False, hit_rate_estimation=False, fbgemm=False):
     if backward:
-        _, error = infer_elb(big, hit_rate_estimation)
+        _, error = infer_elb(big, hit_rate_estimation, fbgemm)
     else:
-        _, error = infer_elf(big, hit_rate_estimation)
+        _, error = infer_elf(big, hit_rate_estimation, fbgemm)
     return None, error
 
 
@@ -396,7 +431,8 @@ def infer(op_type, backward=False, **kwargs):
     elif op_type == "embedding_lookup":
         big = kwargs["big"] 
         hit_rate_estimation = kwargs["hit_rate_estimation"]
-        best_config, error = infer_el(backward=backward, big=big, hit_rate_estimation=hit_rate_estimation)
+        is_fbgemm = kwargs["fbgemm"]
+        best_config, error = infer_el(backward=backward, big=big, hit_rate_estimation=hit_rate_estimation, fbgemm=is_fbgemm)
     else: # fully_connected / conv2d / conv1d / transpose / bn / tril
         best_config, error = infer_from_model(op_type, backward)
     return best_config, gmae(error)
