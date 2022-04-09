@@ -1,5 +1,6 @@
 A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) models on single-GPU and multi-GPU platforms.
-Notice: This code also depends on the execution graph observer, which will be integrated into Pytorch soon.
+
+Note: This code also depends on the execution graph observer, which will be integrated into Pytorch soon.
 
 ### Prerequisites and Installation
 ```bash
