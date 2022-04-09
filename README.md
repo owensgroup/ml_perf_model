@@ -1,4 +1,5 @@
 A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) models on single-GPU and multi-GPU platforms.
+Notice: This code also depends on the execution graph observer, which will be integrated into Pytorch soon.
 
 ### Prerequisites and Installation
 ```bash
@@ -80,7 +81,6 @@ cd ${PM_HOME}/benchmark
 ./nlp_benchmark.sh <model_name> <batch_size>
 ./rm_benchmark.sh <model_name> <batch_size>
 ```
-Notice: This code also depends on the private `facebookexternal/ml_perf_model` repo.
 
 ### Trace analysis and E2E runtime prediction
 ```bash
