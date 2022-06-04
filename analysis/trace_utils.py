@@ -30,6 +30,7 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 from itertools import compress
+from collections import defaultdict
 from analysis.utils import DUMMY_SHAPES, KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, remove_outliers
 import numpy as np
 import pandas as pd
@@ -49,7 +50,8 @@ def is_module(op):
 
 
 def is_backward(op):
-    return op.name().startswith("autograd::engine::evaluate_function:")
+    return op.name().startswith("autograd::engine::evaluate_function:") or \
+            'Backward' in op.name() # Old version of Pytorch
 
 
 # From Louis. Trim a long trace so that it eases the ATC processing
@@ -123,7 +125,7 @@ def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None
         t = trace["traceEvents"] if isinstance(trace, dict) else trace
 
         if 'DLRM' in file_name:
-            marker = 'DataLoader'
+            marker = 'Data'
         else:
             marker = '## Forward ##'
         for idx, x in enumerate(t):
@@ -211,16 +213,16 @@ class Event:
         ee = self.start_time() + self.duration()
         return ls <= es and le >= ee
     def input_shape(self):
-        if "args" not in self.event.keys() or "Input Dims" not in self.event["args"].keys():
+        if "args" not in self.event.keys() or "Input dims" not in self.event["args"].keys():
             return ((-1,),)
-        shape = list_to_tuple(self.event["args"]["Input Dims"])
+        shape = list_to_tuple(self.event["args"]["Input dims"])
         if not shape or all([not x for x in shape]): # Empty
             return ((-1,),)
         return tuple([x for x in shape if x])
     def output_shape(self):
         if "args" not in self.event.keys() or "Output dims" not in self.event["args"].keys():
             return ((-1,),)
-        shape = list_to_tuple(self.event["args"]["Output Dims"])
+        shape = list_to_tuple(self.event["args"]["Output dims"])
         if not shape or all([not x for x in shape]): # Empty
             return ((-1,),)
         return tuple([x for x in shape if x])
@@ -920,18 +922,20 @@ def print_major_device_results(device_runtime, drb, flatten, parent_name="total"
 
 def get_gpu_stream_stats(cc):
     # All GPU kernels in start time order
-    all_kernels = sorted([x['executor'] for _, d in cc.items() for _, x in d['callees'].items() if x['executor'] is not None], key=lambda x: x.start_time())
+    all_kernels = sorted([
+        x['executor'] \
+            for _, d in cc.items() \
+            for _, x in d['callees'].items() \
+            if x['executor'] is not None
+        ], key=lambda x: x.start_time()
+    )
 
-    gpu_time = {
-        "total": 0
-    }
+    gpu_time = defaultdict(int)
     idx = 0
     while 1:
         k = all_kernels[idx]
         k_start, k_end = k.start_time(), k.start_time() + k.duration()
         k_stream = k.stream()
-        if k_stream not in gpu_time.keys(): # Initialization
-            gpu_time[k_stream] = 0
         gpu_time[k_stream] += k.duration()
 
         front = k_end # The time front of a group of overlapped kernels
@@ -941,8 +945,6 @@ def get_gpu_stream_stats(cc):
             if kk.start_time() >= front: # No overlaps
                 break
             kk_duration = kk.duration()
-            if kk_stream not in gpu_time.keys(): # Initialization
-                gpu_time[kk_stream] = 0
             gpu_time[kk_stream] += kk_duration
             # Overlapped
             front = max(front, kk.start_time() + kk_duration)
@@ -1046,12 +1048,12 @@ def get_overheads(ops):
                     overheads['independent']['t4'][x.name()] = []
                 overheads['independent']['t4'][x.name()].append(KERNEL_LAUNCH_LENGTH - CPU_EVENT_OVERHEAD - GPU_EVENT_OVERHEAD) # T4 has 1 overhead
 
-            if op.name() not in launches_dict.keys():
-                launches_dict[op.name()] = []
+            if name not in launches_dict.keys():
+                launches_dict[name] = []
                 for x, _ in launches:
                     # Don't record synchronization
                     if x.name() not in ["cudaStreamSynchronize"]:
-                        launches_dict[op.name()].append(x.name())
+                        launches_dict[name].append(x.name())
         else:
             if name not in overheads.keys():
                 overheads[name] = {}
