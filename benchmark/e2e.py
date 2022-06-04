@@ -43,10 +43,13 @@ if __name__ == '__main__':
     parser.add_argument("--use-independent-overheads", action="store_true", default=False)
     parser.add_argument("--debug", action="store_true", default=False)
     args = parser.parse_args()
-    print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
-            args.model_name, args.num_gpus, args.batch_size, args.iters))
+
     if args.num_gpus > 1:
         ext_dist.init_distributed(use_gpu=False) # Don't need GPU for E2E
+    if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
+        print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
+            args.model_name, args.num_gpus, args.batch_size, args.iters))
+
     prefix = "{}/data/{}/e2e/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
     module_marker = "DLRM " if "DLRM" in args.model_name else "## Forward ##"
 

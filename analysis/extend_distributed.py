@@ -140,7 +140,9 @@ def init_distributed(rank=-1, local_rank=-1, size=-1, use_gpu=False, backend="")
                 )
                 sys.exit(1)
             torch.cuda.set_device(my_local_rank)
-        dist.init_process_group(backend, rank=rank, world_size=size)
+        dist.init_process_group(backend,
+                                rank=rank if backend != "mpi" else -1,
+                                world_size=size if backend != "mpi" else -1)
         my_rank = dist.get_rank()
         my_size = dist.get_world_size()
         if my_rank == 0:
