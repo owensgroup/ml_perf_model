@@ -528,21 +528,38 @@ def get_kernel_time(op, op_lists):
         t = mlp_predictor_kwargs("conv1d", backward=False, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
         kernel_times.append(t)
     elif op_name_in_list(op, ["CudnnConvolutionBackward", "ConvolutionBackward"]):
-        conv_bw_op = op.get_child_by_name("aten::convolution_backward")
+        # (Old) cudnn_convolution_backward(input, grad_output, weight, padding, stride, dilation, groups, benchmark, deterministic, allow_tf32, output_mask)
+        # (New)       convolution_backward(grad_output, input, weight, bias_sizes, stride, padding, dilation, transposed, output_padding, groups, output_mask)
+        conv_bw_op = op.get_child_by_name(["aten::cudnn_convolution_backward", "aten::convolution_backward"])
         assert conv_bw_op is not None, "Cannot find the ATen convolution BW call"
-        if len(conv_bw_op.inputs[4]) == 2: # 2D stride -> conv2d
-            batch_size, IC, IH, _ = conv_bw_op.input_shapes[1] # [output, input, filter]
-            OC, FH, FW = conv_bw_op.input_shapes[0][1], conv_bw_op.input_shapes[2][2], conv_bw_op.input_shapes[2][3]
-            stride, padding_h, dilation, is_dw = conv_bw_op.inputs[4][0], conv_bw_op.inputs[5][0], conv_bw_op.inputs[6][0], int(conv_bw_op.inputs[9] != 1)
-            t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
-            kernel_times.append(t)
-        else: # 1D stride -> conv1d
-            batch_size, ic_x_groups, L = conv_bw_op.input_shapes[1] # [output, input, filter]
-            oc_x_groups = conv_bw_op.input_shapes[0][1]
-            groups = ic_x_groups
-            OC = oc_x_groups // groups
-            t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
-            kernel_times.append(t)
+        if conv_bw_op.name == "aten::convolution_backward":
+            if len(conv_bw_op.inputs[4]) == 2: # 2D stride -> conv2d
+                batch_size, IC, IH, _ = conv_bw_op.input_shapes[1] # [output, input, filter]
+                OC, FH, FW = conv_bw_op.input_shapes[0][1], conv_bw_op.input_shapes[2][2], conv_bw_op.input_shapes[2][3]
+                stride, padding_h, dilation, is_dw = conv_bw_op.inputs[4][0], conv_bw_op.inputs[5][0], conv_bw_op.inputs[6][0], int(conv_bw_op.inputs[9] != 1)
+                t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
+                kernel_times.append(t)
+            else: # 1D stride -> conv1d
+                batch_size, ic_x_groups, L = conv_bw_op.input_shapes[1] # [output, input, filter]
+                oc_x_groups = conv_bw_op.input_shapes[0][1]
+                groups = ic_x_groups
+                OC = oc_x_groups // groups
+                t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
+                kernel_times.append(t)
+        else: # cudnn_convolution_backward
+            if len(conv_bw_op.inputs[4]) == 2: # 2D stride -> conv2d
+                batch_size, IC, IH, _ = conv_bw_op.input_shapes[0] # [input, output, filter]
+                OC, FH, FW = conv_bw_op.input_shapes[1][1], conv_bw_op.input_shapes[2][2], conv_bw_op.input_shapes[2][3]
+                stride, padding_h, dilation, is_dw = conv_bw_op.inputs[4][0], conv_bw_op.inputs[3][0], conv_bw_op.inputs[5][0], int(conv_bw_op.inputs[6] != 1)
+                t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
+                kernel_times.append(t)
+            else: # 1D stride -> conv1d
+                batch_size, ic_x_groups, L = conv_bw_op.input_shapes[0] # [input, output, filter]
+                oc_x_groups = conv_bw_op.input_shapes[1][1]
+                groups = ic_x_groups
+                OC = oc_x_groups // groups
+                t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
+                kernel_times.append(t)
     elif op.name == "LookupFunction":
         op_lists["el"].append(op)
         T = op.input_shapes[1][0]
