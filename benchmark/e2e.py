@@ -29,7 +29,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse, json, re, os
-from exec_graph_utils import ExecutionGraph
+from analysis.exec_graph_utils import ExecutionGraph # Not commited to Pytorch yet
 import analysis.extend_distributed as ext_dist
 from analysis.utils import PM_HOME, GPU_NAME
 from analysis.inference import get_e2e_time
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.num_gpus > 1:
-        ext_dist.init_distributed(use_gpu=False) # Don't need GPU for E2E
+        ext_dist.init_distributed(use_gpu=False) # Don't need GPU for E2E prediction.
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
         print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
             args.model_name, args.num_gpus, args.batch_size, args.iters))

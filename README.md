@@ -1,10 +1,10 @@
 A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) models on single-GPU and multi-GPU platforms.
 
-Note: This code also depends on the execution graph observer, which will be integrated into Pytorch soon.
+<s>Note: This code also depends on the execution graph observer, which will be integrated into Pytorch soon.</s> Updates: The execution graph observer has been integrated into Pytorch starting from [d76af8f41c](https://github.com/pytorch/pytorch/tree/d76af8f41c6404b090b13ab9a868a71423d6d298) (nightly build at 2022/05/31).
 
 ### Prerequisites and Installation
 ```bash
-pip install h5py tqdm sklearn tensorboard torchviz onnx gputil spacy dill # Dependencies
+pip install h5py tqdm sklearn tensorboard tensorboadX torchviz onnx gputil spacy dill pandas # Dependencies
 git clone --recursive https://github.com/owensgroup/ml_perf_model.git
 
 cd ml_perf_model/3rdparty/bench_params

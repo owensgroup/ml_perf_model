@@ -6,7 +6,7 @@
 
 # Get DLRM model name
 model_name=$1
-list="DLRM_vipul DLRM_default DLRM_MLPerf DLRM_DDP"
+list="DLRM_vipul DLRM_test DLRM_default DLRM_MLPerf DLRM_DDP"
 if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -47,6 +47,20 @@ then
             --arch-interaction-op=dot\
             --numpy-rand-seed=727\
             --num-workers=2 "
+elif [[ $model_name == "DLRM_test" ]]; # DLRM test
+then
+    _args=" --data-generation=random\
+            --processed-data-file=/nvme/deep-learning/dlrm_random\
+            --round-targets\
+            --arch-mlp-bot=512-64\
+            --arch-mlp-top=1024-1\
+            --arch-sparse-feature-size=64\
+            --arch-embedding-size=1000000\
+            --num-indices-per-lookup=10\
+            --num-indices-per-lookup-fixed\
+            --arch-interaction-op=dot\
+            --numpy-rand-seed=727\
+            --num-worker=0 "
 elif [[ $model_name == "DLRM_default" ]]; # DLRM original
 then
     _args=" --data-generation=random\
@@ -139,7 +153,7 @@ do
       done
     fi
   fi
-  eval "$cmd --num-batches ${num_batches} --enable-profiling &> /dev/null" # Profile to get trace
+  eval "$cmd --num-batches ${num_batches} --enable-profiling --profile-out-dir . &> /dev/null" # Profile to get trace
   # move profiling file(s)
   if [ ${_ng} = 1 ];
   then
