@@ -180,24 +180,22 @@ class Event:
         self.has_device_calls = False
     def __str__(self):
         return json.dumps(self.event, sort_keys=True, indent=4, separators=(',', ': '))
-#     def __repr__(self):
-#         return json.dumps(self.event, sort_keys=True, indent=4, separators=(',', ': '))
     def start_time(self):
-        if "ts" not in self.event.keys():
-            return None
-        return self.event["ts"]
+        if "ts" in self.event.keys():
+            return self.event["ts"]
+        return None
     def duration(self):
-        if "dur" not in self.event.keys():
-            return None
-        return self.event["dur"]
+        if "dur" in self.event.keys():
+            return self.event["dur"]
+        return None
     def end_time(self):
         if "ts" not in self.event.keys() or "dur" not in self.event.keys():
             return None
         return self.event["ts"] + self.event["dur"]
     def category(self):
-        if "cat" not in self.event.keys():
-            raise TypeError("Unknown event type!")
-        return self.event["cat"]
+        if "cat" in self.event.keys():
+            return self.event["cat"]
+        raise TypeError("Unknown event type!")
     def name(self):
         if "name" not in self.event.keys():
             raise TypeError("Name lost!")
@@ -227,39 +225,25 @@ class Event:
             return ((-1,),)
         return tuple([x for x in shape if x])
     def external_id(self):
-        if "args" not in self.event.keys():
-            return None
-
-        if ("External id" not in self.event["args"].keys() and \
-             "external id" not in self.event["args"].keys()):
-            raise TypeError("External id lost!")
-        
-        if self.category() == "Operator" or self.category() == "cpu_op":
-            return self.event["args"]["External id"]
-        else:
-            return self.event["args"]["external id"]
+        if "args" not in self.event.keys() or "External id" not in self.event["args"].keys():
+            return -1
+        return self.event["args"]["External id"]
     def correlation_id(self):
-        if "args" not in self.event.keys() or self.category() == "Operator" or self.category() == "cpu_op":
-            return None
-
-        if ("correlation" not in self.event["args"].keys()):
-            raise TypeError("Correlation id lost!")
+        if "args" not in self.event.keys() or "correlation" not in self.event["args"].keys():
+            return -1
         return self.event["args"]["correlation"]
     def pid(self):
-        assert "pid" in self.event.keys(), "Illegal trace!"
+        assert "pid" in self.event.keys(), "Illegal trace without pid!"
         return self.event["pid"]
     def tid(self):
-        assert "tid" in self.event.keys(), "Illegal trace!"
+        assert "tid" in self.event.keys(), "Illegal trace without tid!"
         return self.event["tid"]
     def device(self):
-        if "args" not in self.event.keys() or \
-            ("Device" not in self.event["args"].keys() and \
-            "device" not in self.event["args"].keys()):
+        if "args" not in self.event.keys():
             return None
-        if "Device" in self.event["args"].keys():
-            return self.event["args"]["Device"]
-        else:
+        if ("device" in self.event["args"].keys()):
             return self.event["args"]["device"]
+        raise TypeError("Device lost!")
     def stream(self):
         if "args" not in self.event.keys() or "stream" not in self.event["args"].keys():
             return None
@@ -441,18 +425,16 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
             
             # Add op to caller or unaccounted
             if x.category() == "Operator" or x.category() == "cpu_op":
-                if external_id != 0:
+                if external_id != -1:
                     if external_id not in cc.keys():
                         cc[external_id] = {}  
                     cc[external_id]["caller"] = x
                     cc[external_id]["callees"] = {}
             else: # Runtime
-                if external_id != 0 and correlation_id != 0: # Not consider some events without ex_id and cr_id, e.g. cudaEventCreateWithFlags
+                if external_id != -1 and correlation_id != -1: # Not consider some events without ex_id and cr_id, e.g. cudaEventCreateWithFlags
                     if external_id not in cc.keys():
                         cc[external_id] = {}
-                    if "caller" not in cc[external_id].keys():
                         cc[external_id]["caller"] = None
-                    if "callees" not in cc[external_id].keys():
                         cc[external_id]["callees"] = {}
                     if correlation_id not in cc[external_id]["callees"].keys():
                         cc[external_id]["callees"][correlation_id] = {}
@@ -464,12 +446,10 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
             if (skip_module and x.name().startswith(module_marker)):
                 continue
             else: # "cat" = "Memcpy" or "Kernel", i.e. callee
-                if external_id != 0 and correlation_id != 0: # Doesn't consider some events without ex_id and cr_id, e.g. cudaEventCreateWithFlags
+                if external_id != -1 and correlation_id != -1: # Doesn't consider some events without ex_id and cr_id, e.g. cudaEventCreateWithFlags
                     if external_id not in cc.keys():
                         cc[external_id] = {}
-                    if "caller" not in cc[external_id].keys():
                         cc[external_id]["caller"] = None
-                    if "callees" not in cc[external_id].keys():
                         cc[external_id]["callees"] = {}
                     if correlation_id not in cc[external_id]["callees"].keys():
                         cc[external_id]["callees"][correlation_id] = {}

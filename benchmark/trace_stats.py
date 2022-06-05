@@ -104,8 +104,8 @@ if __name__ == '__main__':
     # Print trace stats
     st = f"""Number of iterations: {args.iters}
 Num of events: {len(trace['traceEvents'])}, num of root events: {len(roots)}, num of caller/callee pairs: {len(cc)}
-Average per-batch dataloading time: {sum_skipped_intervals / args.iters} us
-Average per-batch host runtime: {host_runtime / args.iters} us
+Average per-batch dataloading time: {(sum_skipped_intervals / args.iters):.2f} us
+Average per-batch host runtime: {(host_runtime / args.iters):.2f} us
 QPS: {QPS:.2f}
 {len(streams)} GPU stream(s) in total."""
 

@@ -30,7 +30,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 dlrm_max_batch_size=4096
-trimmed_iters=30
+trimmed_iters=${1:-30} # Default iters 30
+share_overheads=${2:-1} # Share overheads by default
 
 cd benchmark
 
@@ -107,17 +108,24 @@ do
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
-                cmd="mpirun -np $ngpus -N $ngpus python"
+                cmd="mpirun -np $ngpus -N $ngpus python e2e.py"
             else
-                cmd="python"
+                cmd="python e2e.py"
             fi
 
+            # Share overheads?
+            if [[ "$share_overheads" -ne "1" ]];
+            then
+                cmd="$cmd --use-independent-overheads"
+            fi
+            cmd="$cmd --model-name ${model} --iters $trimmed_iters --num-gpus $ngpus"
+
             # Strong scaling
-            eval "$cmd e2e.py --model-name ${model} --batch-size $((batch_size*32)) --iters $trimmed_iters --num-gpus $ngpus"
+            eval "$cmd --batch-size $((batch_size*32))"
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                eval "$cmd e2e.py --model-name ${model} --batch-size $((batch_size*32*ngpus)) --iters $trimmed_iters --num-gpus $ngpus"
+                eval "$cmd --batch-size $((batch_size*32*ngpus))"
             fi
         done
     done
