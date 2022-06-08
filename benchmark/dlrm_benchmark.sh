@@ -140,7 +140,7 @@ do
   if [[ ${_ng} != `ls ${PM_HOME}/data/${GPU_NAME}/e2e/${model_name} | grep -e $graph_filename_pattern | wc -l` ]];
   then
     echo "Execution graph doesn't exist! Extract it..."
-    eval "$cmd --num-batches 1 --collect-execution-graph --enable-profiling --test-freq=-1 &> /dev/null" # Collect execution graph
+    eval "$cmd --num-batches 1 --collect-execution-graph --enable-profiling --profile-out-dir . --test-freq=-1 &> /dev/null" # Collect execution graph
     if [ ${_ng} = 1 ];
     then
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${_mb_size}_graph.json"
