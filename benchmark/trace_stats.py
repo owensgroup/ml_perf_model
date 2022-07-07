@@ -48,8 +48,6 @@ if __name__ == '__main__':
                 args.model_name, args.num_gpus, args.batch_size, args.iters))
 
     prefix = "{}/data/{}/e2e/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
-    module_marker = "DLRM " if "DLRM" in args.model_name else "## Forward ##"
-
     trace_file = "{}{}.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "")
     if not os.path.exists(trace_file):
         print("Trace file doesn't exist! Please run the benchmark first.")
@@ -61,7 +59,7 @@ if __name__ == '__main__':
         trace = json.load(f)
 
     # Build the event tree
-    roots, cc, streams, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False, module_marker=module_marker)
+    roots, cc, streams, corrected_start_time, corrected_end_time, sum_skipped_intervals = process_event_hierarchy(trace['traceEvents'], skip_module=False)
     host_runtime = corrected_end_time - corrected_start_time - sum_skipped_intervals
     device_runtime = host_runtime
     ops = []

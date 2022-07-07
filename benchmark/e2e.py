@@ -51,8 +51,6 @@ if __name__ == '__main__':
             args.model_name, args.num_gpus, args.batch_size, args.iters))
 
     prefix = "{}/data/{}/e2e/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
-    module_marker = "DLRM " if "DLRM" in args.model_name else "## Forward ##"
-
     exec_graph_file = "{}{}_graph.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if args.num_gpus > 1 else "")
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
@@ -80,7 +78,7 @@ if __name__ == '__main__':
                 real_gpu_active_time = float(line.split(' ')[-3]) # In us
     assert real_gpu_active_time != -1
 
-    e2e_time, gpu_active_time = get_e2e_time(graph, overheads, module_marker, debug=args.debug)
+    e2e_time, gpu_active_time = get_e2e_time(graph, overheads, debug=args.debug)
     # Only rank 0 prints
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
         st = "E2E time: {:.2f}, GPU time: {:.2f}".format(e2e_time, gpu_active_time)

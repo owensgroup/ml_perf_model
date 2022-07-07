@@ -125,7 +125,7 @@ def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None
         t = trace["traceEvents"] if isinstance(trace, dict) else trace
 
         if 'DLRM' in file_name:
-            marker = 'Data'
+            marker = 'DataLoader'
         else:
             marker = '## Forward ##'
         for idx, x in enumerate(t):
@@ -210,6 +210,14 @@ class Event:
         es = self.start_time()
         ee = self.start_time() + self.duration()
         return ls <= es and le >= ee
+    def is_annotation(self):
+        return self.category() == "user_annotation"
+    def is_cpu_op(self):
+        # Old and new versions of trace
+        return self.category() == "Operator" or self.category() == "cpu_op"
+    def is_runtime(self):
+        # Ditto
+        return self.category() == "Runtime" or self.category() == "cuda_runtime"
     def input_shape(self):
         if "args" not in self.event.keys() or "Input dims" not in self.event["args"].keys():
             return ((-1,),)
@@ -293,45 +301,49 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     # Remove all events without a duration and sort the event lists by start time (increasing order) and duration (decreasing order)
     sorted_events = [Event(e) for e in raw_trace if "dur" in e.keys()]
     # Workaround: filter out some runtime events like cudaEventQuery and cudaEventDestroy that appear in a thread with huge tid. TODO: Fix this.
-    sorted_events = [e for e in sorted_events if not (e.category() == "Runtime" and abnormal_tid(e))] 
+    sorted_events = [e for e in sorted_events if not (e.is_runtime() and abnormal_tid(e))]
     sorted_events = sorted(sorted_events, key=lambda x: (x.start_time(), -x.duration()))
 
     # Skip data-loading ops and distribution of emb data
     skipped_intervals = []
     skipped_intervals_loader = []
-    skipped_intervals_distribute = []
+    skipped_intervals_forward = []
     def should_skip(x, skipped_intervals):
         event_start = x.start_time()
         for s, e in skipped_intervals:
-            if event_start >= s and event_start <= e:
+            if event_start >= s and event_start < e:
                 return True
         return False
     for x in sorted_events:
         event_start = x.start_time()
         event_duration = x.duration()
+        # Remove all events between data loading and forward
         if 'DataLoader' in x.name() and event_duration > 100:
             skipped_intervals_loader.append((event_start, event_start+event_duration))
-        if 'distribute emb data' in x.name():
-            skipped_intervals_distribute.append((event_start, event_start+event_duration))
+        if '## Forward ##' in x.name():
+            skipped_intervals_forward.append((event_start, event_start+event_duration))
         # Find the thread ID of the main thread btw
         if main_tid == -1 and x.name().startswith(module_marker):
             main_tid = x.tid()
     assert main_tid != -1, "Main tid (data loading) not found!"
-    assert len(skipped_intervals_loader) == len(skipped_intervals_distribute) or len(skipped_intervals_distribute) == 0, \
-            "DataLoader and emb data distribution counts wrong ({} vs. {})!".format(len(skipped_intervals_loader), len(skipped_intervals_distribute))
-    for x, y in zip(skipped_intervals_loader, skipped_intervals_distribute):
-        skipped_intervals.append((x[0], y[1]))
+    assert len(skipped_intervals_loader) == len(skipped_intervals_forward) or \
+            len(skipped_intervals_loader) == 0, \
+            "DataLoader and forward pass tag counts wrong ({} vs. {})!".format(
+                len(skipped_intervals_loader),
+                len(skipped_intervals_forward)
+            )
+    if skipped_intervals_loader:
+        for x, y in zip(skipped_intervals_loader, skipped_intervals_forward):
+            skipped_intervals.append((x[0], y[0]))
+    corrected_start_time = sorted_events[0].start_time()
+    corrected_end_time = sorted_events[-1].start_time()
 
     # Skip all events in skipped intervals
     sorted_events = [s for s in sorted_events if not should_skip(s, skipped_intervals)]
 
-    # Remove all leftovers from the last iteration and next iteration
+    # Start the analysis from the first module detected, if module is not to be skipped
     start_idx = 0
     end_idx = len(sorted_events) - 1
-    corrected_start_time = sorted_events[0].start_time()
-    corrected_end_time = sorted_events[-1].start_time()
-
-    # Start the analysis from the first module detected, if module is not to be skipped
     for idx, x in enumerate(sorted_events):
         ######## IMPORTANT ######## (Probably out-of-date. TODO: Fix this.)
         # Find the start of an iteration started with "##" without ":".
@@ -366,7 +378,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
             streams.add(stream)
 
         # Runtime events e.g. cudaLaunchKernel counted as host events
-        if x.category() == "Operator" or x.category() == "cpu_op" or x.category() == "Runtime":
+        if  x.is_cpu_op() or x.is_runtime():
             if event_start is None or event_duration is None:
                 print("Unaccounted event: {}".format(x.event))
                 unaccounted.append(x)
@@ -424,7 +436,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                 leaves.append(add_to_leaf)
             
             # Add op to caller or unaccounted
-            if x.category() == "Operator" or x.category() == "cpu_op":
+            if x.is_cpu_op():
                 if external_id != -1:
                     if external_id not in cc.keys():
                         cc[external_id] = {}  
@@ -443,7 +455,7 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                     cc[external_id]["callees"][correlation_id]["launcher"] = x
         else:
             # Skip modules if needed
-            if (skip_module and x.name().startswith(module_marker)):
+            if x.is_annotation() or (skip_module and x.name().startswith(module_marker)):
                 continue
             else: # "cat" = "Memcpy" or "Kernel", i.e. callee
                 if external_id != -1 and correlation_id != -1: # Doesn't consider some events without ex_id and cr_id, e.g. cudaEventCreateWithFlags
@@ -483,7 +495,7 @@ def get_event_all_kernel_launches(event):
     def get_launches(event, lst):
         nonlocal count
         if len(event.children) == 0:
-            if event.category() == 'Runtime' and event.name() not in SKIP_RUNTIME_EVENTS:
+            if event.is_runtime() and event.name() not in SKIP_RUNTIME_EVENTS:
                 lst.append((event, count-1))
                 count = 0
             return
@@ -537,7 +549,7 @@ def get_operators(roots, ops):
         # Is an operator, and
         # Not a module or submodule, and
         # (Parent is a module, or, is simply a root operator)
-        if (r.category() == "Operator" or r.category() == "cpu_op") and \
+        if (r.is_cpu_op()) and \
             (not is_module(r)) and ((\
             r.parent is not None
         ) or (\
