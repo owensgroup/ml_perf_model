@@ -264,11 +264,8 @@ class Event:
 #     ex_id1 : {
 #         caller: - (an op that has one or multiple device calls)
 #         callees: {
-#             correlation_id1: {
-#                 launcher: - (cudaKernelLaunch)
-#                 executor: - (device kernel)
-#             }
-#             ...
+#             launcher: - (cudaKernelLaunch)
+#             executor: - (device kernel)
 #         }
 #     }
 #     ...
@@ -372,7 +369,6 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
         event_start = x.start_time()
         event_duration = x.duration()
         external_id = x.external_id()
-        correlation_id = x.correlation_id()
         stream = x.stream()
         if stream is not None:
             streams.add(stream)
@@ -436,48 +432,30 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                 leaves.append(add_to_leaf)
             
             # Add op to caller or unaccounted
-            if x.is_cpu_op():
-                if external_id != -1:
-                    if external_id not in cc.keys():
-                        cc[external_id] = {}  
-                    cc[external_id]["caller"] = x
-                    cc[external_id]["callees"] = {}
-            else: # Runtime
-                if external_id != -1 and correlation_id != -1: # Not consider some events without ex_id and cr_id, e.g. cudaEventCreateWithFlags
+            if x.is_runtime():
+                if external_id != -1: # Not consider some events without ex_id, e.g. cudaEventCreateWithFlags
                     if external_id not in cc.keys():
                         cc[external_id] = {}
-                        cc[external_id]["caller"] = None
-                        cc[external_id]["callees"] = {}
-                    if correlation_id not in cc[external_id]["callees"].keys():
-                        cc[external_id]["callees"][correlation_id] = {}
-                        cc[external_id]["callees"][correlation_id]["launcher"] = None
-                        cc[external_id]["callees"][correlation_id]["executor"] = None
-                    cc[external_id]["callees"][correlation_id]["launcher"] = x
+                        cc[external_id]["caller"] = x.parent # Probably None
+                        cc[external_id]["callees"] = {
+                            "launcher": None,
+                            "executor": None,
+                        }
+                    cc[external_id]["callees"]["launcher"] = x
         else:
             # Skip modules if needed
             if x.is_annotation() or (skip_module and x.name().startswith(module_marker)):
                 continue
-            else: # "cat" = "Memcpy" or "Kernel", i.e. callee
-                if external_id != -1 and correlation_id != -1: # Doesn't consider some events without ex_id and cr_id, e.g. cudaEventCreateWithFlags
-                    if external_id not in cc.keys():
-                        cc[external_id] = {}
-                        cc[external_id]["caller"] = None
-                        cc[external_id]["callees"] = {}
-                    if correlation_id not in cc[external_id]["callees"].keys():
-                        cc[external_id]["callees"][correlation_id] = {}
-                        cc[external_id]["callees"][correlation_id]["launcher"] = None
-                        cc[external_id]["callees"][correlation_id]["executor"] = None
-                    cc[external_id]["callees"][correlation_id]["executor"] = x
+            # "cat" = "Memcpy" or "Kernel", i.e. callee
+            if external_id != -1: # Doesn't consider some events without ex_id, e.g. cudaEventCreateWithFlags
+                cc[external_id]["callees"]["executor"] = x
 
     # Update 'has_device_calls' for all events in the tree
     def update_has_device_calls(roots):
         for r in roots:
             ex_id = r.external_id()
-            if len(r.children) == 0:
-                if ex_id in cc.keys() and len(cc[ex_id]["callees"].keys()) != 0:
-                    for k, v in cc[ex_id]["callees"].items():
-                        if v["executor"] is not None:
-                            r.has_device_calls = True
+            if ex_id in cc.keys() and cc[ex_id]["callees"]["executor"]:
+                r.has_device_calls = True
             else:
                 update_has_device_calls(r.children)
                 for c in r.children:
@@ -526,19 +504,18 @@ def get_device_runtime_and_start_delay(cc, corrected_start_time):
     device_runtime = 0
     device_start_delay = 1000000000000000
 
-    for ex_id, v in cc.items():
-        for cr_id, vv in v["callees"].items():
-            if vv["executor"] is not None:
-                device_start_delay = min(device_start_delay, vv["executor"].start_time() - corrected_start_time)
+    for _, vv in cc.items():
+        if vv["executor"] is not None:
+            device_start_delay = min(device_start_delay, vv["executor"].start_time() - corrected_start_time)
 
-                if "batched_embedding_forward_kernel" in vv["executor"].name():
-                    if device_runtime == 0:
-                        device_runtime = vv["executor"].start_time()
-                    else:
-                        device_runtime = vv["executor"].start_time() - device_runtime
-                        device_runtime *= 2
-                        if device_runtime < 0:
-                            device_runtime = 0 - device_runtime
+            if "batched_embedding_forward_kernel" in vv["executor"].name():
+                if device_runtime == 0:
+                    device_runtime = vv["executor"].start_time()
+                else:
+                    device_runtime = vv["executor"].start_time() - device_runtime
+                    device_runtime *= 2
+                    if device_runtime < 0:
+                        device_runtime = 0 - device_runtime
     
     return device_runtime, device_start_delay
 
@@ -592,14 +569,13 @@ def get_device_runtime(roots, cc, depth=0):
         tmp_result = {}
         if len(r.children) == 0: # No children: either cudaLaunchKernel or host ops that have no device calls
             tmp_stats = {}
-            correlation_id = r.correlation_id()
-            v = cc[external_id]["callees"][correlation_id]
+            v = cc[external_id]["callees"]
             lc, ex = v["launcher"], v["executor"]
             if ex is None:
                 # Dummy: no executor runtime
                 pass
             elif lc is not None:
-                lc_dur, ex_dur = lc.duration(), ex.duration()
+                ex_dur = ex.duration()
 
                 ##############################################################
                 # TODO: Maybe there's a better way to model the device time, e.g. involving overheads of some operators
@@ -655,6 +631,7 @@ def get_device_runtime(roots, cc, depth=0):
                 if len(list(vv.keys())) != 0:
                     delete = False
             if delete:
+                print("here!")
                 to_be_deleted.append(ex_id)
         for ex_id in to_be_deleted:
             del result[ex_id]
@@ -726,10 +703,9 @@ def device_runtime_breakdown(ops, odr, depth=0):
 def get_gpu_stream_stats(cc):
     # All GPU kernels in start time order
     all_kernels = sorted([
-        x['executor'] \
+        d['callees']['executor'] \
             for _, d in cc.items() \
-            for _, x in d['callees'].items() \
-            if x['executor'] is not None
+            if d['callees']['executor'] is not None
         ], key=lambda x: x.start_time()
     )
 
