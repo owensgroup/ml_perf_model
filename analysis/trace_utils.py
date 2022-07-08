@@ -121,13 +121,9 @@ def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None
     with open(file_name) as trace_file:
         trace = json.load(trace_file)
         start_idx, end_idx = 0, -1
+        marker = 'DataLoader' # Workaround: doesn't work with ConvNets. TODO: fix this.
         marker_count = 0
         t = trace["traceEvents"] if isinstance(trace, dict) else trace
-
-        if 'DLRM' in file_name:
-            marker = 'DataLoader'
-        else:
-            marker = '## Forward ##'
         for idx, x in enumerate(t):
             if marker in x['name']:
                 if marker_count == skip_iters:
