@@ -397,8 +397,8 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                 leaf_start = l.start_time()
                 leaf_end = leaf_start + l.duration()
 
-                # The current event has no overlap with the leaf
-                if event_start > leaf_end:
+                # The current event has no overlap with the leaf (allow seamlessness)
+                if event_start >= leaf_end:
                     active_leaves.append(False) # Mark this leaf as outdated
                     continue
                 # The current event is sub to leaf
