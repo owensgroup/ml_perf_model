@@ -44,6 +44,7 @@ mb_size=$2
 
 gpu="1"
 ngpus="1" #"1 2 4"
+num_batches=200
 
 CORES=`lscpu | grep "Core(s)" | awk '{print $4}'`
 SOCKETS=`lscpu | grep Socket | awk '{print $2}'`
@@ -77,24 +78,22 @@ then
     if [ $model_name = "ncf" ];
     then
         cd ${PM_HOME}/3rdparty/ncf/src
-        cmd="python train.py --batch-size ${mb_size}"
-        num_epoch=1
+        cmd="python train.py --batch-size ${mb_size} --num-epoch 1"
     else # DeepFM
         cd ${PM_HOME}/3rdparty/deepfm
-        cmd="python main.py --batch-size ${mb_size} --embedding-dim 128 --mlp-hidden-size 64-64"
-        num_epoch=500
+        cmd="python main.py --batch-size ${mb_size} --embedding-dim 128 --mlp-hidden-size 64-64 --num-epoch 1"
     fi
     if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
     then
       echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd --num-epoch 1 --collect-execution-graph --profile --num-batches 1 &> /dev/null" # Collect execution graph
+      eval "$cmd --collect-execution-graph --profile --num-batches 1 &> /dev/null" # Collect execution graph
       cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
     fi
-    eval "$cmd --num-epoch ${num_epoch} --profile --num-batches 500 > $outf" # Profile to get trace
+    eval "$cmd --profile --num-batches ${num_batches} > $outf" # Profile to get trace
     # move profiling file(s)
     mv $outp ${outf//".log"/".prof"}
     mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
-    eval "$cmd --num-epoch ${num_epoch} --num-batches 100 > $outf" # No profile to get E2E time
+    eval "$cmd --num-batches 100 > $outf" # No profile to get E2E time
     cd "${PM_HOME}"
   done
 fi

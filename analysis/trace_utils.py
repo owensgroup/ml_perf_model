@@ -229,9 +229,11 @@ class Event:
             return ((-1,),)
         return tuple([x for x in shape if x])
     def external_id(self):
-        if "args" not in self.event.keys() or "External id" not in self.event["args"].keys():
+        if "args" not in self.event.keys() or ("External id" not in self.event["args"].keys() and "external id" not in self.event["args"].keys()):
             return -1
-        return self.event["args"]["External id"]
+        if "External id" in self.event["args"].keys():
+            return self.event["args"]["External id"]
+        return self.event["args"]["external id"]
     def correlation_id(self):
         if "args" not in self.event.keys() or "correlation" not in self.event["args"].keys():
             return -1
