@@ -121,13 +121,9 @@ def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None
     with open(file_name) as trace_file:
         trace = json.load(trace_file)
         start_idx, end_idx = 0, -1
+        marker = 'DataLoader' # Workaround: doesn't work with ConvNets. TODO: fix this.
         marker_count = 0
         t = trace["traceEvents"] if isinstance(trace, dict) else trace
-
-        if 'DLRM' in file_name:
-            marker = 'DataLoader'
-        else:
-            marker = '## Forward ##'
         for idx, x in enumerate(t):
             if marker in x['name']:
                 if marker_count == skip_iters:
@@ -233,9 +229,11 @@ class Event:
             return ((-1,),)
         return tuple([x for x in shape if x])
     def external_id(self):
-        if "args" not in self.event.keys() or "External id" not in self.event["args"].keys():
+        if "args" not in self.event.keys() or ("External id" not in self.event["args"].keys() and "external id" not in self.event["args"].keys()):
             return -1
-        return self.event["args"]["External id"]
+        if "External id" in self.event["args"].keys():
+            return self.event["args"]["External id"]
+        return self.event["args"]["external id"]
     def correlation_id(self):
         if "args" not in self.event.keys() or "correlation" not in self.event["args"].keys():
             return -1
@@ -399,8 +397,8 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                 leaf_start = l.start_time()
                 leaf_end = leaf_start + l.duration()
 
-                # The current event has no overlap with the leaf
-                if event_start > leaf_end:
+                # The current event has no overlap with the leaf (allow seamlessness)
+                if event_start >= leaf_end:
                     active_leaves.append(False) # Mark this leaf as outdated
                     continue
                 # The current event is sub to leaf
@@ -854,7 +852,7 @@ def get_overheads(ops):
                 continue
 
             gap = op.start_time() - prev_op.end_time()
-            if gap < 50 and gap > CPU_EVENT_OVERHEAD and is_backward(op): # Skip dataloading gaps and FW ops (too much manual interference)
+            if gap < 200 and gap > CPU_EVENT_OVERHEAD: # and is_backward(op): # Skip dataloading gaps and FW ops (too much manual interference)
                 overheads['independent']['t1'].append(gap - CPU_EVENT_OVERHEAD) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
 
     # Remove outliers (skip t4 as we set them to constants)
@@ -863,9 +861,9 @@ def get_overheads(ops):
             for shapes, vv in v.items():
                 for t in ['t2', 't3', 't5']:
                     if len(vv[t]) > 0:
-                        vv[t] = remove_outliers(vv[t])
+                        vv[t] = remove_outliers([x if x > 0 else 0 for x in vv[t]])
         else:
-            v['t1'] = remove_outliers(v['t1'])
+            v['t1'] = remove_outliers([x if x > 0 else 0 for x in v['t1']])
 
     # # T1: mean ~= 21, std ~= 20
     # from analysis.utils import histogram

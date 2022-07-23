@@ -78,8 +78,8 @@ HW_PARAMS = {
     },
     "P100": {
         "peak_throughput": 9343.711,
-        "peak_PCIe_BW": 8.2, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
-        "peak_DRAM_BW": 732.2,
+        "peak_PCIe_BW": 7.62, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
+        "peak_DRAM_BW": 543.406,
         "peak_L2_BW": 1591.259,
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,

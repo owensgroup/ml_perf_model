@@ -27,7 +27,7 @@ fi
 
 tnworkers=0
 tmb_size=-1 #256
-num_batches=500
+num_batches=200
 common_args="   --use-gpu\
                 --print-freq=5\
                 --batched-emb\

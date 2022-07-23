@@ -743,7 +743,7 @@ def infer_multi_stream(op):
 
 
 # Infer E2E time from an execution graph and an overhead file
-def get_e2e_time(graph, overheads, module_marker, debug=False):
+def get_e2e_time(graph, overheads, module_marker="## ", debug=False):
     nodes = graph.get_nodes(clean=True)
     sorted_nodes = sorted(nodes.items(), key=lambda x: x[0])
 
