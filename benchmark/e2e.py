@@ -90,6 +90,8 @@ if __name__ == '__main__':
                 (gpu_active_time / real_e2e_time - 1) * 100,
             )
         print(st)
-        prediction_name = "{}{}_prediction_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+        prediction_name = "{}{}_prediction_{}{}.log".format(
+            prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "",
+            args.iters, '_shared' if args.use_independent_overheads else '')
         with open(prediction_name, 'w') as f:
             f.write(st)

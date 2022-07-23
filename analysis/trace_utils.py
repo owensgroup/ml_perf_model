@@ -852,7 +852,7 @@ def get_overheads(ops):
                 continue
 
             gap = op.start_time() - prev_op.end_time()
-            if gap < 50 and gap > CPU_EVENT_OVERHEAD and is_backward(op): # Skip dataloading gaps and FW ops (too much manual interference)
+            if gap < 200 and gap > CPU_EVENT_OVERHEAD: # and is_backward(op): # Skip dataloading gaps and FW ops (too much manual interference)
                 overheads['independent']['t1'].append(gap - CPU_EVENT_OVERHEAD) # Some pairs of ops are actually inserted by a runtime call which has been filtered from ops. TODO: fix it.
 
     # Remove outliers (skip t4 as we set them to constants)
@@ -861,9 +861,9 @@ def get_overheads(ops):
             for shapes, vv in v.items():
                 for t in ['t2', 't3', 't5']:
                     if len(vv[t]) > 0:
-                        vv[t] = remove_outliers(vv[t])
+                        vv[t] = remove_outliers([x if x > 0 else 0 for x in vv[t]])
         else:
-            v['t1'] = remove_outliers(v['t1'])
+            v['t1'] = remove_outliers([x if x > 0 else 0 for x in v['t1']])
 
     # # T1: mean ~= 21, std ~= 20
     # from analysis.utils import histogram
