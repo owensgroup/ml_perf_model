@@ -32,6 +32,7 @@
 dlrm_max_batch_size=4096
 trimmed_iters=${1:-30} # Default iters 30
 share_overheads=${2:-1} # Share overheads by default
+is_fbgemm=${3:-0} # FBGEMM for DLRM
 
 cd benchmark
 
@@ -57,14 +58,21 @@ do
                 cmd="python"
             fi
 
+            # FBGEMM?
+            if [[ "$is_fbgemm" -ne "1" ]];
+            then
+                cmd="$cmd --not-fbgemm"
+            fi
+            cmd="$cmd trace_stats.py --model-name ${model} --iters $trimmed_iters --num-gpus $ngpus"
+
             # Strong scaling
-            ./dlrm_benchmark.sh ${model} $((batch_size*32)) ${ngpus}
-            eval "$cmd trace_stats.py --model-name ${model} --batch-size $((batch_size*32)) --iters $trimmed_iters --num-gpus $ngpus"
+            ./dlrm_benchmark.sh ${model} $((batch_size*32)) ${ngpus} ${is_fbgemm}
+            eval "$cmd --batch-size $((batch_size*32))"
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                ./dlrm_benchmark.sh ${model} $((batch_size*32*ngpus)) ${ngpus}
-                eval "$cmd trace_stats.py --model-name ${model} --batch-size $((batch_size*32*ngpus)) --iters $trimmed_iters --num-gpus $ngpus"
+                ./dlrm_benchmark.sh ${model} $((batch_size*32*ngpus)) ${ngpus} ${is_fbgemm}
+                eval "$cmd --batch-size $((batch_size*32*ngpus))"
             fi
         done
     done
@@ -117,6 +125,12 @@ do
             if [[ "$share_overheads" -ne "1" ]];
             then
                 cmd="$cmd --use-independent-overheads"
+            fi
+
+            # FBGEMM?
+            if [[ "$is_fbgemm" -ne "1" ]];
+            then
+                cmd="$cmd --not-fbgemm"
             fi
             cmd="$cmd --model-name ${model} --iters $trimmed_iters --num-gpus $ngpus"
 

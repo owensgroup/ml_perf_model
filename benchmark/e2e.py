@@ -29,10 +29,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse, json, re, os
-from analysis.exec_graph_utils import ExecutionGraph # Not commited to Pytorch yet
 import analysis.extend_distributed as ext_dist
 from analysis.utils import PM_HOME, GPU_NAME
 from analysis.inference import get_e2e_time
+from param_bench.train.compute.python.lib.pytorch.exec_graph_utils import ExecutionGraph
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.")
@@ -42,6 +42,7 @@ if __name__ == '__main__':
     parser.add_argument("--iters", type=int, default=10)
     parser.add_argument("--use-independent-overheads", action="store_true", default=False)
     parser.add_argument("--debug", action="store_true", default=False)
+    parser.add_argument("--not-fbgemm", action="store_true", default=False)
     args = parser.parse_args()
 
     if args.num_gpus > 1:
@@ -50,7 +51,7 @@ if __name__ == '__main__':
         print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
             args.model_name, args.num_gpus, args.batch_size, args.iters))
 
-    prefix = "{}/data/{}/e2e/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
+    prefix = "{}/data/{}/e2e/{}/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, 'b' if args.not_fbgemm else 'f', args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
     exec_graph_file = "{}{}_graph.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if args.num_gpus > 1 else "")
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
