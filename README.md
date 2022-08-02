@@ -4,7 +4,7 @@ A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) 
 
 ### Prerequisites and Installation
 ```bash
-pip install h5py tqdm sklearn tensorboard tensorboadX torchviz onnx gputil spacy dill pandas # Dependencies
+pip install h5py tqdm sklearn tensorboard tensorboardX torchviz onnx gputil spacy dill pandas scikit-build pydot # Dependencies
 git clone --recursive https://github.com/owensgroup/ml_perf_model.git
 
 cd ml_perf_model/3rdparty/bench_params
