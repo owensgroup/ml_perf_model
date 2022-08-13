@@ -43,6 +43,8 @@ def get_gpu_name():
     assert len(gpus) > 0, "No GPUs detected!"
 
     for gpu in gpus:
+        if "A100" in gpu.name:
+            return "A100"
         if "V100" in gpu.name:
             return "V100"
         if "P100" in gpu.name:
@@ -56,6 +58,16 @@ GPU_NAME = get_gpu_name()
 
 
 HW_PARAMS = {
+    "A100": {
+        "peak_throughput": 12410.474,
+        "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
+        "peak_DRAM_BW": 1283.578,
+        "peak_L2_BW": 1811.562,
+        "peak_SMEM_BW": 2903.956,
+        "num_SM": 108,
+        "L2_size": 40 * 1024 * 1024,
+        "SMEM_size": 160 * 1024,
+    },
     "V100": {
         "peak_throughput": 15441.524,
         "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
