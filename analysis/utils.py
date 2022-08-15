@@ -107,6 +107,11 @@ GPU_EVENT_OVERHEAD = 4
 KERNEL_LAUNCH_LENGTH = 10
 
 
+COMPUTE_STREAM = 0
+MEMORY_STREAM = 1
+ADDITIONAL = 2
+
+
 # TODO: Distinguish conv1d and conv2d for ConvolutionBackward
 CONSIDER = [
                 "aten::linear", "AddmmBackward", \
@@ -125,7 +130,8 @@ CONSIDER = [
                 "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
                 "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
                 "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
-                "torch::autograd::AccumulateGrad", "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
+                "torch::autograd::AccumulateGrad", "torch.distributed.ddp.reducer::copy_bucket_to_grad", \
+                "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
 ]
 
 
@@ -140,10 +146,33 @@ SKIP = [    "SliceBackward",
 DUMMY_SHAPES = (((-1,),), ((-1,),))
 
 
-def is_collective(op):
-    if op.name == "record_param_comms" or "All2All" in op.name:
+def has_comm_collective(op):
+    if op.name == "record_param_comms":
         return True
-    return False
+    return op.get_child_by_name("record_param_comms") is not None
+
+
+def is_wait_collective(op):
+    return op.name == "All2All_Wait" or "All2All_ReqBackward" in op.name
+
+
+def depends_on_collective_output(op, collective_output):
+    return op.search_input_tensor(collective_output)
+
+
+def is_all2all_parent(op):
+    return op.get_child_by_name("nccl:all_to_all") is not None
+
+
+def is_allreduce_parent(op):
+    return op.get_child_by_name("nccl:all_reduce") is not None
+
+
+# Simple heuristic to infer if an op will schedule a kernel in a new stream
+def infer_multi_stream(op):
+    if has_comm_collective(op):
+        return MEMORY_STREAM
+    return COMPUTE_STREAM
 
 
 def op_name_in_list(op, lst):

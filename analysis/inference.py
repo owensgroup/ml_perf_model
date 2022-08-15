@@ -45,11 +45,6 @@ L2_size = GPU_PARAMS["L2_size"]
 SMEM_size = GPU_PARAMS["SMEM_size"]
 
 
-COMPUTE_STREAM = 0
-MEMORY_STREAM = 1
-ADDITIONAL = 2
-
-
 def embedding_forward_predictor_simple(**kwargs):
     B = kwargs["batch_size"]
     E = kwargs["num_embeddings"]
@@ -733,13 +728,6 @@ def get_kernel_time(op, op_lists):
         kernel_times.append(0)
     # print(op.name, op.input_shapes, kernel_times)
     return kernel_times
-
-
-# Simple heuristic to infer if an op will schedule a kernel in a new stream
-def infer_multi_stream(op):
-    if is_collective(op):
-        return MEMORY_STREAM
-    return COMPUTE_STREAM
 
 
 # Infer E2E time from an execution graph and an overhead file
