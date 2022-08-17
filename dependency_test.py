@@ -36,7 +36,7 @@ def get_dependency(graph, module_marker="##"):
                 })
                 comp_ops = []
                 comm_op = None
-            elif not (is_all2all(node) or is_allreduce(node)):
+            elif not (is_all2all(node) or is_allreduce(node)): # Don't include nccl:all_to_all/nccl:all_reduce for 3rd case downwards
                 comp_ops.append((node.name, node.input_shapes[0] if node.input_shapes else None))
         if has_comm_collective(node) and not is_wait_collective(node):
             if is_all2all_parent(node): # Has a2a call
@@ -51,7 +51,7 @@ def get_dependency(graph, module_marker="##"):
             elif prev_node and (is_all2all(prev_node) or is_allreduce(prev_node)):
                 branch = True
                 comm_op = ("all_to_all" if is_all2all(prev_node) else "all_reduce", tmp.outputs[0], tmp.output_shapes[0])
-
+            prev_node = node
 
     from pprint import pprint
     pprint(overlaps)
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
 ### Overlaps:
 # Lower bound: with another branch that has no data dependency
-# Upper bound: also with ops previous to the scheduling of comm op
+# Upper bound: also with ops previous to the scheduling of comm op (a common case)
 
 ### Detection:
 # Lower bound: found comm OUTPUT tensor and wait input tensor (same), and extract everything between them
