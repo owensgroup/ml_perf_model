@@ -112,7 +112,7 @@ def embedding_forward_predictor(**kwargs):
                         )
     total_dram_traffic = y["num_tables"] * (
                             y["batch_size"] * (
-                                indices_dram_traffic + 
+                                indices_dram_traffic +
                                 output_traffic) + \
                             (1 - hr) * (
                                 table_traffic * y["batch_size"] - \
@@ -424,7 +424,7 @@ def infer(op_type, backward=False, **kwargs):
     elif op_type == "memcpy":
         best_config, error = infer_memcpy()
     elif op_type == "embedding_lookup":
-        big = kwargs["big"] 
+        big = kwargs["big"]
         hit_rate_estimation = kwargs["hit_rate_estimation"]
         is_fbgemm = kwargs["fbgemm"]
         best_config, error = infer_el(backward=backward, big=big, hit_rate_estimation=hit_rate_estimation, fbgemm=is_fbgemm)

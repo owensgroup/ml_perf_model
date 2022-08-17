@@ -153,11 +153,19 @@ def has_comm_collective(op):
 
 
 def is_wait_collective(op):
-    return op.name == "All2All_Wait" or "All2All_ReqBackward" in op.name
+    return op.name in ["All2All_Wait", "All2All_Pooled_Wait"] or "All2All_ReqBackward" in op.name
 
 
 def depends_on_collective_output(op, collective_output):
     return op.search_input_tensor(collective_output)
+
+
+def is_all2all(op):
+    return op.name == "nccl:all_to_all"
+
+
+def is_allreduce(op):
+    return op.name == "nccl:all_reduce"
 
 
 def is_all2all_parent(op):
