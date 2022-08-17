@@ -51,7 +51,7 @@ def get_dependency(graph, module_marker="##"):
             elif prev_node and (is_all2all(prev_node) or is_allreduce(prev_node)):
                 branch = True
                 comm_op = ("all_to_all" if is_all2all(prev_node) else "all_reduce", tmp.outputs[0], tmp.output_shapes[0])
-            prev_node = node
+        prev_node = node
 
     from pprint import pprint
     pprint(overlaps)
