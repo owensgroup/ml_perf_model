@@ -759,10 +759,8 @@ def get_e2e_time(graph, overheads, module_marker="## ", debug=False):
             forward_found = True
         if not forward_found:
             continue
-        if node.is_op():
+        if node.is_op() and not to_skip(node):
             shapes = str(DUMMY_SHAPES)
-            if (to_skip(node)):
-                continue
             stream = infer_multi_stream(node)
             cpu_time += overheads["t1"][0] # T1: between two nodes
             if debug:
@@ -774,7 +772,7 @@ def get_e2e_time(graph, overheads, module_marker="## ", debug=False):
                     print("    t2: {:.2f}".format(overheads["t2"][node.name][shapes][0]))
                 launches = overheads["launches"][node.name]
                 # print(node.name, to_consider(node))
-                if to_consider(node) or is_collective(node):
+                if to_consider(node) or has_comm_collective(node):
                     t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(node, op_lists)] # Get kernel time and (arguably) compensate with the overheads
 
                     for idx, l in enumerate(launches):
@@ -794,7 +792,7 @@ def get_e2e_time(graph, overheads, module_marker="## ", debug=False):
 
                             # Current stream
                             gpu_time[stream] += t[idx]
-                            if ext_dist.my_size > 1 and is_collective(node): # Only sync after a multi-GPU collective
+                            if ext_dist.my_size > 1 and has_comm_collective(node): # Only sync after a multi-GPU collective
                                 ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float) # On the CPU
                                 opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
                                 ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
