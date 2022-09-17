@@ -39,7 +39,8 @@ op_type=$1
 is_forward=$2
 is_big=${3:0}
 fbgemm=${4:0}
-benchmark_metrics=${5:0}
+fbgemm_caching=${5:0}
+benchmark_metrics=${6:0}
 shmem="1"
 sgd="1"
 fc_test="0"
@@ -75,6 +76,10 @@ then
     then
         header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
         file_prefix="${file_prefix}_fbgemm"
+        if [ "$fbgemm_caching" == "1" ];
+        then
+            file_prefix="${file_prefix}_caching"
+        fi
     else
         header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim"
         if [ "$shmem" == "1" ];
@@ -187,6 +192,10 @@ do
         if [ "$fbgemm" == "1" ];
         then
             bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --fbgemm"
+            if [ "$fbgemm_caching" == "1" ];
+            then
+                bench_param="${bench_param} --caching"
+            fi
         else
             bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"
             if [ "${array[5]}" -gt "32" ] && [ "$is_forward" == "0" ]; # Skip when backward and rows_per_block too big
