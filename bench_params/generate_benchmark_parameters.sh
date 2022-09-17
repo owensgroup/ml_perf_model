@@ -59,7 +59,7 @@ fi
 if [ ! -f embedding_lookup_params.txt ];
 then
     touch embedding_lookup_params.txt
-    for B in 1 128 256 512;
+    for B in 128 256 512;
     do
         for E in 1000 2000 5000 7500 10000 20000 50000 75000 100000 200000 500000 750000 1000000 2000000 5000000 7500000 10000000 20000000 50000000;
         do
@@ -520,6 +520,7 @@ then
     done
 fi
 
+
 if [ ! -f pool_params.txt ];
 then
     touch pool_params.txt
@@ -604,6 +605,47 @@ then
                             then
                                 echo "$batch_size $T1 $T2 $T3 $T4 $D" >> a2a_4_params.txt
                             fi
+                        done
+                    done
+                done
+            done
+        done
+    done
+fi
+
+if [ ! -f a2a_4_params.txt ];
+then
+    touch a2a_4_params.txt
+    for batch_size in 256 512 1024 2048 4096;
+    do
+        for T1 in 1 2 3 4 5 6;
+        do
+            for T2 in 1 2 3 4 5 6;
+            do
+                for T3 in 1 2 3 4 5 6;
+                do
+                    for T4 in 1 2 3 4 5 6;
+                    do
+                        for T1 in 1 2 3 4 5 6;
+                            do
+                                for T2 in 1 2 3 4 5 6;
+                                do
+                                    for T3 in 1 2 3 4 5 6;
+                                    do
+                                        for T4 in 1 2 3 4 5 6;
+                                        do
+                                            for D in 32 64 128 256;
+                                            do
+                                                input_size="$( echo "$batch_size * $T1 * $T2 * $T3 * $T4 * $D * 4" | bc -l )"
+                                                if [ "$input_size" -lt "$GPU_memory" ];
+                                                then
+                                                    echo "$batch_size $T1 $T2 $T3 $T4 $D" >> a2a_4_params.txt
+                                                fi
+                                            done
+                                        done
+                                    done
+                                done
+                            done
                         done
                     done
                 done
