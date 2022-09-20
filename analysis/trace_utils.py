@@ -32,9 +32,12 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from itertools import compress
 from collections import defaultdict
 from analysis.utils import DUMMY_SHAPES, KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEAD, GPU_EVENT_OVERHEAD, remove_outliers
+import analysis.extend_distributed as ext_dist
 import numpy as np
 import pandas as pd
 import json, sys
+
+import torch
 
 # Label markers
 LABEL_MARKERS = ["##", "__", "module::", "DLRM ", "DistributedDataParallel"]
@@ -419,7 +422,6 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                     active_leaves.append(True) # Mark this leaf as active
                 # Crossover shouldn't happen
                 else:
-                    import analysis.extend_distributed as ext_dist
                     raise ValueError("\tCrossover happens to {} and {} in {}!".format(str(x), str(l), ext_dist.my_local_rank))
             # Delete all outdated leaves
             leaves = list(compress(leaves, active_leaves))
@@ -510,7 +512,8 @@ def get_device_runtime_and_start_delay(cc, corrected_start_time):
         if vv["executor"] is not None:
             device_start_delay = min(device_start_delay, vv["executor"].start_time() - corrected_start_time)
 
-            if "batched_embedding_forward_kernel" in vv["executor"].name():
+            if "batched_embedding_forward_kernel" in vv["executor"].name() or \
+                "split_embedding" in vv["executor"].name():
                 if device_runtime == 0:
                     device_runtime = vv["executor"].start_time()
                 else:
@@ -834,6 +837,9 @@ def get_gpu_stream_stats(cc):
     gpu_time = defaultdict(int)
     idx = 0
     while 1:
+        if idx >= len(all_kernels):
+            break
+
         k = all_kernels[idx]
         k_start, k_end = k.start_time(), k.start_time() + k.duration()
         k_stream = k.stream()
@@ -854,10 +860,82 @@ def get_gpu_stream_stats(cc):
         gpu_time['total'] += front - k_start
         idx += idx_incr
 
+    return gpu_time
+
+
+def get_eg_imbalance(cc, iter_time):
+    # All GPU kernels in start time order
+    all_kernels = sorted([
+        d['callees']['executor'] \
+            for _, d in cc.items() \
+            if d['callees']['executor'] is not None
+        ], key=lambda x: x.start_time()
+    )
+
+    embedding_kernels = [k for k in all_kernels if "embedding" in k.name() or "cub::DeviceRadixSort" in k.name()]
+    emb_total = np.sum([k.duration() for k in embedding_kernels])
+
+    # Exchange emb_total and iter_time for calculation
+    ipTensor = torch.tensor([emb_total, iter_time], dtype=torch.float) # On the CPU
+    opTensorList = [torch.empty([2]) for _ in range(ext_dist.my_size)] # On the CPU
+    ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+    max_emb_total = max([x[0].item() for x in opTensorList])
+    mean_emb_total = np.mean([x[0].item() for x in opTensorList])
+    med_iter_time = np.median([x[1].item() for x in opTensorList])
+
+    return (max_emb_total - mean_emb_total) / med_iter_time
+
+
+def get_eg_comm(cc, iter_time):
+    # All GPU kernels in start time order
+    all_kernels = sorted([
+        d['callees']['executor'] \
+            for _, d in cc.items() \
+            if d['callees']['executor'] is not None
+        ], key=lambda x: x.start_time()
+    )
+
+    idx = 0
+    total_unoverlapped_time = 0
+    while 1:
         if idx >= len(all_kernels):
             break
 
-    return gpu_time
+        k = all_kernels[idx]
+        idx += 1
+        if "nccl" not in k.name() and "NCCL" not in k.name():
+            continue
+
+        k_start, k_end = k.start_time(), k.start_time() + k.duration()
+        k_stream = k.stream()
+        unoverlapped_time = k.duration()
+
+        idx_incr = 1 # How many kernels are already processed in the following loop
+        for tmp_idx, kk in enumerate(all_kernels[idx:]):
+            kk_stream = kk.stream()
+            if kk.start_time() >= k_end or kk_stream == k_stream: # No overlaps
+                break
+
+            # Subtract comm overlapped time
+            kk_start, kk_end = kk.start_time(), kk.start_time() + kk.duration()
+            kk_overlapped = min(k_end, kk_end) - max(k_start, kk_start)
+            unoverlapped_time -= kk_overlapped
+
+            # print("=======")
+            # print(k.name(), kk.name(), k.duration(), kk.duration(), kk_overlapped)
+
+            idx_incr = tmp_idx + 1
+
+        total_unoverlapped_time += unoverlapped_time
+        idx += idx_incr
+
+    # Exchange eg_comm_per_rank for calculation
+    eg_comm_per_rank = total_unoverlapped_time / iter_time
+    ipTensor = torch.tensor([eg_comm_per_rank], dtype=torch.float) # On the CPU
+    opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
+    ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+
+    return min([x.item() for x in opTensorList])
 
 
 def save_raw_overhead_data(overheads, file_name, model_name, batch_size):

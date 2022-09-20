@@ -89,13 +89,13 @@ if __name__ == '__main__':
         shared_df.to_csv("{}_overhead_raw_{}.csv".format(prefix, args.iters), index=False)
 
     # Get overall per-batch time
-    runtime_no_pf = -1
+    runtime_total_us = -1
     log_file = "{}.log".format(prefix)
     if os.path.exists(log_file):
         for line in open(log_file, 'r'):
             if re.search("Overall per-batch", line):
-                runtime_no_pf = float(line.split(' ')[4]) * 1000 * args.iters # us
-    assert runtime_no_pf != -1
+                runtime_total_us = float(line.split(' ')[4]) * 1000 * args.iters # us
+    assert runtime_total_us != -1
 
     # Get GPU stream stats
     gpu_time = get_gpu_stream_stats(cc)
@@ -110,17 +110,27 @@ QPS: {QPS:.2f}
 
     # Each stream and total GPU time
     for s in streams:
-        active_time_perc = min(gpu_time[s], runtime_no_pf) / runtime_no_pf
+        active_time_perc = min(gpu_time[s], runtime_total_us) / runtime_total_us
         idle_time_perc = 1 - active_time_perc
         st += "\n    Stream {}: average per-batch time: {:.2f} us, active perc {:.2f}%, idle perc {:.2f}%".format(
             s,
-            min(gpu_time[s], runtime_no_pf) / args.iters,
+            min(gpu_time[s], runtime_total_us) / args.iters,
             active_time_perc * 100,
             idle_time_perc * 100)
     st += "\nTotal per-batch GPU time and percentage: {:.2f} us ({:.2f}%)".format(
-        min(gpu_time['total'], runtime_no_pf) / args.iters,
-        min(gpu_time['total'], runtime_no_pf) / runtime_no_pf * 100
+        min(gpu_time['total'], runtime_total_us) / args.iters,
+        min(gpu_time['total'], runtime_total_us) / runtime_total_us * 100
     )
+
+    # eg_imbalance and eg_comm for multi-GPU
+    if ext_dist.my_size > 1:
+        eg_imbalance = get_eg_imbalance(cc, runtime_total_us)
+        eg_comm = get_eg_comm(cc, runtime_total_us)
+        st += "\neg_imbalance: {:.2f}, eg_comm: {:.2f}".format(
+            eg_imbalance,
+            eg_comm
+        )
+
     summary_file = "{}{}_summary_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
     with open(summary_file, 'w') as f:
         f.write(st)
