@@ -33,6 +33,9 @@ dlrm_max_batch_size=4096
 trimmed_iters=${1:-30} # Default iters 30
 share_overheads=${2:-1} # Share overheads by default
 is_fbgemm=${3:-0} # FBGEMM for DLRM
+bucket_size_mb=${4:-25} # Bucket size in MB
+early_barrier=${5:0} # Whether launch a barrier at the beginning of the iteration
+aggregated_allreduce=${6:0} # Whether extract an execution graph with aggregated allreduce for DDP (i.e. iteration 0)
 
 cd benchmark
 
@@ -53,26 +56,34 @@ do
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
-                cmd="mpirun -np $ngpus -N $ngpus python"
+                trace_cmd="mpirun -np $ngpus -N $ngpus python"
             else
-                cmd="python"
+                trace_cmd="python"
             fi
 
+            trace_cmd="$trace_cmd trace_stats.py --model-name ${model} --iters $trimmed_iters --num-gpus $ngpus"
             # FBGEMM?
             if [[ "$is_fbgemm" -ne "1" ]];
             then
-                cmd="$cmd --not-fbgemm"
+                trace_cmd="$trace_cmd --not-fbgemm"
             fi
-            cmd="$cmd trace_stats.py --model-name ${model} --iters $trimmed_iters --num-gpus $ngpus"
+
+            bench_options=" -m ${model}\
+                            -g ${ngpus}\
+                            -f ${is_fbgemm}\
+                            -s ${bucket_size_mb}\
+                            -r ${early_barrier}\
+                            -a ${aggregated_allreduce}"
 
             # Strong scaling
-            ./dlrm_benchmark.sh ${model} $((batch_size*32)) ${ngpus} ${is_fbgemm}
-            eval "$cmd --batch-size $((batch_size*32))"
+            ./dlrm_benchmark.sh -b $((batch_size*32)) $bench_options
+            eval "$trace_cmd --batch-size $((batch_size*32))"
+
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                ./dlrm_benchmark.sh ${model} $((batch_size*32*ngpus)) ${ngpus} ${is_fbgemm}
-                eval "$cmd --batch-size $((batch_size*32*ngpus))"
+                ./dlrm_benchmark.sh -b $((batch_size*32*ngpus)) $bench_options
+                eval "$trace_cmd --batch-size $((batch_size*32*ngpus))"
             fi
         done
     done
