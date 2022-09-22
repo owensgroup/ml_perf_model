@@ -35,20 +35,43 @@ from analysis.utils import PM_HOME, GPU_NAME
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Process trace files and get stats.")
-    parser.add_argument("--model-name", type=str, required=True)
-    parser.add_argument("--num-gpus", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=2048)
-    parser.add_argument("--iters", type=int, default=10)
-    parser.add_argument("--not-fbgemm", action="store_true", default=False)
+    parser.add_argument("-i", "--iters", type=int, default=30)
+    parser.add_argument("-b", "--batch-size", type=int, default=2048)
+    parser.add_argument("-m", "--model-name", type=str, required=True)
+    parser.add_argument("-g", "--num-gpus", type=int, default=1)
+    parser.add_argument("-t", "--is-batched-emb", action="store_true", default=False)
+    parser.add_argument("-s", "--bucket-size-mb", type=int, default=25)
+    parser.add_argument("-r", "--early-barrier", action="store_true", default=False)
+    parser.add_argument("-a", "--aggregated-allreduce", action="store_true", default=False)
     args = parser.parse_args()
 
     if args.num_gpus > 1:
         ext_dist.init_distributed(use_gpu=False) # Don't need GPU for E2E
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
-        print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
-                args.model_name, args.num_gpus, args.batch_size, args.iters))
+        print("======= {}, {} GPU(s), batch size: {}, iters: {}{}{}{}{} =======".format(
+                args.model_name, args.num_gpus, args.batch_size, args.iters,
+                ", batched_emb" if args.is_batched_emb else ", FBGEMM",
+                ", bucket size: {}".format(args.bucket_size_mb) if args.bucket_size_mb != 25 else "",
+                ", early barrier" if args.early_barrier else "",
+                ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
+            )
+        )
 
-    prefix = "{}/data/{}/e2e/{}/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, 'b' if args.not_fbgemm else 'f', args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
+    multi_gpu_specific_folders = "{}_{}/{}/".format(
+        "barrier" if args.early_barrier else "no_barrier",
+        "aggregated_allreduce" if args.aggregated_allreduce else "bucketed_allreduce",
+        args.bucket_size_mb,
+    )
+    prefix = "{}/data/{}/e2e/{}/{}/{}{}_{}{}".format(
+        PM_HOME,
+        GPU_NAME,
+        args.model_name,
+        'b' if args.is_batched_emb else 'f',
+        multi_gpu_specific_folders if args.num_gpus > 1 else "",
+        args.num_gpus,
+        args.batch_size,
+        "_distributed" if args.num_gpus > 1 else ""
+    )
     trace_file = "{}{}.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "")
     if not os.path.exists(trace_file):
         print("Trace file doesn't exist! Please run the benchmark first.")
@@ -75,6 +98,7 @@ if __name__ == '__main__':
     with open(overhead_stats_name, "w") as f:
         json.dump(overhead_stats, f)
     save_raw_overhead_data(overhead_raw, overhead_raw_name, args.model_name, args.batch_size)
+    ext_dist.barrier() # Wait for overhead data to be saved on all processes
     # Merge raw overhead and stats from all processes
     if ext_dist.my_size > 1 and ext_dist.my_local_rank == 0:
         print("Rank {}: merge raw overhead and stats...".format(ext_dist.my_local_rank if ext_dist.my_size > 1 else 0))

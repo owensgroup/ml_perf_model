@@ -5,16 +5,21 @@
 # LICENSE file in the root directory of this source tree.
 
 # Arguments
-while getopts :b:m:g:f:s:r:a:e flag
+emb_type="--fbgemm-emb"
+folder_emb_type="f" # FBGEMM
+early_barrier=
+aggregated_allreduce=
+while getopts b:m:g:ts:rae: flag
 do
     case "${flag}" in
         b) mb_size=${OPTARG};;
         m) model_name=${OPTARG};;
         g) ngpus=${OPTARG};;
-        f) is_fbgemm=${OPTARG};;
+        t) emb_type="--batched-emb"
+            folder_emb_type="f";;
         s) bucket_size_mb=${OPTARG};;
-        r) early_barrier=${OPTARG};;
-        a) aggregated_allreduce=${OPTARG};;
+        r) early_barrier="--early-barrier";;
+        a) aggregated_allreduce="--aggregated-allreduce";;
         e) dlrm_extra_option=${OPTARG};;
     esac
 done
@@ -35,23 +40,10 @@ common_args="   --use-gpu\
                 --print-freq=5\
                 --print-time\
                 --pin-memory\
-                --bucket-size-mb=${bucket_size_mb}"
-folder_emb_type="b" # Batched
-if [[ $is_fbgemm == "1" ]];
-then
-    common_args="${common_args} --fbgemm-emb "
-    folder_emb_type="f" # FBGEMM
-else
-    common_args="${common_args} --batched-emb "
-fi
-if [[ $early_barrier == "1" ]];
-then
-    common_args="${common_args} --early-barrier "
-fi
-if [[ $aggregated_allreduce == "1" ]];
-then
-    common_args="${common_args} --aggregated-allreduce "
-fi
+                ${emb_type}\
+                --bucket-size-mb=${bucket_size_mb}\
+                ${early_barrier}\
+                ${aggregated_allreduce} "
 
 # ----------------------- Model param -----------------------
 _args=""

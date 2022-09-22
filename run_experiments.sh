@@ -30,12 +30,23 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 dlrm_max_batch_size=4096
-trimmed_iters=${1:-30} # Default iters 30
-share_overheads=${2:-1} # Share overheads by default
-is_fbgemm=${3:-0} # FBGEMM for DLRM
-bucket_size_mb=${4:-25} # Bucket size in MB
-early_barrier=${5:0} # Whether launch a barrier at the beginning of the iteration
-aggregated_allreduce=${6:0} # Whether extract an execution graph with aggregated allreduce for DDP (i.e. iteration 0)
+trimmed_iters=30 # Default iters 30
+share_overheads= # Share overheads
+emb_type= # FBGEMM for DLRM
+bucket_size_mb=25 # Bucket size in MB
+early_barrier= # Whether launch a barrier at the beginning of the iteration
+aggregated_allreduce= # Whether extract an execution graph with aggregated allreduce for DDP (i.e. iteration 0)
+while getopts i:ots:ra flag
+do
+    case "${flag}" in
+        i) trimmed_iters=${OPTARG};;
+        o) share_overhead="-o";;
+        t) emb_type="-t";;
+        s) bucket_size_mb=${OPTARG};;
+        r) early_barrier="-r";;
+        a) aggregated_allreduce="-a";;
+    esac
+done
 
 cd benchmark
 
@@ -61,29 +72,28 @@ do
                 trace_cmd="python"
             fi
 
-            trace_cmd="$trace_cmd trace_stats.py --model-name ${model} --iters $trimmed_iters --num-gpus $ngpus"
-            # FBGEMM?
-            if [[ "$is_fbgemm" -ne "1" ]];
-            then
-                trace_cmd="$trace_cmd --not-fbgemm"
-            fi
+            # Options for both benchmark and trace
+            options="   -m ${model}\
+                        -g ${ngpus}\
+                        ${emb_type}\
+                        -s ${bucket_size_mb}\
+                        ${early_barrier}\
+                        ${aggregated_allreduce}"
 
-            bench_options=" -m ${model}\
-                            -g ${ngpus}\
-                            -f ${is_fbgemm}\
-                            -s ${bucket_size_mb}\
-                            -r ${early_barrier}\
-                            -a ${aggregated_allreduce}"
+            trace_cmd="$trace_cmd \
+                        trace_stats.py \
+                        -i $trimmed_iters \
+                        ${options}"
 
             # Strong scaling
-            ./dlrm_benchmark.sh -b $((batch_size*32)) $bench_options
-            eval "$trace_cmd --batch-size $((batch_size*32))"
+            ./dlrm_benchmark.sh -b $((batch_size*32)) $options
+            eval "$trace_cmd -b $((batch_size*32))"
 
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                ./dlrm_benchmark.sh -b $((batch_size*32*ngpus)) $bench_options
-                eval "$trace_cmd --batch-size $((batch_size*32*ngpus))"
+                ./dlrm_benchmark.sh -b $((batch_size*32*ngpus)) $options
+                eval "$trace_cmd -b $((batch_size*32*ngpus))"
             fi
         done
     done
