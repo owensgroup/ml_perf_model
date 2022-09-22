@@ -36,29 +36,58 @@ from param_bench.train.compute.python.lib.pytorch.exec_graph_utils import Execut
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.")
-    parser.add_argument("--model-name", type=str, required=True)
-    parser.add_argument("--num-gpus", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=2048)
-    parser.add_argument("--iters", type=int, default=10)
-    parser.add_argument("--use-independent-overheads", action="store_true", default=False)
-    parser.add_argument("--debug", action="store_true", default=False)
-    parser.add_argument("--not-fbgemm", action="store_true", default=False)
+    parser.add_argument("-i", "--iters", type=int, default=30)
+    parser.add_argument("-b", "--batch-size", type=int, default=2048)
+    parser.add_argument("-m", "--model-name", type=str, required=True)
+    parser.add_argument("-g", "--num-gpus", type=int, default=1)
+    parser.add_argument("-t", "--is-batched-emb", action="store_true", default=False)
+    parser.add_argument("-s", "--bucket-size-mb", type=int, default=25)
+    parser.add_argument("-r", "--early-barrier", action="store_true", default=False)
+    parser.add_argument("-a", "--aggregated-allreduce", action="store_true", default=False)
+    parser.add_argument("-o", "--use-shared-overheads", action="store_true", default=False)
+    parser.add_argument("-d", "--debug", action="store_true", default=False)
     args = parser.parse_args()
 
     if args.num_gpus > 1:
         ext_dist.init_distributed(use_gpu=False) # Don't need GPU for E2E prediction.
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
-        print("======= {}, {} GPU(s), batch size: {}, iters: {} =======".format(
-            args.model_name, args.num_gpus, args.batch_size, args.iters))
+        tmp_str = ""
+        if "DLRM" in args.model_name:
+            tmp_str = "{}{}{}{}".format(
+                ", batched_emb" if args.is_batched_emb else ", FBGEMM",
+                ", bucket size: {}".format(args.bucket_size_mb) if args.bucket_size_mb != 25 else "",
+                ", early barrier" if args.early_barrier else "",
+                ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
+            )
+        print("======= {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
+                args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
 
-    prefix = "{}/data/{}/e2e/{}/{}/{}_{}{}".format(PM_HOME, GPU_NAME, args.model_name, 'b' if args.not_fbgemm else 'f', args.num_gpus, args.batch_size, "_distributed" if args.num_gpus > 1 else "")
+    if "DLRM" in args.model_name:
+        dlrm_folder_str = "b/" if args.is_batched_emb else "f/"
+        if args.num_gpus > 1:
+            dlrm_folder_str += "{}_{}/{}/".format(
+                "barrier" if args.early_barrier else "no_barrier",
+                "aggregated_allreduce" if args.aggregated_allreduce else "bucketed_allreduce",
+                args.bucket_size_mb,
+            )
+    else:
+        dlrm_folder_str = ""
+    prefix = "{}/data/{}/e2e/{}/{}{}_{}{}".format(
+        PM_HOME,
+        GPU_NAME,
+        args.model_name,
+        dlrm_folder_str,
+        args.num_gpus,
+        args.batch_size,
+        "_distributed" if args.num_gpus > 1 else ""
+    )
     exec_graph_file = "{}{}_graph.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if args.num_gpus > 1 else "")
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
-    if args.use_independent_overheads:
-        overheads_file = "{}_overhead_stats_{}.json".format(prefix, args.iters)
-    else:
+    if args.use_shared_overheads:
         overheads_file = "{}/data/{}/e2e/shared_overheads.json".format(PM_HOME, GPU_NAME)
+    else:
+        overheads_file = "{}_overhead_stats_{}.json".format(prefix, args.iters)
     if not os.path.exists(overheads_file):
         print("Overheads file doesn't exist! Please run the trace analysis first.")
         exit(1)
@@ -93,6 +122,6 @@ if __name__ == '__main__':
         print(st)
         prediction_name = "{}{}_prediction_{}{}.log".format(
             prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "",
-            args.iters, '_shared' if args.use_independent_overheads else '')
+            args.iters, '_shared' if args.use_shared_overheads else '')
         with open(prediction_name, 'w') as f:
             f.write(st)

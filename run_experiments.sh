@@ -72,7 +72,7 @@ do
                 trace_cmd="python"
             fi
 
-            # Options for both benchmark and trace
+            # Options for both benchmark and trace_stats
             options="   -m ${model}\
                         -g ${ngpus}\
                         ${emb_type}\
@@ -82,7 +82,7 @@ do
 
             trace_cmd="$trace_cmd \
                         trace_stats.py \
-                        -i $trimmed_iters \
+                        -i ${trimmed_iters} \
                         ${options}"
 
             # Strong scaling
@@ -101,19 +101,19 @@ do
     for model in resnet50 inception_v3;
     do
         ./convnet_benchmark.sh ${model} ${batch_size}
-        python trace_stats.py --model-name ${model} --batch-size ${batch_size} --iters $trimmed_iters
+        python trace_stats.py -m ${model} -i ${trimmed_iters} -b ${batch_size}
     done
 
-    # for model in transformer
+    # for model in transformer;
     # do
     #     ./nlp_benchmark.sh transformer $((batch_size*4))
-    #     python trace_stats.py --model-name ${model} --batch-size $((batch_size*4)) --iters $trimmed_iters
+    #     python trace_stats.py -m ${model} -i ${trimmed_iters} -b $((batch_size*4))
     # done
 
-    for model in ncf deepfm
+    for model in ncf deepfm;
     do
         ./rm_benchmark.sh ${model} $((batch_size*32))
-        python trace_stats.py --model-name ${model} --batch-size $((batch_size*32)) --iters $trimmed_iters
+        python trace_stats.py -m ${model} -i ${trimmed_iters} -b $((batch_size*32))
     done
 done
 
@@ -137,49 +137,48 @@ do
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
-                cmd="mpirun -np $ngpus -N $ngpus python e2e.py"
+                cmd="mpirun -np $ngpus -N $ngpus python"
             else
-                cmd="python e2e.py"
+                cmd="python"
             fi
 
-            # Share overheads?
-            if [[ "$share_overheads" -ne "1" ]];
-            then
-                cmd="$cmd --use-independent-overheads"
-            fi
+            options="   -i ${trimmed_iters}\
+                        -m ${model}\
+                        -g ${ngpus}\
+                        ${emb_type}\
+                        -s ${bucket_size_mb}\
+                        ${early_barrier}\
+                        ${aggregated_allreduce}\
+                        ${share_overheads}"
 
-            # FBGEMM?
-            if [[ "$is_fbgemm" -ne "1" ]];
-            then
-                cmd="$cmd --not-fbgemm"
-            fi
-            cmd="$cmd --model-name ${model} --iters $trimmed_iters --num-gpus $ngpus"
+            cmd="   $cmd\
+                    e2e.py\
+                    ${options}"
 
             # Strong scaling
-            eval "$cmd --batch-size $((batch_size*32))"
+            eval "$cmd -b $((batch_size*32))"
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                eval "$cmd --batch-size $((batch_size*32*ngpus))"
+                eval "$cmd -b $((batch_size*32*ngpus))"
             fi
         done
     done
 
     for model in resnet50 inception_v3;
     do
-        python e2e.py --model-name ${model} --batch-size ${batch_size} --iters $trimmed_iters
+        python e2e.py -m ${model} -i ${trimmed_iters} -b ${batch_size}
     done
 
-    # for model in transformer
+    # for model in transformer;
     # do
     #     ./nlp_benchmark.sh transformer $((batch_size*4))
-    #     python trace_stats.py --model-name ${model} --batch-size $((batch_size*4)) --iters $trimmed_iters
-    #     python e2e.py --model-name ${model} --batch-size $((batch_size*4)) --iters $trimmed_iters
+    #     python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*4))
     # done
 
-    for model in ncf deepfm
+    for model in ncf deepfm;
     do
-        python e2e.py --model-name ${model} --batch-size $((batch_size*32)) --iters $trimmed_iters
+        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*32))
     done
 done
 

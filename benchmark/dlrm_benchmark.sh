@@ -16,7 +16,7 @@ do
         m) model_name=${OPTARG};;
         g) ngpus=${OPTARG};;
         t) emb_type="--batched-emb"
-            folder_emb_type="f";;
+            folder_emb_type="b";;
         s) bucket_size_mb=${OPTARG};;
         r) early_barrier="--early-barrier";;
         a) aggregated_allreduce="--aggregated-allreduce";;

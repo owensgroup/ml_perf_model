@@ -65,16 +65,16 @@ def get_dependency(graph, module_marker="##"):
 def predict_overlaps(overlaps):
     for o in overlaps:
         comm_op = o["comm"][-1]
-        comm_time = get_kernel_time(comm_op, {}, ndevices=4)[0]
+        comm_time = get_kernel_time(comm_op, ndevices=4)[0]
         comp_time = 0
         for x in o["comp"]:
             comp_op = x[-1]
-            comp_time += get_kernel_time(comp_op, {}, ndevices=4)[0]
-        # print(comm_time, comp_time)
+            comp_time += get_kernel_time(comp_op, ndevices=4)[0]
+        print("Communication time: {:.2f}".format(comm_time), "Computation time: {:.2f}".format(comp_time))
 
 
 if __name__ == "__main__":
-    eg_file = "./data/V100/e2e/DLRM_default/f/bucketed/4_8192_distributed_0_graph.json"
+    eg_file = "./data/V100/e2e/DLRM_default/f/barrier_bucketed_allreduce/25/4_8192_distributed_0_graph.json"
     with open(eg_file) as f:
         graph = ExecutionGraph(json.load(f))
     overlaps = get_dependency(graph)
