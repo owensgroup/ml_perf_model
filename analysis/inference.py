@@ -246,30 +246,44 @@ def predict_collective_time(size, mul_factor, incr_p, sats_p, max_bw, overhead, 
         return size / bw * mul_factor / 1e3
 
 
-# 4-V100 DGX-1
+# Hardcoded for now
 def all_to_all_predictor(**kwargs):
-    # Hardcoded for now
-    incr_p = 13 # 2^13 bytes
-    sats_p = 27 # 2^27 bytes
-    max_bw = 56.7134 # GB/s
-    overhead = 85.6 # us
-    sigmoid_param = (5.97878216, 13.33976161, 0.22551425, -3.99731681)
+    # V100
+    if kwargs["ndevices"] == 4:
+        incr_p = 13 # 2^13 bytes
+        sats_p = 27 # 2^27 bytes
+        max_bw = 56.7134 # GB/s
+        overhead = 85.6 # us
+        sigmoid_param = (5.97878216, 13.33976161, 0.22551425, -3.99731681)
+    else:
+        incr_p = 12 # 2^12 bytes
+        sats_p = 24 # 2^24 bytes
+        max_bw = 45.8154 # GB/s
+        overhead = 68.0 # us
+        sigmoid_param = (5.88387459, 12.51962025, 0.23138583, -4.02494046)
 
     f = MUL_FACTOR_FUNCS["all_to_allv"]
-    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["num_gpus"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
 
 
-# 4-V100 DGX-1
+# Hardcoded for now
 def all_reduce_predictor(**kwargs):
-    # Hardcoded for now
-    incr_p = 12 # 2^12 bytes
-    sats_p = 26 # 2^26 bytes
-    max_bw = 75.6704 # GB/s
-    overhead = 84.2 # us
-    sigmoid_param = (6.04564109, 12.70417428, 0.2242347, -3.94164857)
+    # V100
+    if kwargs["ndevices"] == 4:
+        incr_p = 12 # 2^12 bytes
+        sats_p = 26 # 2^26 bytes
+        max_bw = 75.6704 # GB/s
+        overhead = 84.2 # us
+        sigmoid_param = (6.04564109, 12.70417428, 0.2242347, -3.94164857)
+    else: # 8
+        incr_p = 12 # 2^12 bytes
+        sats_p = 25 # 2^25 bytes
+        max_bw = 130.3734 # GB/s
+        overhead = 43.4 # us
+        sigmoid_param = (6.67770176, 11.62004605, 0.19322959, -4.28862824)
 
     f = MUL_FACTOR_FUNCS["all_reduce"]
-    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["num_gpus"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
 
 
 def collective_predictor(c, **kwargs):
@@ -632,7 +646,7 @@ def get_kernel_time(op, ndevices=4):
                 dfs(c)
         dfs(op)
         tensor_size = np.prod(collective_op.input_shapes[0])
-        t = collective_predictor(collective_op.name, tensor_size=tensor_size, num_gpus=ndevices)
+        t = collective_predictor(collective_op.name, tensor_size=tensor_size, ndevices=ndevices)
         kernel_times.append(t)
     elif op.name == "aten::cat":
         sum_size = sum([np.prod(s) for s in op.input_shapes[0]])
