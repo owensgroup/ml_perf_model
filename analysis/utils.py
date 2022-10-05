@@ -255,10 +255,10 @@ def get_sigmoid_bw(s, sigmoid_param):
     return 10 ** sigmoid(s, *sigmoid_param) # L, x0, k, b
 
 
-def histogram(df, perc=True, is_abs=False, bins=[0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0]):
+def histogram(df, perc=True, is_abs=True, bins=[0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0]):
     count = len(df)
     ret = {}
-    if is_abs:
+    if not is_abs: # Show actual error instead of abs error
         tmp_bins = []
         for i in range(0, len(bins) - 1):
             tmp_bins.append(-bins[len(bins) - 1 - i])
@@ -270,10 +270,11 @@ def histogram(df, perc=True, is_abs=False, bins=[0, 0.05, 0.1, 0.15, 0.2, 0.25, 
             continue
         ret[(bins[idx-1], bins[idx])] = 0
     for x in df:
+        xx = abs(x) if is_abs else x
         for idx, b in enumerate(bins):
             if idx == 0:
                 continue
-            if x >= bins[idx-1] and x < bins[idx]:
+            if xx >= bins[idx-1] and xx < bins[idx]:
                 ret[(bins[idx-1], bins[idx])] += 1
                 break
     for b, c in sorted(ret.items(), key=lambda x: x[0]):
