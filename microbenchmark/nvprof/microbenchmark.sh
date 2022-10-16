@@ -150,7 +150,7 @@ then
 
     if [ "$benchmark_metrics" == "1" ];
     then
-        file_prefix="${file_prefix}_big_with_metrics"
+        file_prefix="${file_prefix}_with_metrics"
         metrics_args=""
         metrics=()
         while IFS= read -r line
