@@ -54,7 +54,7 @@ def get_gpu_name():
         if "1080" in gpu.name:
             return "1080"
     return None
-GPU_NAME = get_gpu_name()
+GPU_NAME = "V100"
 
 
 HW_PARAMS = {
@@ -294,6 +294,8 @@ def strip_unit(x):
                 x[col] = float(x[col].rstrip('GB/s'))
             elif x[col].endswith('MB/s'):
                 x[col] = float(x[col].rstrip('MB/s')) / 1e3
+            elif x[col].endswith('KB/s'):
+                x[col] = float(x[col].rstrip('KB/s')) / 1e6
             elif x[col].endswith('B/s'):
                 x[col] = float(x[col].rstrip('B/s')) / 1e9
             else:
@@ -331,6 +333,7 @@ def process_smem(x):
 
 
 def preprocessing(df):
+    df.dropna(inplace=True)
     df = df.apply(func=p2f, axis=1)
     df = df.apply(func=strip_unit, axis=1)
     df = df.apply(func=strip_parenthesis, axis=1)
