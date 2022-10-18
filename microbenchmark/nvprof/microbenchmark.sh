@@ -334,27 +334,34 @@ do
         avg_kernel_time="$( echo "scale=4; $avg_kernel_time / ($kernel_count - $warmup_iters) * ($kernel_count / ($runtime_batch_iters + $warmup_iters))" | bc )" # In case 1 op = multiple identical kernel calls, e.g. big transpose
         stats_row="${stats_row},${avg_kernel_time},${op_time},${trace_values}"
 
+        metric_values=()
         if [ "$benchmark_metrics" == "1" ] && [ "$op_type" != "memcpy" ];
         then
-            # Benchmark kernel metrics
-            echo "Benchmark kernel $kernel"
-            nvprof --openacc-profiling off --kernels $kernel \
-            $metrics_args \
-            --log-file "/tmp/${BUS_ID}_kernel.txt" \
-            python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters 0 # >& /dev/null
+            # Don't benchmark these kernels
+            if [[ "$kernel" == *"fbgemm_gpu::cub"* ]] || \
+                [[ "$kernel" == *"at::native::vectorized_elementwise_kernel"* ]] || \
+                [[ "$kernel" == *"linearize_index_kernel"* ]];
+            then
+                :
+            else
+                # Benchmark kernel metrics
+                echo "Benchmark kernel $kernel"
+                nvprof --openacc-profiling off --kernels $kernel \
+                $metrics_args \
+                --log-file "/tmp/${BUS_ID}_kernel.txt" \
+                python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $metrics_bench_iters --warmup-iters 0 >& /dev/null
 
-            metric_values=()
-            for (( j=0; j<${#metrics[@]}; j++ ));
-            do
-                value="$( < /tmp/${BUS_ID}_kernel.txt grep -m1 "${metrics[j]}" | awk '{ x=gensub("    ","","G",$NF); printf x }' )"
-                metric_values+=( "$value" )
-            done
-
-            for (( j=0; j<${#metrics[@]}; j++ ));
-            do
-                stats_row="$stats_row,${metric_values[j]}"
-            done
+                for (( j=0; j<${#metrics[@]}; j++ ));
+                do
+                    value="$( < /tmp/${BUS_ID}_kernel.txt grep -m1 "${metrics[j]}" | awk '{ x=gensub("    ","","G",$NF); printf x }' )"
+                    metric_values+=( "$value" )
+                done
+            fi
         fi
+        for (( j=0; j<${#metrics[@]}; j++ ));
+        do
+            stats_row="$stats_row,${metric_values[j]}"
+        done
         echo "$stats_row" >> "$file_name"
     done
 done < "$param_file_name"

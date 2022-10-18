@@ -45,6 +45,7 @@ do
     IFS=', ' read -r -a array <<< "$line"
 
     kernel_name="${array[6]/<*/}"
+    kernel_name="${kernel_name/(*/}"
     num_calls="${array[2]}"
 
     if [ "$op_type" != "memcpy" ];
@@ -82,6 +83,7 @@ do
     num_calls="${array[2]}"
 
     kernel_name="${array[6]/<*/}"
+    kernel_name="${kernel_name/(*/}"
     if [ "$op_type" != "memcpy" ];
     then
         if [ "$kernel_name" == "[CUDA" ] || [ "$num_calls" -lt "5" ];

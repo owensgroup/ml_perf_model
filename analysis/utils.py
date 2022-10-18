@@ -54,7 +54,7 @@ def get_gpu_name():
         if "1080" in gpu.name:
             return "1080"
     return None
-GPU_NAME = "V100"
+GPU_NAME = get_gpu_name()
 
 
 HW_PARAMS = {
