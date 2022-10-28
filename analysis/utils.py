@@ -201,18 +201,6 @@ def to_skip(op):
     return op_name_in_list(op, SKIP)
 
 
-# alg_bw -> bus_bw for multi-gpu collectives
-MUL_FACTOR_FUNCS = {
-    'all_to_all': lambda n: (n-1) / n,
-    'all_to_allv': lambda n: (n-1) / n,
-    'all_reduce': lambda n: 2 * (n-1) / n,
-    'all_gather': lambda n: (n-1) / n,
-    'all_gather_base': lambda n: (n-1) / n,
-    'reduce': lambda n: 1,
-    'reduce_scatter': lambda n: (n-1) / n
-}
-
-
 # Currently only support All2All and AllReduce
 COMMS = ["nccl:all_to_all", "nccl:all_reduce"]
 

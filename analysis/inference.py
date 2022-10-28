@@ -33,6 +33,7 @@ import pandas as pd
 import numpy as np
 import json
 from .utils import *
+from .memory_bw_utils import *
 import analysis.extend_distributed as ext_dist
 
 peak_throughput = GPU_PARAMS["peak_throughput"]
@@ -235,17 +236,6 @@ def mlp_predictor_tensor(x, op_type, backward=False):
     return result
 
 
-def predict_collective_time(size, mul_factor, incr_p, sats_p, max_bw, overhead, sigmoid_param):
-    log_size = np.log2(size)
-    if log_size <= incr_p:
-        return overhead
-    elif log_size >= sats_p:
-        return size / max_bw * mul_factor / 1e3 + overhead
-    else:
-        bw = get_sigmoid_bw(log_size, sigmoid_param)
-        return size / bw * mul_factor / 1e3
-
-
 # Hardcoded for now
 def all_to_all_predictor(**kwargs):
     # V100
@@ -255,7 +245,7 @@ def all_to_all_predictor(**kwargs):
         max_bw = 56.7134 # GB/s
         overhead = 85.6 # us
         sigmoid_param = (5.97878216, 13.33976161, 0.22551425, -3.99731681)
-    else:
+    else: # 8
         incr_p = 12 # 2^12 bytes
         sats_p = 24 # 2^24 bytes
         max_bw = 45.8154 # GB/s
@@ -263,7 +253,7 @@ def all_to_all_predictor(**kwargs):
         sigmoid_param = (5.88387459, 12.51962025, 0.23138583, -4.02494046)
 
     f = MUL_FACTOR_FUNCS["all_to_allv"]
-    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_data_movement_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
 
 
 # Hardcoded for now
@@ -283,7 +273,7 @@ def all_reduce_predictor(**kwargs):
         sigmoid_param = (6.67770176, 11.62004605, 0.19322959, -4.28862824)
 
     f = MUL_FACTOR_FUNCS["all_reduce"]
-    return predict_collective_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_data_movement_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
 
 
 def collective_predictor(c, **kwargs):
