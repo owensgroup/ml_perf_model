@@ -39,6 +39,7 @@ import analysis.extend_distributed as ext_dist
 peak_throughput = GPU_PARAMS["peak_throughput"]
 peak_PCIe_BW = GPU_PARAMS["peak_PCIe_BW"]
 peak_DRAM_BW = GPU_PARAMS["peak_DRAM_BW"]
+DRAM_BW_func = GPU_PARAMS["DRAM_BW_func"]
 peak_L2_BW = GPU_PARAMS["peak_L2_BW"]
 peak_SMEM_BW = GPU_PARAMS["peak_SMEM_BW"]
 num_SM = GPU_PARAMS["num_SM"]

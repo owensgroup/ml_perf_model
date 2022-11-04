@@ -28,10 +28,12 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import os
 import torch
-import argparse, json, os, GPUtil
+import argparse, json, GPUtil
 import numpy as np
 import pandas as pd
+from .memory_bw_utils import *
 
 PM_HOME = os.environ.get('PM_HOME')
 if PM_HOME is None:
@@ -62,6 +64,7 @@ HW_PARAMS = {
         "peak_throughput": 12410.474,
         "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
         "peak_DRAM_BW": 1283.578,
+        "DRAM_BW_func": lambda x: 1283.578, # Use peak for now. TODO: Fix this.
         "peak_L2_BW": 1811.562,
         "peak_SMEM_BW": 2903.956,
         "num_SM": 108,
@@ -71,7 +74,18 @@ HW_PARAMS = {
     "V100": {
         "peak_throughput": 15441.524,
         "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
-        "peak_DRAM_BW": 804.497,
+        "peak_DRAM_BW": 816.953,
+        "DRAM_BW_func": lambda x: predict_bw(
+            x,
+            mul_factor=MUL_FACTOR_FUNCS["others"](1),
+            mem_ch={
+                'ln_p': 16, 
+                'sats_p': 27, 
+                'max_bw': 816.953003, 
+                'overhead': 4.83328223
+            },
+            sigmoid_param=(6.53478964, 11.78536754, 0.19557855, -3.4045424),
+        ),
         "peak_L2_BW": 2847.457,
         "peak_SMEM_BW": 3918.911,
         "num_SM": 80,
@@ -82,6 +96,7 @@ HW_PARAMS = {
         "peak_throughput": 10768.622,
         "peak_PCIe_BW": 3.43, # Roughly the per direction of PCIe 3.0 x8 (8 GB/s)
         "peak_DRAM_BW": 438.699,
+        "DRAM_BW_func": lambda x: 438.699, # Use peak for now. TODO: Fix this.
         "peak_L2_BW": 1406.454,
         "peak_SMEM_BW": 1831.258,
         "num_SM": 30,
@@ -92,6 +107,7 @@ HW_PARAMS = {
         "peak_throughput": 9343.711,
         "peak_PCIe_BW": 7.62, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
         "peak_DRAM_BW": 543.406,
+        "DRAM_BW_func": lambda x: 543.406, # Use peak for now. TODO: Fix this.
         "peak_L2_BW": 1591.259,
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,
