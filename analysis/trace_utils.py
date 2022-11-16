@@ -1142,7 +1142,7 @@ def gather_overhead_raw(overhead_raw_files):
     """
     df = None
     for file in overhead_raw_files:
-        model_name = file.split('/')[-2]
+        model_name = file.split('/')[-3]
         batch_size = file.split('/')[-1].split('_')[1]
         tmp = pd.read_csv(file)
         tmp['model_name'] = [model_name] * len(tmp)
