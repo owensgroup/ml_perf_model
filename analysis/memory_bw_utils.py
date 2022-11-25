@@ -58,29 +58,30 @@ def get_turning_points(data, ratio_th=0.05, bw='bus_bw', latency='latency'):
         bw_ratios.append(data[bw][idx-1] * data[bw][idx+1] / data[bw][idx] / data[bw][idx])
         latency_ratios.append(data[latency][idx-1] * data[latency][idx+1] / data[latency][idx] / data[latency][idx])
 
-    # Mark the saturation point with 95% of peak
+    # Mark the saturation point as two dps after 95% of the peak
+    saturation_idx = num_samples - 1
     for idx in reversed(range(num_samples)):
         if idx == 0 or idx == num_samples - 1:
             continue
-        if data[bw][idx] < (1 - ratio_th) * max_bw:
-            saturation_idx = idx
+        if data[bw][idx] < (1 - ratio_th / 2) * max_bw:
+            saturation_idx = min(idx + 2, num_samples - 1)
             break
 
-    # Mark the first jump of latency as increment_idx
-    increment_idx = 4
+    # Mark the first jump of latency as linearity_idx
+    linearity_idx = 4
     for idx in range(num_samples):
         if idx < 5 or idx == num_samples - 1:
             continue
         if abs(latency_ratios[idx] - 1) > ratio_th * 2:
-            increment_idx = idx - 1
+            linearity_idx = idx - 1
             break
 
-    return increment_idx, saturation_idx
+    return linearity_idx, saturation_idx
 
 
 def get_memory_characteristics(collective_data, size='size', bw='bus_bw', latency='latency'):
     ln_idx, sats_idx = get_turning_points(collective_data, bw=bw, latency=latency)
-    ln_p, sats_p = int(np.log2(collective_data[size][ln_idx])), int(np.log2(collective_data[size][sats_idx])) # log sizes of both ln point and sats point
+    ln_p, sats_p = np.log2(collective_data[size][ln_idx]), np.log2(collective_data[size][sats_idx]) # log sizes of both ln point and sats point
     max_bus_bw = collective_data[bw].max() # Pick the bw for the 3rd section of the curves
     overhead = collective_data[latency][max(ln_idx - 1, 0)]
 
@@ -97,11 +98,15 @@ def sigmoid(x, L, x0, k, b):
     return y
 
 
-def fit_sigmoid_bw_predictor(collective_data, size='size', bw='bus_bw'):
-    xdata = np.log2(collective_data[size])
-    ydata = np.log10(collective_data[bw])
+def fit_sigmoid_bw_predictor(collective_data, mem_ch, size='size', bw='bus_bw'):
+    d = collective_data[
+        (collective_data[size] >= 2 ** mem_ch["ln_p"]) &
+        (collective_data[size] <= 2 ** mem_ch["sats_p"])
+    ]
+    xdata = np.log2(d[size])
+    ydata = np.log10(d[bw])
     p0 = [
-        ydata.max(), 
+        np.log2(collective_data[size]).max(), 
         np.median(xdata),
         1,
         ydata.min()
@@ -118,11 +123,12 @@ def get_sigmoid_bw(s, sigmoid_param):
     return 10 ** sigmoid(s, *sigmoid_param)
 
 
+# In GB/s
 def predict_bw(size, mul_factor, mem_ch, sigmoid_param):
     log_size = np.log2(size)
     if log_size <= mem_ch["ln_p"]:
         return size / mem_ch["overhead"] / 1e3 # us -> GB/s
-    elif log_size >= mem_ch["sats_p"]:
+    elif log_size > mem_ch["sats_p"]:
         return mem_ch["max_bw"]
     else:
         bw = get_sigmoid_bw(log_size, sigmoid_param)
@@ -134,7 +140,7 @@ def predict_data_movement_time(size, mul_factor, mem_ch, sigmoid_param):
     log_size = np.log2(size)
     if log_size <= mem_ch["ln_p"]:
         return mem_ch["overhead"]
-    elif log_size >= mem_ch["sats_p"]:
+    elif log_size > mem_ch["sats_p"]:
         return size / mem_ch["max_bw"] * mul_factor / 1e3 + mem_ch["overhead"] # GB/s -> us
     else:
         bw = get_sigmoid_bw(log_size, sigmoid_param)

@@ -32,6 +32,7 @@ import torch
 import pandas as pd
 import numpy as np
 import json
+from scipy.stats import binom
 from .utils import *
 from .memory_bw_utils import *
 import analysis.extend_distributed as ext_dist
@@ -53,7 +54,6 @@ embedding_ops_stack = []
 
 def embedding_forward_predictor_simple(**kwargs):
     B = kwargs["batch_size"]
-    E = kwargs["num_embeddings"]
     T = kwargs["num_tables"]
     L = kwargs["bag_size"]
     D = kwargs["embedding_dim"]
@@ -64,69 +64,62 @@ def embedding_forward_predictor_simple(**kwargs):
     weights_t = L * div_round_up(4 * D, 32) * 32
     output_t = div_round_up(4 * D, 32) * 32
     total_t = B * T * (table_offsets_t + offsets_t + indices_t + weights_t + output_t)
-    return total_t / peak_DRAM_BW / 1000
+    return GPU_PARAMS["DRAM_BW_time"](total_t)
 
 
-def embedding_forward_predictor(**kwargs):
-    # hit_rate = C(X, L) / C(E, L), X = avg_num_rows_per_table
-    def hit_rate(X, E, L):
-        ret = 1.0
-        e = E
-        x = X
-        for idx in range(L):
-            ret *= x / e
-            x -= 1
-            e -= 1
-        return ret
-
+def get_cached_row_count(**kwargs):
     # Average number of rows per table in L2
     y = kwargs
     if "rows_per_block" in y.keys():
         num_warps_per_sm = y["rows_per_block"] # Number of warps per sm
     else: # FBGEMM
-        used_smem_bytes = int(SMEM_size / 3 * 2 / 16) * 16
-        num_warps_per_sm = 16
-        while num_warps_per_sm * 4 * 4 * 32 * div_round_up(y["embedding_dim"], 128) >= used_smem_bytes:
-            num_warps_per_sm = num_warps_per_sm // 2
-        assert num_warps_per_sm >= 1
+        num_warps_per_sm = 45 # 64 * 0.71 (avg achieved occupancy)
 
     num_warps_simul = num_SM * num_warps_per_sm # Total number of warps simultaneously running on the device
     num_tables_simul = div_round_up(num_warps_simul, y["batch_size"]) # Number of tables simultaneously being accessed on the device
-    avg_table_size = min(L2_size // num_tables_simul, y["num_embeddings"] * y["embedding_dim"] * 4) # Average table size that reside on the device
-    indices_size = 0
-    avg_num_rows_per_table = (avg_table_size - indices_size) // 4 // y["embedding_dim"]
+    avg_num_rows_per_table = min(
+        int(L2_size * 0.9 / num_tables_simul / 4 / y["embedding_dim"]), 
+        y["num_embeddings"],
+        y["batch_size"] * y["bag_size"]
+    ) # Average table size that reside on the device
+    return avg_num_rows_per_table
+
+
+def embedding_forward_predictor(**kwargs):
+    avg_num_rows_per_table_in_l2 = get_cached_row_count(**kwargs)
+    B = kwargs["batch_size"]
+    E = kwargs["num_embeddings"]
+    T = kwargs["num_tables"]
+    L = kwargs["bag_size"]
+    D = kwargs["embedding_dim"]
 
     # Hit rate
-    hr = hit_rate(avg_num_rows_per_table, y["num_embeddings"], y["bag_size"])
+    u = binom.pmf(0, B * L, 1 / E)
+    if (E - u * E) > avg_num_rows_per_table_in_l2: # Cache not able to hold all unique rows for each table
+        # Cold start + 
+        R = avg_num_rows_per_table_in_l2
+        hr = 1 - (R + (B * L - R) * (E - R) / E) / (B * L)
+    else:
+        hr = 1 - (E - u * E) / (B * L) # Cold start considered
 
     # Traffics
-    table_offsets_traffic = 32
-    offsets_traffic = 64
-    indices_dram_traffic = div_round_up(y["bag_size"] * 4, 32) * 32
-    indices_l2_traffic = 0
-    table_traffic = y["bag_size"] * (div_round_up(y["embedding_dim"] * 4, 32) * 32)
-    output_traffic = (div_round_up(y["embedding_dim"] * 4, 32) * 32)
+    table_offsets_t = 32
+    offsets_t = 64
+    indices_t = div_round_up(4 * L, 32) * 32
+    weights_t = L * div_round_up(4 * D, 32) * 32
+    output_t = div_round_up(4 * D, 32) * 32
 
-    total_l2_traffic = y["num_tables"] * (
-                            y["batch_size"] * (
-                                table_offsets_traffic + \
-                                offsets_traffic + \
-                                indices_l2_traffic) + \
-                            hr * (
-                                table_traffic * y["batch_size"] - \
-                                avg_table_size)
-                        )
-    total_dram_traffic = y["num_tables"] * (
-                            y["batch_size"] * (
-                                indices_dram_traffic +
-                                output_traffic) + \
-                            (1 - hr) * (
-                                table_traffic * y["batch_size"] - \
-                                avg_table_size) + \
-                            avg_table_size
-                        )
+    total_l2_traffic = T * B * hr * (weights_t)
+    total_dram_traffic = T * (
+        B * (indices_t + output_t + table_offsets_t + offsets_t) +
+        ((B * (1 - hr) * weights_t))
+    )
+    factor = 1 if D > 64 else (1.1 if D > 32 else 1.6) # Empirical, probably divergence. TODO: Explain this
 
-    return max(total_dram_traffic / peak_DRAM_BW / 1000.0, total_l2_traffic / peak_L2_BW / 1000.0)
+    return max(
+        GPU_PARAMS["DRAM_BW_time"](total_dram_traffic),
+        total_l2_traffic / GPU_PARAMS["L2_BW_func"](total_l2_traffic) / 1000.0
+    ) * factor
 
 
 def embedding_backward_sgd_predictor_simple(**kwargs):
@@ -241,40 +234,58 @@ def mlp_predictor_tensor(x, op_type, backward=False):
 def all_to_all_predictor(**kwargs):
     # V100
     if kwargs["ndevices"] == 4:
-        incr_p = 13 # 2^13 bytes
-        sats_p = 27 # 2^27 bytes
-        max_bw = 56.7134 # GB/s
-        overhead = 85.6 # us
-        sigmoid_param = (5.97878216, 13.33976161, 0.22551425, -3.99731681)
+        mem_ch = {
+            "incr_p": 19, # 2^13 bytes
+            "sats_p": 29, # 2^27 bytes
+            "max_bw": 56.7134, # GB/s
+            "overhead": 85.6, # us
+        }
+        sigmoid_param = (2.04954779, 19.37088144, 0.50613566, -0.2803368)
     else: # 8
-        incr_p = 12 # 2^12 bytes
-        sats_p = 24 # 2^24 bytes
-        max_bw = 45.8154 # GB/s
-        overhead = 68.0 # us
+        mem_ch = {
+            "incr_p": 12, # 2^12 bytes
+            "sats_p": 24, # 2^24 bytes
+            "max_bw": 45.8154, # GB/s
+            "overhead": 68.0, # us
+        }
         sigmoid_param = (5.88387459, 12.51962025, 0.23138583, -4.02494046)
 
     f = MUL_FACTOR_FUNCS["all_to_allv"]
-    return predict_data_movement_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_data_movement_time(
+        kwargs["tensor_size"] * 4, 
+        f(kwargs["ndevices"]), 
+        mem_ch, 
+        sigmoid_param
+    )
 
 
 # Hardcoded for now
 def all_reduce_predictor(**kwargs):
     # V100
     if kwargs["ndevices"] == 4:
-        incr_p = 12 # 2^12 bytes
-        sats_p = 26 # 2^26 bytes
-        max_bw = 75.6704 # GB/s
-        overhead = 84.2 # us
+        mem_ch = {
+            "incr_p": 12, # 2^12 bytes
+            "sats_p": 26, # 2^26 bytes
+            "max_bw": 75.6704, # GB/s
+            "overhead": 84.2, # us
+        }
         sigmoid_param = (6.04564109, 12.70417428, 0.2242347, -3.94164857)
     else: # 8
-        incr_p = 12 # 2^12 bytes
-        sats_p = 25 # 2^25 bytes
-        max_bw = 130.3734 # GB/s
-        overhead = 43.4 # us
+        mem_ch = {
+            "incr_p": 12, # 2^12 bytes
+            "sats_p": 25, # 2^25 bytes
+            "max_bw": 130.3734, # GB/s
+            "overhead": 43.4, # us
+        }
         sigmoid_param = (6.67770176, 11.62004605, 0.19322959, -4.28862824)
 
     f = MUL_FACTOR_FUNCS["all_reduce"]
-    return predict_data_movement_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_data_movement_time(
+        kwargs["tensor_size"] * 4, 
+        f(kwargs["ndevices"]), 
+        mem_ch, 
+        sigmoid_param
+    )
 
 
 def collective_predictor(c, **kwargs):
@@ -334,14 +345,14 @@ def infer_memcpy():
 def infer_elf(big=False, hit_rate_estimation=False, fbgemm=False):
     data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_1_{}.csv'.format(PM_HOME, GPU_NAME, 'fbgemm' if fbgemm else 'shmem'), delimiter=',')
     data = preprocessing(data)
-    if fbgemm: # Accuracy not satisfactory, no matter compute_only or not. TODO: Fix this.
+    if fbgemm:
         # Filter all irrelavant kernels
         data = data[~((data["kernel_name"].str.contains('native')) | (data["kernel_name"].str.contains('bounds_check')))]
         # Keep compute kernels only
         data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
         # Sum up all related kernels
         size_columns = data.columns[:6].to_list()
-        data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
+        data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum(numeric_only=True)
         data.insert(0, 'kernel_name', ['dummy'] * len(data))
     else:
         data = data[data["kernel_name"].str.contains("batched_embedding")]
