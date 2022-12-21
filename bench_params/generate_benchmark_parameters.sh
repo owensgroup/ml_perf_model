@@ -132,6 +132,11 @@ then
     done
 fi
 
+if [ ! -f embedding_lookup_params_dlrm_datasets.txt ];
+then
+    python generate_el_params_from_dataset.py
+fi
+
 # Subject to change: a new way to guarantee backward sizes are all covered by forward sizes
 if [ ! -f fc_params.txt ];
 then
