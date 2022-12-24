@@ -142,60 +142,19 @@ then
 fi
 
 
-# Subject to change: a new way to guarantee backward sizes are all covered by forward sizes
+# Addmm and Linear F&B
 if [ ! -f fc_params.txt ];
 then
     touch fc_params.txt
-    # Addmm and Linear F&B
-    for batch_size in 1;
-    do
-        for M in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512 520 640 648 768 776 896 904 1024 1032 1536 1544 2048 2056 3080 3088 4096 4104; # 5120 5128 6144 6152 7176 7184 8192;
-        do
-            for N in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512 520 640 648 768 776 896 904 1024 1032 1536 1544 2048 2056 3080 3088 4096 4104; # 5120 5128 6144 6152 7176 7184 8192;
-            do
-                for K in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512 520 640 648 768 776 896 904 1024 1032 1536 1544 2048 2056 3080 3088 4096 4104; # 5120 5128 6144 6152 7176 7184 8192;
-                do
-                    A_size="$( echo "$batch_size * $M * $K * 4" | bc -l )"
-                    B_size="$( echo "$batch_size * $N * $K * 4" | bc -l )"
-                    C_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
-                    total_size="$( echo "$A_size + $B_size + $C_size" | bc -l )"
-
-                    if [ "$total_size" -lt "$GPU_memory" ];
-                    then
-                        echo "$batch_size $M $N $K" >> fc_params.txt
-                    fi
-                done
-            done
-        done
-    done
+    python generate_fc_params.py --per-gpu-memory $GPU_memory
 fi
 
 
+# Bmm F&B
 if [ ! -f fc_params_big.txt ];
 then
     touch fc_params_big.txt
-    # Bmm F&B
-    for batch_size in 64 128 256 512 1024 2048 4096;
-    do
-        for M in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512 520 640 648 768 776 896 904 1024 1032;
-        do
-            for N in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512 520 640 648 768 776 896 904 1024 1032;
-            do
-                for K in 32 64 96 128 160 192 224 256 264 320 328 384 392 448 456 512 520 640 648 768 776 896 904 1024 1032;
-                do
-                    A_size="$( echo "$batch_size * $M * $K * 4" | bc -l )"
-                    B_size="$( echo "$batch_size * $N * $K * 4" | bc -l )"
-                    C_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
-                    total_size="$( echo "$A_size + $B_size + $C_size" | bc -l )"
-
-                    if [ "$total_size" -lt "$GPU_memory" ];
-                    then
-                        echo "$batch_size $M $N $K" >> fc_params_big.txt
-                    fi
-                done
-            done
-        done
-    done
+    python generate_fc_params.py --is-big --per-gpu-memory $GPU_memory
 fi
 
 
@@ -585,17 +544,17 @@ fi
 if [ ! -f a2a_2_params.txt ];
 then
     touch a2a_2_params.txt
-    python generate_a2a_params.py --num-gpus 2 --per-gpu-memory $GPU_memory
+    python generate_a2a_params.py --num-gpus 2 --per-gpu-memory $GPU_memory --num-samples -1 # All combinations
 fi
 
 if [ ! -f a2a_4_params.txt ];
 then
     touch a2a_4_params.txt
-    python generate_a2a_params.py --num-gpus 4 --per-gpu-memory $GPU_memory --num-samples 10000
+    python generate_a2a_params.py --num-gpus 4 --per-gpu-memory $GPU_memory
 fi
 
 if [ ! -f a2a_8_params.txt ];
 then
     touch a2a_8_params.txt
-    python generate_a2a_params.py --num-gpus 8 --per-gpu-memory $GPU_memory --num-samples 10000
+    python generate_a2a_params.py --num-gpus 8 --per-gpu-memory $GPU_memory
 fi

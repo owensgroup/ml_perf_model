@@ -11,8 +11,8 @@ TABLE_LIMIT = {
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Generate all-to-all params.')
     parser.add_argument('--num-gpus', type=int, default=4)
-    parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024)
-    parser.add_argument('--num-samples', type=int, default=-1)
+    parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024) # V100, in bytes
+    parser.add_argument('--num-samples', type=int, default=10000)
     args = parser.parse_args()
 
     num_table_limit = TABLE_LIMIT[args.num_gpus]
@@ -25,14 +25,15 @@ if __name__ == '__main__':
             for c in cs:
                 for D in embedding_dims:
                     if B * sum(c) * D * 4 < args.per_gpu_memory:
-                        all_perms.append([B] + list(c) + [D])
+                        all_perms.append(tuple([B] + list(c) + [D]))
     else: # Random
         for iter in range(args.num_samples):
             B = np.random.choice(batch_sizes, 1).item()
             c = np.random.choice(np.arange(1, num_table_limit+1), args.num_gpus, replace=True).tolist()
             D = np.random.choice(embedding_dims, 1).item()
             if B * sum(c) * D * 4 < args.per_gpu_memory:
-                all_perms.append([B] + c + [D])
+                all_perms.append(tuple([B] + c + [D]))
+    all_perms = sorted(list(set(all_perms)))
 
     with open('./a2a_{}_params.txt'.format(args.num_gpus), 'a+') as f:
         for p in all_perms:
