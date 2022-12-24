@@ -31,6 +31,7 @@
 
 
 # Add the GPU memory size in bytes here
+# GPU_memory=42949672960 # A100 (40GB)
 # GPU_memory=16777216000 # V100
 # GPU_memory=12788432896 # XP
 # GPU_memory=16777216000 # P100
@@ -39,7 +40,7 @@
 # Get GPU memory size
 GPU_memory=0
 nvidia-smi --query-gpu=gpu_name,memory.total --format=csv,noheader > /tmp/gpu_name.csv
-for GPU_NAME in "V100" "P100" "Xp" "1080";
+for GPU_NAME in "A100" "V100" "P100" "Xp" "1080";
 do
     if grep -q "$GPU_NAME" /tmp/gpu_name.csv
     then
@@ -579,7 +580,7 @@ then
             do
                 for D in 32 64 128 256;
                 do
-                    input_size="$( echo "$batch_size * $T1 * $T2 * $D * 4" | bc -l )"
+                    input_size="$( echo "$batch_size * ($T1 + $T2) * $D * 4" | bc -l )"
                     if [ "$input_size" -lt "$GPU_memory" ];
                     then
                         echo "$batch_size $T1 $T2 $D" >> a2a_2_params.txt
@@ -605,7 +606,7 @@ then
                     do
                         for D in 32 64 128 256;
                         do
-                            input_size="$( echo "$batch_size * $T1 * $T2 * $T3 * $T4 * $D * 4" | bc -l )"
+                            input_size="$( echo "$batch_size * ($T1 + $T2 + $T3 + $T4) * $D * 4" | bc -l )"
                             if [ "$input_size" -lt "$GPU_memory" ];
                             then
                                 echo "$batch_size $T1 $T2 $T3 $T4 $D" >> a2a_4_params.txt
@@ -618,9 +619,9 @@ then
     done
 fi
 
-if [ ! -f a2a_4_params.txt ];
+if [ ! -f a2a_8_params.txt ];
 then
-    touch a2a_4_params.txt
+    touch a2a_8_params.txt
     for batch_size in 256 512 1024 2048 4096;
     do
         for T1 in 1 2 3 4 5 6;
@@ -641,7 +642,7 @@ then
                                         do
                                             for D in 32 64 128 256;
                                             do
-                                                input_size="$( echo "$batch_size * $T1 * $T2 * $T3 * $T4 * $D * 4" | bc -l )"
+                                                input_size="$( echo "$batch_size * ($T1 + $T2 + $T3 + $T4) * $D * 4" | bc -l )"
                                                 if [ "$input_size" -lt "$GPU_memory" ];
                                                 then
                                                     echo "$batch_size $T1 $T2 $T3 $T4 $D" >> a2a_4_params.txt
