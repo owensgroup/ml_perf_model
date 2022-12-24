@@ -57,6 +57,7 @@ then
     exit
 fi
 
+
 if [ ! -f embedding_lookup_params.txt ];
 then
     touch embedding_lookup_params.txt
@@ -94,6 +95,7 @@ then
         done
     done
 fi
+
 
 if [ ! -f embedding_lookup_params_big.txt ];
 then
@@ -133,10 +135,12 @@ then
     done
 fi
 
+
 if [ ! -f embedding_lookup_params_dlrm_datasets.txt ];
 then
     python generate_el_params_from_dataset.py
 fi
+
 
 # Subject to change: a new way to guarantee backward sizes are all covered by forward sizes
 if [ ! -f fc_params.txt ];
@@ -166,6 +170,7 @@ then
     done
 fi
 
+
 if [ ! -f fc_params_big.txt ];
 then
     touch fc_params_big.txt
@@ -193,6 +198,7 @@ then
     done
 fi
 
+
 if [ ! -f concat_params.txt ];
 then
     touch concat_params.txt
@@ -219,6 +225,7 @@ then
     done
 fi
 
+
 if [ ! -f memcpy_params.txt ];
 then
     touch memcpy_params.txt
@@ -238,6 +245,7 @@ then
         done
     done
 fi
+
 
 if [ ! -f transpose_params.txt ];
 then
@@ -261,6 +269,7 @@ then
     done
 fi
 
+
 if [ ! -f tril_params.txt ];
 then
     touch tril_params.txt
@@ -280,6 +289,7 @@ then
         done
     done
 fi
+
 
 # Conv1d for parallel multi-head mm: stride = 1, padding = 0, dilation = 1, groups = num of mm groups
 if [ ! -f conv1d_params.txt ];
@@ -308,6 +318,7 @@ then
         done
     done
 fi
+
 
 if [ ! -f conv2d_params.txt ];
 then
@@ -405,6 +416,7 @@ then
     done
 fi
 
+
 if [ ! -f conv2d_params_big.txt ];
 then
     touch conv2d_params_big.txt
@@ -501,6 +513,7 @@ then
     done
 fi
 
+
 if [ ! -f bn_params.txt ];
 then
     touch bn_params.txt
@@ -572,90 +585,17 @@ fi
 if [ ! -f a2a_2_params.txt ];
 then
     touch a2a_2_params.txt
-    for batch_size in 256 512 1024 2048 4096;
-    do
-        for T1 in 1 2 3 4 5 6 7 8 9 10;
-        do
-            for T2 in 1 2 3 4 5 6 7 8 9 10;
-            do
-                for D in 32 64 128 256;
-                do
-                    input_size="$( echo "$batch_size * ($T1 + $T2) * $D * 4" | bc -l )"
-                    if [ "$input_size" -lt "$GPU_memory" ];
-                    then
-                        echo "$batch_size $T1 $T2 $D" >> a2a_2_params.txt
-                    fi
-                done
-            done
-        done
-    done
+    python generate_a2a_params.py --num-gpus 2 --per-gpu-memory $GPU_memory
 fi
 
 if [ ! -f a2a_4_params.txt ];
 then
     touch a2a_4_params.txt
-    for batch_size in 256 512 1024 2048 4096;
-    do
-        for T1 in 1 2 3 4 5 6 7 8 9 10;
-        do
-            for T2 in 1 2 3 4 5 6 7 8 9 10;
-            do
-                for T3 in 1 2 3 4 5 6 7 8 9 10;
-                do
-                    for T4 in 1 2 3 4 5 6 7 8 9 10;
-                    do
-                        for D in 32 64 128 256;
-                        do
-                            input_size="$( echo "$batch_size * ($T1 + $T2 + $T3 + $T4) * $D * 4" | bc -l )"
-                            if [ "$input_size" -lt "$GPU_memory" ];
-                            then
-                                echo "$batch_size $T1 $T2 $T3 $T4 $D" >> a2a_4_params.txt
-                            fi
-                        done
-                    done
-                done
-            done
-        done
-    done
+    python generate_a2a_params.py --num-gpus 4 --per-gpu-memory $GPU_memory --num-samples 10000
 fi
 
 if [ ! -f a2a_8_params.txt ];
 then
     touch a2a_8_params.txt
-    for batch_size in 256 512 1024 2048 4096;
-    do
-        for T1 in 1 2 3 4 5 6;
-        do
-            for T2 in 1 2 3 4 5 6;
-            do
-                for T3 in 1 2 3 4 5 6;
-                do
-                    for T4 in 1 2 3 4 5 6;
-                    do
-                        for T1 in 1 2 3 4 5 6;
-                            do
-                                for T2 in 1 2 3 4 5 6;
-                                do
-                                    for T3 in 1 2 3 4 5 6;
-                                    do
-                                        for T4 in 1 2 3 4 5 6;
-                                        do
-                                            for D in 32 64 128 256;
-                                            do
-                                                input_size="$( echo "$batch_size * ($T1 + $T2 + $T3 + $T4) * $D * 4" | bc -l )"
-                                                if [ "$input_size" -lt "$GPU_memory" ];
-                                                then
-                                                    echo "$batch_size $T1 $T2 $T3 $T4 $D" >> a2a_4_params.txt
-                                                fi
-                                            done
-                                        done
-                                    done
-                                done
-                            done
-                        done
-                    done
-                done
-            done
-        done
-    done
+    python generate_a2a_params.py --num-gpus 8 --per-gpu-memory $GPU_memory --num-samples 10000
 fi
