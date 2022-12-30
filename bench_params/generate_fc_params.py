@@ -7,6 +7,7 @@ RANGE = [
     512, 520, 640, 648, 768, 776, 896, 904, 
     1024, 1032, 1536, 1544, 2048, 2056, 3080, 3088, 4096, 4104
 ]
+MEMORY_SCALE_FACTOR = 0.9
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Generate all-to-all params.')
@@ -23,7 +24,7 @@ if __name__ == '__main__':
         M = np.random.choice(RANGE, 1).item()
         K = np.random.choice(RANGE, 1).item()
         N = np.random.choice(RANGE, 1).item()
-        if B * (M * K + N * K + M * N) * 4 < args.per_gpu_memory:
+        if B * (M * K + N * K + M * N) * 4 < args.per_gpu_memory * MEMORY_SCALE_FACTOR:
             all_perms.append((B, M, K, N)) # Forward
             all_perms.append((B, M, N, K)) # Backward: MN * NK = MK
             all_perms.append((B, M, N, K)) # Backward: MN' (NM) * MK = NK

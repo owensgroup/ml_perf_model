@@ -7,6 +7,7 @@ TABLE_LIMIT = {
     4: 10,
     8: 6,
 }
+MEMORY_SCALE_FACTOR = 0.9
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Generate all-to-all params.')
@@ -24,14 +25,14 @@ if __name__ == '__main__':
             cs = combinations_with_replacement(np.arange(1, num_table_limit+1), args.num_gpus)
             for c in cs:
                 for D in embedding_dims:
-                    if B * sum(c) * D * 4 < args.per_gpu_memory:
+                    if B * sum(c) * D * 4 < args.per_gpu_memory * MEMORY_SCALE_FACTOR:
                         all_perms.append(tuple([B] + list(c) + [D]))
     else: # Random
         for iter in range(args.num_samples):
             B = np.random.choice(batch_sizes, 1).item()
             c = np.random.choice(np.arange(1, num_table_limit+1), args.num_gpus, replace=True).tolist()
             D = np.random.choice(embedding_dims, 1).item()
-            if B * sum(c) * D * 4 < args.per_gpu_memory:
+            if B * sum(c) * D * 4 < args.per_gpu_memory * MEMORY_SCALE_FACTOR:
                 all_perms.append(tuple([B] + c + [D]))
     all_perms = sorted(list(set(all_perms)))
 
