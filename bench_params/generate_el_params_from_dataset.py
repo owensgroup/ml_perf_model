@@ -117,7 +117,7 @@ def process_data(args):
         if len(params) >= args.num_samples:
             break
 
-    with open("./embedding_lookup_params_dlrm_datasetsssss.txt", 'a+') as f:
+    with open("./embedding_lookup_params_dlrm_datasets.txt", 'a+') as f:
         for p in params:
             f.write(p)
 

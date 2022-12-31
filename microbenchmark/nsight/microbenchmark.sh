@@ -77,7 +77,7 @@ then
     fi
     if [ "$fbgemm" -ne "0" ];
     then
-        header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
+        header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim"
         file_prefix="${file_prefix}_fbgemm"
         if [ "$fbgemm_caching" == "1" ];
         then
@@ -88,7 +88,7 @@ then
             file_prefix="${file_prefix}_dlrm_datasets"
         fi
     else
-        header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim"
+        header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
         if [ "$shmem" == "1" ];
         then
             file_prefix="${file_prefix}_shmem"
@@ -177,6 +177,16 @@ then
     touch "$file_name"
     echo "${header}" >> "$file_name"
 fi
+# Per-batch reuse factor collection
+if [[ "$op_type" == "embedding_lookup" && "$fbgemm" == "2" ]];
+then
+    reuse_factor_file_name="${file_prefix}_rf.csv"
+    if [ ! -f "$reuse_factor_file_name" ];
+    then
+        touch "$reuse_factor_file_name"
+        echo "batch_size,num_embeddings,num_tables,bag_size,embedding_dim,reuse_factors" >> "$reuse_factor_file_name"
+    fi
+fi
 
 # Benchmark operator
 while IFS= read -r line
@@ -205,7 +215,7 @@ do
             fi
             if [ "$fbgemm" == "2" ]; # Dataset
             then
-                bench_param="${bench_param} --dataset /nvme/deep-learning/dlrm_datasets/embedding_bag/fbgemm_t856_bs65536.pt"
+                bench_param="${bench_param} --dataset /nvme/deep-learning/dlrm_datasets/embedding_bag/2021/fbgemm_t856_bs65536.pt"
             fi
         else
             bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"
@@ -265,9 +275,24 @@ do
 
     if [[ "$op_type" == "embedding_lookup" && "$fbgemm" == "2" ]];
     then
+        # Pooling factors
         tmp="$( grep 'L: ' /tmp/${BUS_ID}_op.txt | awk '{print $14}' )"
+        if [[ "$tmp" == "" ]];
+        then
+            echo "==== Probably OOM! ===="
+            echo "$bench_param"
+            continue
+        fi
         array[3]="${tmp::-1}"
-        echo ${array[3]}
+        array_len=${#array[@]}
+        rf_row=""
+        for (( j=0; j<array_len; j++ ));
+        do
+            rf_row="$rf_row,${array[j]}"
+        done
+        # Reuse factors
+        tmp="$( grep 'Reuse ' /tmp/${BUS_ID}_op.txt | awk '{print $3}' )"
+        echo "${rf_row:1},$tmp" >> "$reuse_factor_file_name"
     fi
 
     # Get gpu trace
