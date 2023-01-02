@@ -35,6 +35,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('Get performance model error for ops.')
     parser.add_argument('--op-type', type=str, default='all')
     parser.add_argument('--backward', action='store_true', default=False)
+    parser.add_argument('--emb-heuristic', action='store_true', default=False)
+    parser.add_argument("--emb-data-path-suffix", type=str, default='fbgemm_dlrm_datasets')
+    parser.add_argument("--emb-table-configs-path", type=str, default='/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/fbgemm_t856_bs65536_configs.json')
     args = parser.parse_args()
 
     if args.op_type == 'all':
@@ -52,10 +55,16 @@ if __name__ == '__main__':
                     op_type == 'memcpy') and \
                         p == 'backward': # No backward for these ops
                 continue
-            if op_type == 'embedding_lookup':
+            if op_type == 'embedding_lookup' and args.emb_heuristic:
                 for big in [False, True]:
                     for hit_rate_estimation in [False, True]:
                         for fbgemm in [False, True]:
                             infer(op_type, p=='backward', big=big, hit_rate_estimation=hit_rate_estimation, fbgemm=fbgemm)
             else:
-                infer(op_type, p=='backward')
+                infer(
+                    op_type,
+                    backward=(p=='backward'),
+                    emb_use_mlp=True,
+                    suffix=args.emb_data_path_suffix,
+                    table_configs=args.emb_table_configs_path
+                )

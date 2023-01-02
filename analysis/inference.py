@@ -231,7 +231,7 @@ def memcpy_predictor(**kwargs):
 
 def mlp_predictor_tensor(x, op_type, backward=False):
     net = get_pretrained_net(op_type, backward)
-    result = torch.exp(net(x.cpu()).detach().view(-1))
+    result = torch.exp(net(x, fbgemm=(op_type=="embedding_lookup"))).cpu().detach().view(-1)
     if result.shape == torch.Size((1,)):
         result = result.item()
     return result
@@ -309,7 +309,7 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
 
 def infer_concat():
     concat_data = pd.read_csv('{}/data/{}/kernel/concat_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
-    concat_data = preprocessing(concat_data)
+    concat_data = preprocess(concat_data)
     concat_data = concat_data[concat_data["batch_size"] > 1]
     A_size = concat_data["batch_size"] * concat_data["M"] * concat_data["K"]
     B_size = concat_data["batch_size"] * concat_data["N"] * concat_data["K"]
@@ -321,7 +321,7 @@ def infer_concat():
 
 def infer_memcpy():
     memcpy_data = pd.read_csv('{}/data/{}/kernel/memcpy_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
-    memcpy_data = preprocessing(memcpy_data)
+    memcpy_data = preprocess(memcpy_data)
     tensor_size = memcpy_data['batch_size'] * memcpy_data['M'] * memcpy_data['N']
     filter = (tensor_size * 4 / memcpy_data['kernel_runtime'] / 1e3 < peak_PCIe_BW) # Filter out samples with unreasonable timing
     memcpy_data = memcpy_data[filter]
@@ -333,15 +333,9 @@ def infer_memcpy():
 
 def infer_elf(big=False, hit_rate_estimation=False, fbgemm=False):
     data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_1_{}.csv'.format(PM_HOME, GPU_NAME, 'fbgemm' if fbgemm else 'shmem'), delimiter=',')
-    data = preprocessing(data)
-    if fbgemm: # Accuracy not satisfactory, no matter compute_only or not. TODO: Fix this.
-        # Filter all irrelavant kernels
-        data = data[~((data["kernel_name"].str.contains('native')) | (data["kernel_name"].str.contains('bounds_check')))]
-        # Keep compute kernels only
-        data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
-        # Sum up all related kernels
-        size_columns = data.columns[:6].to_list()
-        data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
+    data = preprocess(data)
+    if fbgemm:
+        data = preprocess_fbgemm(data)
         data.insert(0, 'kernel_name', ['dummy'] * len(data))
     else:
         data = data[data["kernel_name"].str.contains("batched_embedding")]
@@ -370,15 +364,9 @@ def infer_elf(big=False, hit_rate_estimation=False, fbgemm=False):
 
 def infer_elb(big=False, hit_rate_estimation=False, fbgemm=False):
     data = pd.read_csv('{}/data/{}/kernel/embedding_lookup_0_sgd_{}.csv'.format(PM_HOME, GPU_NAME, 'fbgemm' if fbgemm else 'shmem'), delimiter=',')
-    data = preprocessing(data)
-    if fbgemm: # Accuracy not satisfactory, no matter compute_only or not. TODO: Fix this.
-        # Filter all irrelavant kernels
-        data = data[~((data["kernel_name"].str.contains('native')) | (data["kernel_name"].str.contains('bounds_check')))]
-        # Keep compute kernels only
-        data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
-        # Sum up all related kernels
-        size_columns = data.columns[:6].to_list()
-        data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
+    data = preprocess(data)
+    if fbgemm:
+        data = preprocess_fbgemm(data)
         data.insert(0, 'kernel_name', ['dummy'] * len(data))
     else:
         data = data[data["kernel_name"].str.contains("batched_embedding")]
@@ -413,8 +401,8 @@ def infer_el(backward=False, big=False, hit_rate_estimation=False, fbgemm=False)
     return None, error
 
 
-def infer_from_model(op_type, backward=False):
-    _, x, y = get_data(op_type, backward)
+def infer_from_model(op_type, backward=False, **kwargs):
+    _, _, _, x, y = get_train_test_data(op_type, backward, test_frac=1.0, **kwargs)
     suffix = "{}_{}".format(op_type, 1 if not backward else 0)
     with open("{}/analysis/ml_predictors/{}/best_config_{}.json".format(PM_HOME, GPU_NAME, suffix), "r") as f:
         best_config = json.load(f)
@@ -430,13 +418,13 @@ def infer(op_type, backward=False, **kwargs):
         best_config, error = infer_concat()
     elif op_type == "memcpy":
         best_config, error = infer_memcpy()
-    elif op_type == "embedding_lookup":
+    elif op_type == "embedding_lookup" and ("emb_use_mlp" not in kwargs.keys() or not kwargs["emb_use_mlp"]):
         big = kwargs["big"]
         hit_rate_estimation = kwargs["hit_rate_estimation"]
         is_fbgemm = kwargs["fbgemm"]
         best_config, error = infer_el(backward=backward, big=big, hit_rate_estimation=hit_rate_estimation, fbgemm=is_fbgemm)
-    else: # fully_connected / conv2d / conv1d / transpose / bn / tril
-        best_config, error = infer_from_model(op_type, backward)
+    else: # embedding_lookup (MLP) / fully_connected / conv2d / conv1d / transpose / bn / tril
+        best_config, error = infer_from_model(op_type, backward, **kwargs)
     return best_config, gmae(error)
 
 
