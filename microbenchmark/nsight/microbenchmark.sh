@@ -180,7 +180,7 @@ fi
 # Per-batch reuse factor collection
 if [[ "$op_type" == "embedding_lookup" && "$fbgemm" == "2" ]];
 then
-    reuse_factor_file_name="${file_prefix}_rf.csv"
+    reuse_factor_file_name="embedding_lookup_fbgemm_dlrm_datasets_rf.csv"
     if [ ! -f "$reuse_factor_file_name" ];
     then
         touch "$reuse_factor_file_name"
