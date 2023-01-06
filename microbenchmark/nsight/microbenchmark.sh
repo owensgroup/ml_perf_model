@@ -59,12 +59,19 @@ if [ "$op_type" == "embedding_lookup" ];
 then
     if [ "$fbgemm" == "2" ];
     then
-        param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_dlrm_datasets.txt"
-    elif [ "$is_big" == "1" ];
-    then
-        param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_big.txt"
-    else
-        param_file_name="${PM_HOME}/bench_params/embedding_lookup_params.txt"
+        if [ "$is_big" == "1" ]; # Borrow is_big for dlrm dataset testing
+        then
+            param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_dlrm_datasets_test.txt"
+        else
+            param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_dlrm_datasets.txt"
+        fi
+    else 
+        if [ "$is_big" == "1" ];
+        then
+            param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_big.txt"
+        else
+            param_file_name="${PM_HOME}/bench_params/embedding_lookup_params.txt"
+        fi
     fi
     if [ "$is_forward" == "0" ];
     then
@@ -85,6 +92,7 @@ then
         fi
         if [ "$fbgemm" == "2" ];
         then
+            header="${header},dataset_path"
             file_prefix="${file_prefix}_dlrm_datasets"
         fi
     else
@@ -147,7 +155,28 @@ else # memcpy
 fi
 if [ "$is_big" == "1" ];
 then
-    file_prefix="${file_prefix}_big"
+    if [[ "$op_type" == "embedding_lookup" && "$fbgemm" == "2" ]]; # Borrow is_big for dlrm dataset testing
+    then
+        file_prefix="${file_prefix}_test"
+        reuse_factor_file_name="${file_prefix%/*}/embedding_lookup_fbgemm_dlrm_datasets_test_rf.csv"
+        if [ ! -f "$reuse_factor_file_name" ];
+        then
+            touch "$reuse_factor_file_name"
+            echo "batch_size,num_embeddings,num_tables,bag_size,embedding_dim,dataset_path,reuse_factors" >> "$reuse_factor_file_name"
+        fi
+    else
+        file_prefix="${file_prefix}_big"
+    fi
+else
+    if [[ "$op_type" == "embedding_lookup" && "$fbgemm" == "2" ]]; # Borrow is_big for dlrm dataset testing
+    then
+        reuse_factor_file_name="${file_prefix%/*}/embedding_lookup_fbgemm_dlrm_datasets_rf.csv"
+        if [ ! -f "$reuse_factor_file_name" ];
+        then
+            touch "$reuse_factor_file_name"
+            echo "batch_size,num_embeddings,num_tables,bag_size,embedding_dim,dataset_path,reuse_factors" >> "$reuse_factor_file_name"
+        fi
+    fi
 fi
 
 header="${header},kernel_runtime,op_runtime"
@@ -177,16 +206,6 @@ then
     touch "$file_name"
     echo "${header}" >> "$file_name"
 fi
-# Per-batch reuse factor collection
-if [[ "$op_type" == "embedding_lookup" && "$fbgemm" == "2" ]];
-then
-    reuse_factor_file_name="embedding_lookup_fbgemm_dlrm_datasets_rf.csv"
-    if [ ! -f "$reuse_factor_file_name" ];
-    then
-        touch "$reuse_factor_file_name"
-        echo "batch_size,num_embeddings,num_tables,bag_size,embedding_dim,reuse_factors" >> "$reuse_factor_file_name"
-    fi
-fi
 
 # Benchmark operator
 while IFS= read -r line
@@ -215,7 +234,7 @@ do
             fi
             if [ "$fbgemm" == "2" ]; # Dataset
             then
-                bench_param="${bench_param} --dataset /nvme/deep-learning/dlrm_datasets/embedding_bag/2021/fbgemm_t856_bs65536.pt"
+                bench_param="${bench_param} --dataset ${array[5]}"
             fi
         else
             bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"

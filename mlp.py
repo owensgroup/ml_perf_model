@@ -86,6 +86,8 @@ if __name__ == '__main__':
         test_frac=args.test_frac,
         suffix=args.emb_data_path_suffix,
         table_configs=args.emb_table_configs_path)
+    test_x = [xx.cuda() for xx in test_x] if isinstance(test_x, list) else test_x.cuda()
+    test_y = [yy.cuda() for yy in test_y] if isinstance(test_y, list) else test_y.cuda()
 
     train_dataset = get_dataset(train_x, train_y, fbgemm=is_emb)
     loader = Data.DataLoader(
@@ -149,8 +151,8 @@ if __name__ == '__main__':
                                 loss = loss_func(prediction, train_y.view(-1))
                                 print("Training loss: {}".format(loss))
 
-                        estimated_time = torch.exp(net(test_x.cuda(), fbgemm=is_emb)).cpu().detach().view(-1)
-                        error = abs_err(estimated_time, torch.exp(test_y.cuda()).cpu().detach().view(-1))
+                        estimated_time = torch.exp(net(test_x, fbgemm=is_emb)).cpu().detach().view(-1)
+                        error = abs_err(estimated_time, torch.exp(test_y).cpu().detach().view(-1))
                         histogram(error, is_abs=True)
                         print("******* Testing results *******")
                         print("GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
