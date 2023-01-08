@@ -36,8 +36,7 @@ if __name__ == '__main__':
     parser.add_argument('--op-type', type=str, default='all')
     parser.add_argument('--backward', action='store_true', default=False)
     parser.add_argument('--emb-heuristic', action='store_true', default=False)
-    parser.add_argument("--emb-data-path-suffix", type=str, default='fbgemm_dlrm_datasets')
-    parser.add_argument("--emb-table-configs-path", type=str, default='/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/fbgemm_t856_bs65536_configs.json')
+    parser.add_argument("--emb-data-path-suffix", type=str, default='fbgemm_dlrm_datasets_test')
     args = parser.parse_args()
 
     if args.op_type == 'all':
@@ -66,5 +65,4 @@ if __name__ == '__main__':
                     backward=(p=='backward'),
                     emb_use_mlp=True,
                     suffix=args.emb_data_path_suffix,
-                    table_configs=args.emb_table_configs_path
                 )

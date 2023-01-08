@@ -374,13 +374,22 @@ def preprocess(df):
     return df
 
 
-def preprocess_fbgemm(data):
+def preprocess_fbgemm(data, backward=False):
     # Filter all irrelavant kernels
-    data = data[~((data["kernel_name"].str.contains('native')) | (data["kernel_name"].str.contains('bounds_check')))]
-    # Keep compute kernels only
-    data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
+    data = data[~(
+        (data["kernel_name"].str.contains('elementwise')) | \
+        (data["kernel_name"].str.contains('Accessor'))
+    )]
+    # # Keep compute kernels only
+    # data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
+    if backward:
+        data = data[~(data['kernel_name'].str.contains('forward'))]
+
     # Sum up all related kernels
-    size_columns = data.columns[:6].to_list()
+    if 'dataset_path' in data.columns:
+        size_columns = data.columns[:7].to_list()
+    else:
+        size_columns = data.columns[:6].to_list()
     data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
     return data
 
@@ -430,7 +439,7 @@ def get_pretrained_net(op_type, backward=False):
         best_config = json.load(f)
         n_hidden = [best_config["size"]] * best_config["num_layers"]
     if op_type == "embedding_lookup":
-        n_feature = 22
+        n_feature = 21
     elif op_type == "fully_connected":
         n_feature = 4
     elif op_type == "conv2d":
@@ -492,27 +501,15 @@ class MLP(torch.nn.Module):
 def transform_emb_data(data, table_configs, test_frac=0.2):
     train_data, test_data = (data, None) if test_frac == 1.0 else train_test_split(data, test_size=test_frac)
 
-    # Stats of training data
-    b_log_max, b_log_min = np.log(train_data['batch_size'].max()), np.log(train_data['batch_size'].min())
-    ls = np.array(list(set([element for list_ in train_data['bag_size'].apply(lambda x: [float(xx) for xx in x.split('-')]) for element in list_])))
-    ls_mean, ls_std = ls.mean(), ls.std()
-    es = np.array([t["num_embeddings"] for t in table_configs])
-    e_mean, e_std = es.mean(), es.std()
-    ds = np.array([t["embedding_dim"] for t in table_configs])
-    d_mean, d_std = ds.mean(), ds.std()
-    ss = np.array([t["size"] for t in table_configs])
-    s_mean, s_std = ss.mean(), ss.std()
-
     def f(x):
         return torch.tensor([
             ([
-                (np.log(x['batch_size']) - b_log_min) / (b_log_max - b_log_min) - 0.5,
-                (table_configs[int(t_idx)]['embedding_dim'] - e_mean) / e_std,
-                (float(L) - ls_mean) / ls_std,
-                (float(D) - d_mean) / d_std,
-                (table_configs[int(t_idx)]['size'] - s_mean) / s_std,
+                np.log(x['batch_size']),
+                np.log(table_configs[x['dataset_path']][int(t_idx)]['num_embeddings']),
+                np.log(float(L)),
+                np.log(float(D)),
             ] + [
-                float(rf) for rf in rfs.split('-')
+                float(rf) for rf in rfs.split('-') # All in range (0, 1)
             ]) for t_idx, L, D, rfs in zip(
                 x['num_embeddings'].split('-'),
                 x['bag_size'].split('-'),
@@ -521,10 +518,6 @@ def transform_emb_data(data, table_configs, test_frac=0.2):
             )
         ], dtype=torch.float32)
 
-    # B: log and scale
-    # E: log
-    # L: std
-    # D: log
     train_x = [x for x in train_data.apply(f, axis=1).tolist()]
     train_y = torch.tensor(np.log(train_data["kernel_runtime"].values), dtype=torch.float32)
     if test_frac == 1.0: # Use train data as test data if only testing
@@ -537,23 +530,30 @@ def transform_emb_data(data, table_configs, test_frac=0.2):
 
 
 def get_emb_train_test_data(backward=False, test_frac=0.2, **kwargs):
-    assert 'table_configs' in kwargs.keys()
     suffix = ('_' + kwargs['suffix']) if 'suffix' in kwargs.keys() else ''
-    data_path = '{}/data/{}/kernel/embedding_lookup_{}{}.csv'.format(PM_HOME, GPU_NAME, '1' if not backward else '0_sgd', suffix)
+    data_path = '{}/data/{}/kernel/embedding_lookup_{}{}.csv'.format(
+        PM_HOME,
+        GPU_NAME,
+        '1' if not backward else '0_sgd',
+        suffix,
+    )
     data = pd.read_csv(data_path, delimiter=',')
-    data = preprocess_fbgemm(data)
+    data = preprocess_fbgemm(data, backward=backward)
 
     rf_file_path = '/'.join(data_path.split('/')[:-1] + ['embedding_lookup_{}_rf.csv'.format(kwargs['suffix'])])
     rf = pd.read_csv(rf_file_path, delimiter=',')
-    data = pd.merge(data, rf, on=data.columns[:5].tolist()) # kernel_name & BETLD
+    data = pd.merge(data, rf, on=data.columns[:6].tolist()) # kernel_name & BETLD
 
-    with open(kwargs['table_configs']) as f:
-        table_configs = json.load(f)["tables"]
-        for i in range(len(table_configs)):
-            table_configs[i]["size"] = table_configs[i]["embedding_dim"] * table_configs[i]["num_embeddings"]
+    dataset_paths = data["dataset_path"].unique().tolist()
+    table_config_paths = [(os.path.splitext(x)[0] + '_configs.json') for x in dataset_paths]
+    table_configs = {}
+    for dp, cp in zip(dataset_paths, table_config_paths):
+        with open(cp) as f:
+            table_config = json.load(f)["tables"]
+        table_configs[dp] = table_config
 
     train_x, train_y, test_x, test_y = transform_emb_data(data, table_configs, test_frac=test_frac)
-    return 22, train_x, train_y, test_x, test_y
+    return test_x[0].shape[1], train_x, train_y, test_x, test_y
 
 
 def get_train_test_data(op_type, backward=False, test_frac=0.2, **kwargs):

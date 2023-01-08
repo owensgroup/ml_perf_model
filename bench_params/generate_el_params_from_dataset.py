@@ -69,7 +69,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('Generate all-to-all params.')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024) # V100, in bytes
-    parser.add_argument('--dataset-path', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/fbgemm_t856_bs65536.pt") # V100, in bytes
+    parser.add_argument('--dataset-path', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/fbgemm_t856_bs65536.pt")
     parser.add_argument('--num-samples', type=int, default=20000)
     parser.add_argument('--per-gpu-table-limit', type=int, default=8)
     parser.add_argument('--batch-sizes', type=str, default="512,1024,2048,4096")

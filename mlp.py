@@ -66,7 +66,6 @@ if __name__ == '__main__':
     parser.add_argument("--epoch", type=int, default=800)
     parser.add_argument("--test_frac", type=float, default=0.2)
     parser.add_argument("--emb-data-path-suffix", type=str, default='fbgemm_dlrm_datasets')
-    parser.add_argument("--emb-table-configs-path", type=str, default='/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/fbgemm_t856_bs65536_configs.json')
     args = parser.parse_args()
 
     assert args.op_type in [
@@ -84,8 +83,7 @@ if __name__ == '__main__':
         op_type=args.op_type,
         backward=args.backward,
         test_frac=args.test_frac,
-        suffix=args.emb_data_path_suffix,
-        table_configs=args.emb_table_configs_path)
+        suffix=args.emb_data_path_suffix)
     test_x = [xx.cuda() for xx in test_x] if isinstance(test_x, list) else test_x.cuda()
     test_y = [yy.cuda() for yy in test_y] if isinstance(test_y, list) else test_y.cuda()
 
@@ -108,7 +106,6 @@ if __name__ == '__main__':
             backward=args.backward,
             emb_use_mlp=True,
             suffix=args.emb_data_path_suffix,
-            table_configs=args.emb_table_configs_path
         )
         if args.inference:
             exit()
