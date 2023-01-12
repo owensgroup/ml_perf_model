@@ -506,7 +506,7 @@ def transform_emb_data(data, table_configs, test_frac=0.2):
             ([
                 np.log(x['batch_size']),
                 np.log(table_configs[x['dataset_path']][int(t_idx)]['num_embeddings']),
-                np.log(float(L)),
+                np.log(float(L) if float(L) != 0.0 else 1e-3), # Avoid L = 0
                 np.log(float(D)),
             ] + [
                 float(rf) for rf in rfs.split('-') # All in range (0, 1)
