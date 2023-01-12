@@ -138,7 +138,10 @@ fi
 
 if [ ! -f embedding_lookup_params_dlrm_datasets.txt ];
 then
-    python generate_el_params_from_dataset.py --per-gpu-memory $GPU_memory --num-samples 20000
+    python generate_el_table_configs_from_datasets.py --dataset-path /nvme/deep-learning/dlrm_datasets/embedding_bag/2021
+    python generate_el_table_configs_from_datasets.py --dataset-path /nvme/deep-learning/dlrm_datasets/embedding_bag/2022
+    python sample_batches_from_dataset.py --per-gpu-memory $GPU_memory --num-samples 10000
+    python sample_batches_from_dataset.py --per-gpu-memory $GPU_memory --num-samples 10000 --is-test
 fi
 
 

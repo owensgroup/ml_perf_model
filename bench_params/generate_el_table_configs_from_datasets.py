@@ -98,7 +98,7 @@ def gen_table_configs(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser('Generate all-to-all params.')
+    parser = argparse.ArgumentParser('Generate embedding lookup configs.')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--dataset-path', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag/2021")
     parser.add_argument('--dim-range', type=str, default="32,64,128,256")

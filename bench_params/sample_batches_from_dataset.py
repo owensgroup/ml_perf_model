@@ -96,7 +96,7 @@ def process_data(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser('Generate all-to-all params.')
+    parser = argparse.ArgumentParser('Sample batches of embedding lookup params from datasets.')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument("--is-test", action="store_true", default=False)
     parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024) # V100, in bytes

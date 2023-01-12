@@ -40,7 +40,7 @@ RANGE = [
 MEMORY_SCALE_FACTOR = 0.9
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Generate all-to-all params.')
+    parser = argparse.ArgumentParser('Generate FC params.')
     parser.add_argument('--is-big', action='store_true', default=False)
     parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024) # V100, in bytes
     parser.add_argument('--num-samples', type=int, default=5000)
