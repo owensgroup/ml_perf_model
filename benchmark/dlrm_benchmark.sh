@@ -24,7 +24,7 @@ do
     esac
 done
 
-model_list="DLRM_vipul DLRM_test DLRM_default DLRM_MLPerf DLRM_DDP"
+model_list="DLRM_vipul DLRM_test DLRM_default DLRM_MLPerf DLRM_DDP DLRM_open_source"
 if [[ $model_list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -120,6 +120,19 @@ then
             --mlperf-bin-shuffle "
         # " --test-num-workers=16"
         # " --test-mini-batch-size=16384"
+elif [[ $model_name == "DLRM_open_source" ]]; # DLRM using the open-source dataset
+then
+    _args=" --data-generation=dataset\
+            --data-set=dlrm_open_source\
+            --raw-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/merged_simple.pt\
+            --arch-embedding-table-indices=4-24-26-156-340-404\
+            --arch-mlp-bot=512-1024-512-256-128\
+            --arch-mlp-top=1024-1024-512-512-256-1\
+            --arch-sparse-feature-size=128\
+            --loss-function=bce\
+            --learning-rate=1.0\
+            --test-freq=102400\
+            --memory-map " # default: 4-24-26-156-340-404
 fi
 
 # GPU Benchmarking

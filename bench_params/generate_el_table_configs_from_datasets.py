@@ -30,24 +30,24 @@
 
 import argparse
 import glob
-import gzip
 import json
 import os
+import sys
 
 import numpy as np
 import torch
 
 
-def gen_table_configs(args):
-    filename = gzip.open(args.dataset_path) if args.dataset_path.endswith('gz') else args.dataset_path
-    indices, offsets, lengths = torch.load(filename)
+def gen_config_per_table(args, dataset_path):
+    indices, offsets, lengths = torch.load(dataset_path)
     num_tables, batch_size = lengths.shape
 
     indices = indices.cuda()
     offsets = offsets.cuda()
 
     # Split the tables
-    lS_pooling_factors = list(map(int, lengths.float().mean(dim=1).tolist()))
+    lS_pooling_factor_mean = lengths.float().mean(dim=1).tolist()
+    lS_pooling_factor_std = lengths.float().std(dim=1).tolist()
     lS_rows, lS_bin_counts = [], []
     for t in range(num_tables):
         start = t * batch_size
@@ -86,15 +86,78 @@ def gen_table_configs(args):
     for i in range(T):
         table_config = {}
         table_config["index"] = i
-        table_config["num_embeddings"] = int(lS_rows[i])
         table_config["embedding_dim"] = int(lS_dims[i])
-        table_config["pooling_factor"] = int(lS_pooling_factors[i])
+        table_config["pooling_factor"] = lS_pooling_factor_mean[i]
+        table_config["pooling_factor_std"] = lS_pooling_factor_std[i]
         for j, _ in enumerate(lS_bin_counts[i]):
             table_config["bin_"+str(j)] = lS_bin_counts[i][j]
         table_configs["tables"].append(table_config)
 
-    with open(args.table_config_path, "w") as f:
+    config_path = os.path.splitext(dataset_path)[0] + '_configs.json'
+    with open(config_path, "w") as f:
         json.dump(table_configs, f)
+
+    return lS_rows
+
+
+def gen_table_configs(args, datasets):
+    final_rows_per_table = None
+    for d in datasets:
+        print("Processing dataset:", d)
+        np.random.seed(args.seed) # Guarantee datasets with the same number of tables use the same dims
+        config_path = os.path.splitext(d)[0] + '_configs.json'
+        if not os.path.exists(config_path):
+            lS_rows = gen_config_per_table(args, d)
+        else:
+            lS_rows = None
+            with open(config_path, "r") as f:
+                tables = json.load(f)["tables"]
+                if "num_embeddings" in tables[0].keys():
+                    lS_rows = [x["num_embeddings"] for x in tables]
+            if not lS_rows:
+                lS_rows = gen_config_per_table(args, d)
+        if not final_rows_per_table:
+            final_rows_per_table = lS_rows
+        else:
+            final_rows_per_table = [max(x, y) for x, y in zip(lS_rows, final_rows_per_table)]
+
+    for d in datasets:
+        config_path = os.path.splitext(d)[0] + '_configs.json'
+        with open(config_path, "r") as f:
+            table_configs = json.load(f)
+            for t in range(len(table_configs["tables"])):
+                table_configs["tables"][t]["num_embeddings"] = final_rows_per_table[t]
+        with open(config_path, "w") as f:
+            json.dump(table_configs, f)
+
+
+def compare_and_generate_common_configs(args, datasets):
+    configs = [os.path.splitext(d)[0] + '_configs.json' for d in datasets]
+    common_config = {
+        "tables": []
+    }
+    for i in range(len(configs)):
+        for j in range(i+1, len(configs)):
+            with open(configs[i], 'r') as f:
+                json1 = json.load(f)["tables"]
+            with open(configs[j], 'r') as f:
+                json2 = json.load(f)["tables"]
+            for idy, x in enumerate([json1, json2]):
+                for idx in range(len(x)):
+                    tbd = []
+                    for k, v in x[idx].items():
+                        if k.startswith('bin') or k.startswith('pooling'):
+                            tbd.append(k)
+                    for k in tbd:
+                        del x[idx][k]
+                    if i == 0 and j == 1 and idy == 0:
+                        common_config["tables"].append(x[idx])
+                    x[idx] = tuple(sorted(x[idx].items()))
+            for x, y in zip(json1, json2):
+                if x != y:
+                    sys.exit("{} and {} are not from the same dataset! (Different field: {}, {})", configs[i], configs[j], x, y)
+    with open(os.path.join(args.dataset_path, "common_configs.json"), 'w') as f:
+        json.dump(common_config, f)
 
 
 if __name__ == "__main__":
@@ -103,23 +166,11 @@ if __name__ == "__main__":
     parser.add_argument('--dataset-path', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag/2021")
     parser.add_argument('--dim-range', type=str, default="32,64,128,256")
     args = parser.parse_args()
-    np.random.seed(args.seed)
     args.dim_range = list(map(int, args.dim_range.split(",")))
 
     if os.path.isdir:
-        datasets = [f for f_ in [glob.glob(args.dataset_path + e) for e in ('/*.pt', '/*.pt.gz')] for f in f_]
+        datasets = [f for f_ in [glob.glob(args.dataset_path + e) for e in ('/*.pt',)] for f in f_ if not os.path.basename(f).startswith('merged')]
     else:
         datasets = [args.dataset_path]
-
-    for d in datasets:
-        print("Path:", d)
-        args.dataset_path = d
-
-        np.random.seed(args.seed) # Guarantee datasets with the same number of tables use the same dims
-        splitext_filename = os.path.splitext(args.dataset_path)[0]
-        if args.dataset_path.endswith('gz'):
-            splitext_filename = os.path.splitext(splitext_filename)[0]
-
-        args.table_config_path = splitext_filename + '_configs.json'
-        if not os.path.exists(args.table_config_path):
-            gen_table_configs(args)
+    gen_table_configs(args, datasets)
+    compare_and_generate_common_configs(args, datasets)
