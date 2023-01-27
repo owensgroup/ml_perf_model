@@ -421,7 +421,9 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
                     parent_found = True
                     active_leaves.append(True) # Mark this leaf as active
                 # Crossover shouldn't happen
-                else:
+                elif l.tid() != x.tid(): # Not on the same thread: skip this leaf
+                    continue
+                else: # On the same thread: error
                     raise ValueError("\tCrossover happens to {} and {} in {}!".format(str(x), str(l), ext_dist.my_local_rank))
             # Delete all outdated leaves
             leaves = list(compress(leaves, active_leaves))

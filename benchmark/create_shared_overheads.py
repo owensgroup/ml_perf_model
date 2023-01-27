@@ -41,11 +41,11 @@ if __name__ == '__main__':
     root_dir = '{}/data/{}/e2e'.format(PM_HOME, GPU_NAME)
     # Collect all overhead files except for per-process ones
     overhead_stats_files = \
-        set(glob.glob("{}/*/*overhead_stats_{}.json".format(root_dir, args.iters))) - \
-        set(glob.glob("{}/*/*_[0-9]_overhead_stats_{}.json".format(root_dir, args.iters)))
+        set(glob.glob("{}/*/*/*overhead_stats_{}.json".format(root_dir, args.iters))) - \
+        set(glob.glob("{}/*/*/*_[0-9]_overhead_stats_{}.json".format(root_dir, args.iters)))
     overhead_raw_files = \
-        set(glob.glob("{}/*/*overhead_raw_{}.csv".format(root_dir, args.iters))) - \
-        set(glob.glob("{}/*/*_[0-9]_overhead_raw_{}.csv".format(root_dir, args.iters)))
+        set(glob.glob("{}/*/*/*overhead_raw_{}.csv".format(root_dir, args.iters))) - \
+        set(glob.glob("{}/*/*/*_[0-9]_overhead_raw_{}.csv".format(root_dir, args.iters)))
 
     shared_overhead = create_shared_overhead(overhead_raw_files, overhead_stats_files)
 
