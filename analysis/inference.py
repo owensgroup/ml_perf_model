@@ -713,7 +713,7 @@ def get_kernel_time(op, ndevices=4):
 
 # Infer E2E time from an execution graph and an overhead file
 def get_e2e_time(graph, overheads, module_marker="## ", debug=False):
-    nodes = graph.get_nodes(clean=True)
+    nodes = graph.get_nodes(clean=True, to_be_pruned=SKIP)
     sorted_nodes = sorted(nodes.items(), key=lambda x: x[0])
 
     cpu_time = 0

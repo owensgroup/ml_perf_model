@@ -32,7 +32,7 @@ import argparse, json, re, os
 import analysis.extend_distributed as ext_dist
 from analysis.utils import PM_HOME, GPU_NAME
 from analysis.inference import get_e2e_time
-from param_bench.train.compute.python.lib.pytorch.exec_graph_utils import ExecutionGraph
+from param_bench.train.compute.python.tools.execution_graph import ExecutionGraph
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.")

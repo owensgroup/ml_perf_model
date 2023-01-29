@@ -182,7 +182,7 @@ CONSIDER = [
 
 SKIP = [    "SliceBackward",
             "FusedDropoutBackward",
-            "DLRM distribute emb data"
+            "## Distribute emb data ##"
 ] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
 # FusedDropoutBackward somehow occurs in DeepFM exgrs
 
