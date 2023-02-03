@@ -31,7 +31,7 @@
 import torch
 import pandas as pd
 import numpy as np
-import json
+import json, zlib
 from .utils import *
 from .memory_bw_utils import *
 import analysis.extend_distributed as ext_dist
@@ -286,25 +286,33 @@ def collective_predictor(c, **kwargs):
 
 def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
     if op_type == "fully_connected":
-        n_feature = 4
-        input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N", "K"]]
+        input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N", "K"]], dtype=torch.float32)
+    elif op_type == "embedding_lookup":
+        input_args = [
+            torch.tensor([
+            ([
+                np.log(512),
+                np.log(E),
+                np.log(L if L != 0.0 else 1e-3), # Avoid L = 0
+                np.log(D),
+            ] + rfs) for E, L, D, rfs in zip(
+                kwargs["num_embeddings"],
+                kwargs["pooling_factors"],
+                kwargs["embedding_dims"],
+                kwargs["reuse_factors"],
+            )], dtype=torch.float32)
+        ]
     elif op_type == "conv2d":
-        n_feature = 9
-        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FH', 'FW', 'is_dw']]
+        input_args = torch.tensor([np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FH', 'FW', 'is_dw']], dtype=torch.float32)
     elif op_type == "conv1d":
-        n_feature = 5
-        input_size = [np.log(kwargs[x]) for x in ['batch_size', 'L', 'IC', 'OC']] + [kwargs['groups']]
+        input_args = torch.tensor([np.log(kwargs[x]) for x in ['batch_size', 'L', 'IC', 'OC']] + [kwargs['groups']], dtype=torch.float32)
     elif op_type == "transpose":
-        n_feature = 3
-        input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N"]]
+        input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]], dtype=torch.float32)
     elif op_type == "bn":
-        n_feature = 3
-        input_size = [np.log(kwargs[x]) for x in ["batch_size", "H", "OC"]]
+        input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "H", "OC"]], dtype=torch.float32)
     else: # tril
-        n_feature = 4
-        input_size = [np.log(kwargs[x]) for x in ["batch_size", "M", "N"]] + [kwargs["diag"]]
-    assert len(input_size) == n_feature
-    return mlp_predictor_tensor(torch.tensor(input_size, dtype=torch.float32), op_type, backward=backward)
+        input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]] + [kwargs["diag"]], dtype=torch.float32)
+    return mlp_predictor_tensor(input_args, op_type, backward=backward)
 
 
 def infer_concat():
@@ -428,6 +436,15 @@ def infer(op_type, backward=False, **kwargs):
     return best_config, gmae(error)
 
 
+def get_embedding_op_info(s):
+    info = zlib.decompress(eval(s)).decode()
+    Es = [int(x) for x in info.split('/')[0].split('-')]
+    Ls = [float(x) for x in info.split('/')[1].split('-')]
+    Ds = [int(x) for x in info.split('/')[2].split('-')]
+    rfs = [[float(x) for x in x_.split('-')] for x_ in info.split('/')[-1].split('_')]
+    return Es, Ls, Ds, rfs
+
+
 def get_kernel_time(op, ndevices=4):
     kernel_times = []
     if op.name == "aten::linear":
@@ -532,15 +549,12 @@ def get_kernel_time(op, ndevices=4):
                 kernel_times.append(t)
     elif op.name == "LookupFunction":
         embedding_ops_stack.append(op)
+        s = op.inputs[0]
+        Es, Ls, Ds, rfs = get_embedding_op_info(s)
         T = op.input_shapes[1][0]
-        if op.parent.inputs: # Check if table sizes are passed as argument to the parent record function
-            Es = [int(e) for e in op.parent.inputs[0].split('-')]
-            assert len(Es) == T
-        else:
-            Es = [int(op.input_shapes[0][0] / T)] * T # Use the average
-        D = op.input_shapes[0][1]
         B = int((op.input_shapes[3][0] - 1) / T)
-        L = int(op.input_shapes[2][0] / B / T)
+        L = Ls[0]
+        D = Ds[0]
         rows_per_block = max(int(256 / D), 1)
         t = sum([embedding_forward_predictor(
                     batch_size=B,
@@ -554,15 +568,12 @@ def get_kernel_time(op, ndevices=4):
         kernel_times.append(t)
     elif "LookupFunctionBackward" in op.name:
         el_op = embedding_ops_stack.pop()
+        s = el_op.inputs[0]
+        Es, Ls, Ds, rfs = get_embedding_op_info(s)
         T = el_op.input_shapes[1][0]
-        if el_op.parent.inputs: # Check if table sizes are passed as argument to the parent record function
-            Es = [int(e) for e in el_op.parent.inputs[0].split('-')]
-            assert len(Es) == T
-        else:
-            Es = [int(el_op.input_shapes[0][0] / T)] * T # Use the average
-        D = el_op.input_shapes[0][1]
         B = int((el_op.input_shapes[3][0] - 1) / T)
-        L = int(el_op.input_shapes[2][0] / B / T)
+        L = Ls[0]
+        D = Ds[0]
         rows_per_block = max(int(256 / D), 1)
         t = sum([embedding_backward_sgd_predictor(
                     batch_size=B,
@@ -574,6 +585,32 @@ def get_kernel_time(op, ndevices=4):
             ) for E in Es]
         )
         kernel_times.append(t)
+    elif is_fbgemm_forward(op):
+        embedding_ops_stack.append(op)
+        fbgemm_op = op.get_parent_by_name("embedding_lookup")
+        s = fbgemm_op.inputs[0]
+        Es, Ls, Ds, rfs = get_embedding_op_info(s)
+        t = mlp_predictor_kwargs(
+            op_type="embedding_lookup",
+            backward=False,
+            num_embeddings=Es,
+            pooling_factors=Ls,
+            embedding_dims=Ds,
+            reuse_factors=rfs,
+        )
+    elif "CppNode<SplitLookupFunction_" in op.name: # FBGEMM backward
+        el_op = embedding_ops_stack.pop()
+        fbgemm_op = el_op.get_parent_by_name("embedding_lookup")
+        s = fbgemm_op.inputs[0]
+        Es, Ls, Ds, rfs = get_embedding_op_info(s)
+        t = mlp_predictor_kwargs(
+            op_type="embedding_lookup",
+            backward=True,
+            num_embeddings=Es,
+            pooling_factors=Ls,
+            embedding_dims=Ds,
+            reuse_factors=rfs,
+        )
     elif op.name == "aten::batch_norm":
         if len(op.input_shapes[0]) == 4:
             batch_size, OC, H, _ = op.input_shapes[0] # BN 2D
@@ -743,7 +780,6 @@ def get_e2e_time(graph, overheads, module_marker="## ", debug=False):
                 if debug:
                     print("    t2: {:.2f}".format(overheads["t2"][node.name][shapes][0]))
                 launches = overheads["launches"][node.name]
-                # print(node.name, to_consider(node))
                 if to_consider(node) or has_comm_collective(node):
                     t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(node, ndevices=ext_dist.my_size)] # Get kernel time and (arguably) compensate with the overheads
 

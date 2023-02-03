@@ -124,11 +124,10 @@ elif [[ $model_name == "DLRM_open_source" ]]; # DLRM using the open-source datas
 then
     _args=" --data-generation=dataset\
             --data-set=dlrm_open_source\
-            --raw-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/merged_simple.pt\
+            --processed-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/merged_simple.pt\
             --arch-embedding-table-indices=4-24-26-156-340-404\
             --arch-mlp-bot=512-1024-512-256-128\
             --arch-mlp-top=1024-1024-512-512-256-1\
-            --arch-sparse-feature-size=128\
             --loss-function=bce\
             --learning-rate=1.0\
             --test-freq=102400\

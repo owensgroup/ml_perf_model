@@ -35,6 +35,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from .memory_bw_utils import *
+from param_bench.train.compute.python.tools.eg_replay_utils import *
 
 PM_HOME = os.environ.get('PM_HOME')
 if PM_HOME is None:
@@ -159,24 +160,26 @@ ADDITIONAL = 2
 
 # TODO: Distinguish conv1d and conv2d for ConvolutionBackward
 CONSIDER = [
-                "aten::linear", "AddmmBackward", \
-                "aten::bmm", "BmmBackward", \
-                "aten::matmul", "MmBackward", \
-                "aten::conv1d", "ConvolutionBackward", \
-                "aten::conv2d", "CudnnConvolutionBackward", \
-                "LookupFunction", "LookupFunctionBackward", \
-                "aten::batch_norm", "CudnnBatchNormBackward", \
-                "aten::index", "IndexBackward", \
-                "aten::relu", "aten::relu_", "ReluBackward", \
-                "aten::sigmoid", "SigmoidBackward", \
-                "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
-                "aten::mse_loss", "MseLossBackward", \
-                "aten::avg_pool2d", "AvgPool2D", \
-                "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-                "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
-                "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
-                "torch::autograd::AccumulateGrad", "torch.distributed.ddp.reducer::copy_bucket_to_grad", \
-                "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
+    "aten::linear", "AddmmBackward", \
+    "aten::bmm", "BmmBackward", \
+    "aten::matmul", "MmBackward", \
+    "aten::conv1d", "ConvolutionBackward", \
+    "aten::conv2d", "CudnnConvolutionBackward", \
+    "LookupFunction", "LookupFunctionBackward", \
+    "aten::batch_norm", "CudnnBatchNormBackward", \
+    "aten::index", "IndexBackward", \
+    "aten::relu", "aten::relu_", "ReluBackward", \
+    "aten::sigmoid", "SigmoidBackward", \
+    "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
+    "aten::mse_loss", "MseLossBackward", \
+    "aten::avg_pool2d", "AvgPool2D", \
+    "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
+    "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
+    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
+    "autograd::engine::evaluate_function: torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
+    "torch::autograd::AccumulateGrad", \
+    "torch.distributed.ddp.reducer::copy_bucket_to_grad", \
+    "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
 ]
 
 
@@ -239,7 +242,7 @@ def op_name_in_list(op, lst):
 
 
 def to_consider(op):
-    return op_name_in_list(op, CONSIDER)
+    return op_name_in_list(op, CONSIDER) or is_fbgemm(op)
 
 
 def to_skip(op):
@@ -542,7 +545,13 @@ def get_emb_train_test_data(backward=False, test_frac=0.2, **kwargs):
 
     rf_file_path = '/'.join(data_path.split('/')[:-1] + ['embedding_lookup_{}_rf.csv'.format(kwargs['suffix'])])
     rf = pd.read_csv(rf_file_path, delimiter=',')
+    # print(data.shape, rf.shape)
+    # print(data.shape)#drop_duplicates(subset=['num_embeddings'], keep='last').shape)
     data = pd.merge(data, rf, on=data.columns[:6].tolist()) # kernel_name & BETLD
+    # print(data.shape, data.drop_duplicates(subset=data.columns, keep='last'))
+    # print(data.iloc[6])
+    # print(data.columns, rf.columns)
+    # exit()
 
     dataset_paths = data["dataset_path"].unique().tolist()
     table_config_paths = [(os.path.splitext(x)[0] + '_configs.json') for x in dataset_paths]
