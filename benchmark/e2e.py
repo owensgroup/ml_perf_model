@@ -59,8 +59,8 @@ if __name__ == '__main__':
                 ", early barrier" if args.early_barrier else "",
                 ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
             )
-        print("======= {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
-                args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
+        print("======= [Training time prediction] {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
+            args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
 
     if "DLRM" in args.model_name:
         dlrm_folder_str = "b/" if args.is_batched_emb else "f/"

@@ -155,13 +155,13 @@ echo "-------------------"
 folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${folder_emb_type}"
 if [ ${ngpus} -gt 1 ];
 then
-  if [[ $early_barrier == "1" ]];
+  if [[ $early_barrier == "--early-barrier" ]];
   then
       folder="${folder}/barrier"
   else
       folder="${folder}/no_barrier"
   fi
-  if [[ $aggregated_allreduce == "1" ]];
+  if [[ $aggregated_allreduce == "--aggregated-allreduce" ]];
   then
       folder="${folder}_aggregated_allreduce"
   else
