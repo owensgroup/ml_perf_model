@@ -241,40 +241,56 @@ def mlp_predictor_tensor(x, op_type, backward=False):
 def all_to_all_predictor(**kwargs):
     # V100
     if kwargs["ndevices"] == 4:
-        incr_p = 13 # 2^13 bytes
-        sats_p = 27 # 2^27 bytes
-        max_bw = 56.7134 # GB/s
-        overhead = 85.6 # us
+        mem_ch = {
+            "ln_p": 13, # 2^13 bytes
+            "sats_p": 27, # 2^27 bytes
+            "max_bw": 56.7134, # GB/s
+            "overhead": 85.6, # us
+        }
         sigmoid_param = (5.97878216, 13.33976161, 0.22551425, -3.99731681)
     else: # 8
-        incr_p = 12 # 2^12 bytes
-        sats_p = 24 # 2^24 bytes
-        max_bw = 45.8154 # GB/s
-        overhead = 68.0 # us
+        mem_ch = {
+            "ln_p": 12, # 2^12 bytes
+            "sats_p": 24, # 2^24 bytes
+            "max_bw": 45.8154, # GB/s
+            "overhead": 68.0, # us
+        }
         sigmoid_param = (5.88387459, 12.51962025, 0.23138583, -4.02494046)
 
     f = MUL_FACTOR_FUNCS["all_to_allv"]
-    return predict_data_movement_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_data_movement_time(
+            kwargs["tensor_size"] * 4,
+            f(kwargs["ndevices"]),
+            mem_ch, 
+            sigmoid_param)
 
 
 # Hardcoded for now
 def all_reduce_predictor(**kwargs):
     # V100
     if kwargs["ndevices"] == 4:
-        incr_p = 12 # 2^12 bytes
-        sats_p = 26 # 2^26 bytes
-        max_bw = 75.6704 # GB/s
-        overhead = 84.2 # us
+        mem_ch = {
+            "ln_p": 12, # 2^12 bytes
+            "sats_p": 26, # 2^26 bytes
+            "max_bw": 75.6704, # GB/s
+            "overhead": 84.2, # us
+        }
         sigmoid_param = (6.04564109, 12.70417428, 0.2242347, -3.94164857)
     else: # 8
-        incr_p = 12 # 2^12 bytes
-        sats_p = 25 # 2^25 bytes
-        max_bw = 130.3734 # GB/s
-        overhead = 43.4 # us
+        mem_ch = {
+            "ln_p": 12, # 2^12 bytes
+            "sats_p": 25, # 2^25 bytes
+            "max_bw": 130.3734, # GB/s
+            "overhead": 43.4, # us
+        }
         sigmoid_param = (6.67770176, 11.62004605, 0.19322959, -4.28862824)
 
     f = MUL_FACTOR_FUNCS["all_reduce"]
-    return predict_data_movement_time(kwargs["tensor_size"] * 4, f(kwargs["ndevices"]), incr_p, sats_p, max_bw, overhead, sigmoid_param)
+    return predict_data_movement_time(
+            kwargs["tensor_size"] * 4,
+            f(kwargs["ndevices"]),
+            mem_ch,
+            sigmoid_param)
 
 
 def collective_predictor(c, **kwargs):
