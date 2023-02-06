@@ -35,7 +35,7 @@ from analysis.utils import DUMMY_SHAPES, KERNEL_LAUNCH_LENGTH, CPU_EVENT_OVERHEA
 import analysis.extend_distributed as ext_dist
 import numpy as np
 import pandas as pd
-import json, sys
+import json, sys, os
 
 import torch
 
@@ -117,11 +117,8 @@ def trim_trace_by_time(file_name, start, end, trimmed_file=None):
     return trimmed_file
 
 
-def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None):
-    if trimmed_file is None:
-        trimmed_file = "./{}_trimmed.json".format(file_name.split('/')[-1].split('.json')[0])
-
-    with open(file_name) as trace_file:
+def trim_trace_by_num_iter(trace_path, trimmed_trace_path, iters=10, skip_iters=50):
+    with open(trace_path) as trace_file:
         trace = json.load(trace_file)
         start_idx, end_idx = 0, -1
 
@@ -142,14 +139,22 @@ def trim_trace_by_num_iter(file_name, iters=10, skip_iters=50, trimmed_file=None
         assert end_idx != -1, "Trace too short!"
         trimmed_trace = [x for x in t if x['ts'] >= t[start_idx]["ts"] and x['ts'] < t[end_idx]["ts"]] # Don't include the last marker
 
-        with open(trimmed_file, 'w') as out_file:
+        with open(trimmed_trace_path, 'w') as out_file:
             trace = {
                 'schemaVersion': None,
                 'traceEvents': trimmed_trace
             }
             json.dump(trace, out_file)
 
-    return trimmed_file
+        rfs_file = os.path.splitext(trace_path)[0] + "_rfs.txt"
+        if os.path.exists(rfs_file):
+            with open(rfs_file, 'r') as f:
+                rfs = f.readlines()[skip_iters:(skip_iters+iters)]
+            trimmed_rfs_file = os.path.splitext(rfs_file)[0] + "_trimmed_{}.txt".format(iters)
+            with open(trimmed_rfs_file, 'w') as f:
+                f.writelines(rfs)
+
+    return trimmed_trace_path
 
 
 def list_to_tuple(lst):

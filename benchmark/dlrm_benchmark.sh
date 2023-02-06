@@ -195,6 +195,7 @@ then
   outp="dlrm_s_pytorch.prof"
   mv $outp ${outf//".log"/".prof"}
   mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+  mv "rfs.txt" ${outf//".log"/"_rfs.txt"}
 else
   outf="${folder}/${ngpus}_${mb_size}_distributed.log"
   count=0
@@ -202,6 +203,7 @@ else
   do
     mv $g "${folder}/${ngpus}_${mb_size}_distributed_${count}.prof"
     mv ${g//".prof"/".json"} "${folder}/${ngpus}_${mb_size}_distributed_${count}.json"
+    mv "rfs_${count}.txt" "${folder}/${ngpus}_${mb_size}_distributed_${count}_rfs.txt"
     count=$((count+1))
   done
 fi
