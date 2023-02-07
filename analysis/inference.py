@@ -31,7 +31,7 @@
 import torch
 import pandas as pd
 import numpy as np
-import json
+import json, math
 from scipy.stats import binom
 from .utils import *
 from .memory_bw_utils import *
@@ -76,7 +76,7 @@ def get_cached_row_count(**kwargs):
         num_warps_per_sm = 45 # 64 * 0.71 (avg achieved occupancy)
 
     num_warps_simul = num_SM * num_warps_per_sm # Total number of warps simultaneously running on the device
-    num_tables_simul = div_round_up(num_warps_simul, y["batch_size"]) # Number of tables simultaneously being accessed on the device
+    num_tables_simul = math.ceil(num_warps_simul / y["batch_size"]) # Number of tables simultaneously being accessed on the device
     avg_num_rows_per_table = min(
         int(L2_size * 0.9 / num_tables_simul / 4 / y["embedding_dim"]), 
         y["num_embeddings"],
@@ -95,12 +95,12 @@ def embedding_forward_predictor(**kwargs):
 
     # Hit rate
     u = binom.pmf(0, B * L, 1 / E)
+    # Cold start considered
     if (E - u * E) > avg_num_rows_per_table_in_l2: # Cache not able to hold all unique rows for each table
-        # Cold start + 
-        R = avg_num_rows_per_table_in_l2
-        hr = 1 - (R + (B * L - R) * (E - R) / E) / (B * L)
+        X = avg_num_rows_per_table_in_l2
+        hr = 1 - (X + (B * L - X) * (E - X) / E) / (B * L)
     else:
-        hr = 1 - (E - u * E) / (B * L) # Cold start considered
+        hr = 1 - (E - u * E) / (B * L)
 
     # Traffics
     table_offsets_t = 32
@@ -111,10 +111,10 @@ def embedding_forward_predictor(**kwargs):
 
     total_l2_traffic = T * B * hr * (weights_t)
     total_dram_traffic = T * (
-        B * (indices_t + output_t + table_offsets_t + offsets_t) +
+        B * (indices_t + table_offsets_t + offsets_t + output_t) +
         ((B * (1 - hr) * weights_t))
     )
-    factor = 1 if D > 64 else (1.1 if D > 32 else 1.6) # Empirical, probably divergence. TODO: Explain this
+    factor = 1 if D > 64 else (1.1 if D > 32 else 1.55) # Empirical, probably divergence. TODO: Explain this
 
     return max(
         GPU_PARAMS["DRAM_BW_time"](total_dram_traffic),
@@ -123,25 +123,26 @@ def embedding_forward_predictor(**kwargs):
 
 
 def embedding_backward_sgd_predictor_simple(**kwargs):
-    y = kwargs
-    indices_traffic = div_round_up(y["bag_size"] * 4, 32) * 32
-    grad_output_traffic = div_round_up(y["embedding_dim"] * 4, 32) * 32
+    B = kwargs["batch_size"]
+    T = kwargs["num_tables"]
+    L = kwargs["bag_size"]
+    D = kwargs["embedding_dim"]
 
     # Traffic per warp = t_offsets + t_table_offsets + t_indices + t_weights + t_grad_outputs
-    total_traffic_per_warp = 32 + \
-                            64 + \
-                            indices_traffic + \
-                            2 * y["bag_size"] * (div_round_up(y["embedding_dim"] * 4, 32) * 32) + \
-                            grad_output_traffic
+    total_t_per_warp = 32 + \
+                        64 + \
+                        div_round_up(L * 4, 32) * 32 + \
+                        2 * L * (div_round_up(D * 4, 32) * 32) + \
+                        div_round_up(D * 4, 32) * 32
 
     # Traffic = warp * traffic per warp
-    total_traffic = y["batch_size"] * y["num_tables"] * total_traffic_per_warp
+    total_t = B * T * total_t_per_warp
 
     # Total compute throughput
-    mac_per_warp = y["bag_size"] * 4 * (y["embedding_dim"] // 4)
-    total_mac = y["batch_size"] * y["num_tables"] * mac_per_warp
+    mac_per_warp = L * 4 * (D // 4)
+    total_mac = B * T * mac_per_warp
 
-    return max(total_traffic / peak_DRAM_BW / 1000, total_mac / peak_throughput / 1000)
+    return max(GPU_PARAMS["DRAM_BW_time"](total_t), total_mac / peak_throughput / 1000)
 
 
 def embedding_backward_sgd_predictor(**kwargs):
@@ -360,21 +361,33 @@ def infer_elf(big=False, hit_rate_estimation=False, fbgemm=False):
     if not hit_rate_estimation:
         if not big:
             time = data.apply(lambda x: embedding_forward_predictor_simple(**x[1:6]), axis=1)
-            error = abs_err(time, data['kernel_runtime'])
-            print("ELF all sizes (simple): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data['kernel_runtime'])
+            print("ELF all sizes ({}simple): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
         else:
             time = data[data['num_embeddings'] >= 100000].apply(lambda x: embedding_forward_predictor_simple(**x[1:6]), axis=1)
-            error = abs_err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
-            print("ELF big sizes (simple): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
+            print("ELF big sizes ({}simple): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
     else:
         if not big:
             time = data.apply(lambda x: embedding_forward_predictor(**x[1:7]), axis=1)
-            error = abs_err(time, data['kernel_runtime'])
-            print("ELF all sizes (hit rate estimation): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data['kernel_runtime'])
+            print("ELF all sizes ({}hit rate estimation): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
         else:
             time = data[data['num_embeddings'] >= 100000].apply(lambda x: embedding_forward_predictor(**x[1:7]), axis=1)
-            error = abs_err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
-            print("ELF big sizes (hit rate estimation): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
+            print("ELF big sizes ({}hit rate estimation): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
 
     return None, error
 
@@ -397,21 +410,33 @@ def infer_elb(big=False, hit_rate_estimation=False, fbgemm=False):
     if not hit_rate_estimation:
         if not big:
             time = data.apply(lambda x: embedding_backward_sgd_predictor_simple(**x[1:6]), axis=1)
-            error = abs_err(time, data['kernel_runtime'])
-            print("ELB all sizes (simple): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data['kernel_runtime'])
+            print("ELB all sizes ({}simple): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
         else:
             time = data[data['num_embeddings'] >= 100000].apply(lambda x: embedding_backward_sgd_predictor_simple(**x[1:6]), axis=1)
-            error = abs_err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
-            print("ELB big sizes (simple): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
+            print("ELB big sizes ({}simple): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
     else:
         if not big:
             time = data.apply(lambda x: embedding_backward_sgd_predictor(**x[1:7]), axis=1)
-            error = abs_err(time, data['kernel_runtime'])
-            print("ELB all sizes (hit rate estimation): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data['kernel_runtime'])
+            print("ELB all sizes ({}hit rate estimation): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
         else:
             time = data[data['num_embeddings'] >= 100000].apply(lambda x: embedding_backward_sgd_predictor(**x[1:7]), axis=1)
-            error = abs_err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
-            print("ELB big sizes (hit rate estimation): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+            error = err(time, data[data['num_embeddings'] >= 100000]['kernel_runtime'])
+            print("ELB big sizes ({}hit rate estimation): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(
+                "FBGEMM " if fbgemm else "",
+                gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0)
+            )
 
     return None, error
 

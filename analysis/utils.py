@@ -310,6 +310,10 @@ def gmae(x):
     return np.exp(np.log(abs(x)).mean())
 
 
+def mape(x):
+    return abs(x).mean()
+
+
 def sigmoid(x, L, x0, k, b):
     y = L / (1 + np.exp(-k*(x-x0)))+b
     return y
