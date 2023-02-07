@@ -41,24 +41,18 @@ PM_HOME = os.environ.get('PM_HOME')
 if PM_HOME is None:
     PM_HOME = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Call dirname twice to get the upper director
 
-
+SUPPORTED_GPUS = {"A100", "V100", "P100", "Xp"}
 def get_gpu_name():
     gpus = GPUtil.getGPUs()
     assert len(gpus) > 0, "No GPUs detected!"
+    assert len(set([x.name for x in gpus])) == 1, "Platforms with hybrid GPUs not supported for now!"
+    assert any(x in gpus[0].name for x in SUPPORTED_GPUS), "GPU not supported!"
 
-    for gpu in gpus:
-        if "A100" in gpu.name:
-            return "A100"
-        if "V100" in gpu.name:
-            return "V100"
-        if "P100" in gpu.name:
-            return "P100"
-        if "Xp" in gpu.name:
-            return "Xp"
-        if "1080" in gpu.name:
-            return "1080"
-    return None
-GPU_NAME = get_gpu_name()
+    for gpu in SUPPORTED_GPUS:
+        if gpu in gpus[0].name:
+            return len(gpus), gpu
+    return 0, None
+GPU_COUNT, GPU_NAME = get_gpu_name()
 
 
 HW_PARAMS = {
