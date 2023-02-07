@@ -35,38 +35,87 @@ import argparse, json, os
 from analysis.utils import *
 from analysis.inference import infer
 
+
+class FBGEMMDataset(Data.Dataset):
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
+
+
+def get_dataset(x, y, fbgemm=False):
+    x = [xx.cuda() for xx in x] if isinstance(x, list) else x.cuda()
+    y = [yy.cuda() for yy in y] if isinstance(y, list) else y.cuda()
+    if fbgemm:
+        return FBGEMMDataset(x, y)
+    return Data.TensorDataset(x, y)
+
+
 # TODO: All backward models should be trained with an extra version of weight-only for topologically the first ops in a model
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Training MLP performance model for FC, conv2d, conv1d, transpose, BN, and tril.")
     parser.add_argument("--op-type", type=str, required=True)
-    parser.add_argument("--backward", action="store_true", default=False) # For conv2d/conv1d/bn/tril
+    parser.add_argument("--backward", action="store_true", default=False) # For el/conv2d/conv1d/bn/tril
     parser.add_argument("--inference", action="store_true", default=False)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--epoch", type=int, default=800)
+    parser.add_argument("--test_frac", type=float, default=0.2)
+    parser.add_argument("--emb-data-path-suffix", type=str, default='fbgemm_dlrm_datasets')
     args = parser.parse_args()
 
-    assert args.op_type in ["fully_connected", "conv2d", "conv1d", "transpose", "bn", "tril"]
+    assert args.op_type in [
+        "embedding_lookup",
+        "fully_connected",
+        "conv2d",
+        "conv1d",
+        "transpose",
+        "bn",
+        "tril"
+    ]
+    is_emb = args.op_type=="embedding_lookup"
     suffix = "{}_{}".format(args.op_type, 1 if not args.backward else 0)
-    n_feature, x, y = get_data(op_type=args.op_type, backward=args.backward)
-    op_dataset = Data.TensorDataset(x, y)
+    n_feature, train_x, train_y, test_x, test_y = get_train_test_data(
+        op_type=args.op_type,
+        backward=args.backward,
+        test_frac=args.test_frac,
+        suffix=args.emb_data_path_suffix)
+    test_x = [xx.cuda() for xx in test_x] if isinstance(test_x, list) else test_x.cuda()
+    test_y = [yy.cuda() for yy in test_y] if isinstance(test_y, list) else test_y.cuda()
+
+    train_dataset = get_dataset(train_x, train_y, fbgemm=is_emb)
     loader = Data.DataLoader(
-        dataset=op_dataset,
+        dataset=train_dataset,
         batch_size=args.batch_size,
-        shuffle=True, num_workers=0)
-    print("Device: {}, op type: {}, dataset length: {}, batch size: {}, epoch: {}".format(GPU_NAME, args.op_type, y.shape[0], args.batch_size, args.epoch))
+        collate_fn=(
+            lambda x: ([xx[0] for xx in x], torch.stack([xx[1] for xx in x], dim=0))
+        ) if is_emb else None,
+        shuffle=True,
+        num_workers=0,
+    )
+    print("Device: {}, op type: {}, train dataset length: {}, batch size: {}, epoch: {}".format(GPU_NAME, args.op_type, len(train_dataset), args.batch_size, args.epoch))
 
     suffix = "{}_{}".format(args.op_type, 1 if not args.backward else 0)
     if os.path.exists("{}/analysis/ml_predictors/{}/best_config_{}.json".format(PM_HOME, GPU_NAME, suffix)):
-        best_config, min_error = infer(args.op_type, args.backward)
+        best_config, min_error = infer(
+            args.op_type,
+            backward=args.backward,
+            emb_use_mlp=True,
+            suffix=args.emb_data_path_suffix,
+        )
         if args.inference:
             exit()
     else:
         best_config = None
         min_error = 1e9
-    for size in [128, 256, 512, 1024]:
+    for size in [64, 128, 256, 512]:
         for num_layers in [3, 4, 5, 6, 7]:
             for lr in [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2]:
-                for opt in ['adam', 'sgd']:
+                for opt in ['adam']:
                     for loss_func in [torch.nn.MSELoss()]:
                         learning_rate = lr * 10 if opt == 'sgd' else lr
                         print("Size: {}, num_layers: {}, learning rate: {}, optimizer: {}, loss function: {}".format(size, num_layers, learning_rate, opt, loss_func))
@@ -81,10 +130,10 @@ if __name__ == '__main__':
 
                         for epoch in range(args.epoch):
                             for step, (batch_x, batch_y) in enumerate(loader):
-                                b_x = Variable(batch_x)
-                                b_y = Variable(batch_y)
+                                b_x = batch_x if is_emb else Variable(batch_x)
+                                b_y = batch_y if is_emb else Variable(batch_y)
 
-                                prediction = net(b_x)
+                                prediction = net(b_x, fbgemm=is_emb)
                                 loss = loss_func(prediction, b_y)
                                 optimizer.zero_grad()
                                 loss.backward()
@@ -92,13 +141,17 @@ if __name__ == '__main__':
 
                             if epoch % 50 == 0:
                                 print("******* Epoch {} *******".format(epoch))
-                                prediction = net(x)
-                                loss = loss_func(prediction, y)
-                                print("Loss: {}".format(loss))
+                                prediction = net(
+                                    [x.cuda() for x in train_x] if isinstance(train_x, list) else train_x.cuda(),
+                                    fbgemm=is_emb,
+                                ).cpu().detach().view(-1)
+                                loss = loss_func(prediction, train_y.view(-1))
+                                print("Training loss: {}".format(loss))
 
-                        estimated_time = torch.exp(net(x).cpu().detach().view(-1))
-                        error = abs_err(estimated_time, torch.exp(y.cpu().detach()).view(-1))
+                        estimated_time = torch.exp(net(test_x, fbgemm=is_emb)).cpu().detach().view(-1)
+                        error = abs_err(estimated_time, torch.exp(test_y).cpu().detach().view(-1))
                         histogram(error, is_abs=True)
+                        print("******* Testing results *******")
                         print("GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
                         if gmae(error) == 0.0:
                             print("Something wrong here! Not saving anything.")

@@ -57,7 +57,10 @@ fi
 
 if [ "$op_type" == "embedding_lookup" ];
 then
-    if [ "$is_big" == "1" ];
+    if [ "$fbgemm" == "2" ];
+    then
+        param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_dlrm_datasets.txt"
+    elif [ "$is_big" == "1" ];
     then
         param_file_name="${PM_HOME}/bench_params/embedding_lookup_params_big.txt"
     else
@@ -72,13 +75,17 @@ then
             file_prefix="${file_prefix}_adagrad"
         fi
     fi
-    if [ "$fbgemm" == "1" ];
+    if [ "$fbgemm" -ne "0" ];
     then
         header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim,rows_per_block"
         file_prefix="${file_prefix}_fbgemm"
         if [ "$fbgemm_caching" == "1" ];
         then
             file_prefix="${file_prefix}_caching"
+        fi
+        if [ "$fbgemm" == "2" ];
+        then
+            file_prefix="${file_prefix}_dlrm_datasets"
         fi
     else
         header="kernel_name,batch_size,num_embeddings,num_tables,bag_size,embedding_dim"
@@ -189,12 +196,16 @@ do
             fi
         fi
         last_array="${array[@]:0:5}"
-        if [ "$fbgemm" == "1" ];
+        if [ "$fbgemm" -ne "0" ];
         then
             bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --fbgemm"
             if [ "$fbgemm_caching" == "1" ];
             then
                 bench_param="${bench_param} --caching"
+            fi
+            if [ "$fbgemm" == "2" ]; # Dataset
+            then
+                bench_param="${bench_param} --dataset /nvme/deep-learning/dlrm_datasets/embedding_bag/fbgemm_t856_bs65536.pt"
             fi
         else
             bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"
@@ -251,6 +262,13 @@ do
     # Benchmark operator runtime: no nvprof
     python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${BUS_ID}_op.txt"
     op_time="$( < /tmp/${BUS_ID}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
+
+    if [[ "$op_type" == "embedding_lookup" && "$fbgemm" == "2" ]];
+    then
+        tmp="$( grep 'L: ' /tmp/${BUS_ID}_op.txt | awk '{print $14}' )"
+        array[3]="${tmp::-1}"
+        echo ${array[3]}
+    fi
 
     # Benchmark general: get the major kernel names
     nvprof --openacc-profiling off --log-file "/tmp/${BUS_ID}_profile_results.txt" \
@@ -364,4 +382,5 @@ do
         done
         echo "$stats_row" >> "$file_name"
     done
+    exit
 done < "$param_file_name"

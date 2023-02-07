@@ -24,7 +24,7 @@ do
     esac
 done
 
-model_list="DLRM_vipul DLRM_test DLRM_default DLRM_MLPerf DLRM_DDP"
+model_list="DLRM_vipul DLRM_test DLRM_default DLRM_MLPerf DLRM_DDP DLRM_open_source"
 if [[ $model_list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -120,6 +120,18 @@ then
             --mlperf-bin-shuffle "
         # " --test-num-workers=16"
         # " --test-mini-batch-size=16384"
+elif [[ $model_name == "DLRM_open_source" ]]; # DLRM using the open-source dataset
+then
+    _args=" --data-generation=dataset\
+            --data-set=dlrm_open_source\
+            --processed-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/merged_simple.pt\
+            --arch-embedding-table-indices=4-24-26-156-340-404\
+            --arch-mlp-bot=512-1024-512-256-128\
+            --arch-mlp-top=1024-1024-512-512-256-1\
+            --loss-function=bce\
+            --learning-rate=1.0\
+            --test-freq=102400\
+            --memory-map " # default: 4-24-26-156-340-404
 fi
 
 # GPU Benchmarking
@@ -143,13 +155,13 @@ echo "-------------------"
 folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${folder_emb_type}"
 if [ ${ngpus} -gt 1 ];
 then
-  if [[ $early_barrier == "1" ]];
+  if [[ $early_barrier == "--early-barrier" ]];
   then
       folder="${folder}/barrier"
   else
       folder="${folder}/no_barrier"
   fi
-  if [[ $aggregated_allreduce == "1" ]];
+  if [[ $aggregated_allreduce == "--aggregated-allreduce" ]];
   then
       folder="${folder}_aggregated_allreduce"
   else
@@ -183,6 +195,7 @@ then
   outp="dlrm_s_pytorch.prof"
   mv $outp ${outf//".log"/".prof"}
   mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+  mv "rfs.txt" ${outf//".log"/"_rfs.txt"}
 else
   outf="${folder}/${ngpus}_${mb_size}_distributed.log"
   count=0
@@ -190,6 +203,7 @@ else
   do
     mv $g "${folder}/${ngpus}_${mb_size}_distributed_${count}.prof"
     mv ${g//".prof"/".json"} "${folder}/${ngpus}_${mb_size}_distributed_${count}.json"
+    mv "rfs_${count}.txt" "${folder}/${ngpus}_${mb_size}_distributed_${count}_rfs.txt"
     count=$((count+1))
   done
 fi

@@ -62,7 +62,7 @@ do
             continue
         fi
 
-        for model in DLRM_default DLRM_MLPerf DLRM_DDP
+        for model in DLRM_open_source DLRM_default DLRM_MLPerf DLRM_DDP
         do
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
@@ -132,7 +132,7 @@ do
             continue
         fi
 
-        for model in DLRM_default DLRM_MLPerf DLRM_DDP
+        for model in DLRM_open_source DLRM_default DLRM_MLPerf DLRM_DDP
         do
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];

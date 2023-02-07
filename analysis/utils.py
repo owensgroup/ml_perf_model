@@ -33,30 +33,26 @@ import torch
 import argparse, json, GPUtil
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
 from .memory_bw_utils import *
+from param_bench.train.compute.python.tools.eg_replay_utils import *
 
 PM_HOME = os.environ.get('PM_HOME')
 if PM_HOME is None:
     PM_HOME = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Call dirname twice to get the upper director
 
-
+SUPPORTED_GPUS = {"A100", "V100", "P100", "Xp"}
 def get_gpu_name():
     gpus = GPUtil.getGPUs()
     assert len(gpus) > 0, "No GPUs detected!"
+    assert len(set([x.name for x in gpus])) == 1, "Platforms with hybrid GPUs not supported for now!"
+    assert any(x in gpus[0].name for x in SUPPORTED_GPUS), "GPU not supported!"
 
-    for gpu in gpus:
-        if "A100" in gpu.name:
-            return "A100"
-        if "V100" in gpu.name:
-            return "V100"
-        if "P100" in gpu.name:
-            return "P100"
-        if "Xp" in gpu.name:
-            return "Xp"
-        if "1080" in gpu.name:
-            return "1080"
-    return None
-GPU_NAME = get_gpu_name()
+    for gpu in SUPPORTED_GPUS:
+        if gpu in gpus[0].name:
+            return len(gpus), gpu
+    return 0, None
+GPU_COUNT, GPU_NAME = get_gpu_name()
 
 
 HW_PARAMS = {
@@ -190,30 +186,32 @@ ADDITIONAL = 2
 
 # TODO: Distinguish conv1d and conv2d for ConvolutionBackward
 CONSIDER = [
-                "aten::linear", "AddmmBackward", \
-                "aten::bmm", "BmmBackward", \
-                "aten::matmul", "MmBackward", \
-                "aten::conv1d", "ConvolutionBackward", \
-                "aten::conv2d", "CudnnConvolutionBackward", \
-                "LookupFunction", "LookupFunctionBackward", \
-                "aten::batch_norm", "CudnnBatchNormBackward", \
-                "aten::index", "IndexBackward", \
-                "aten::relu", "aten::relu_", "ReluBackward", \
-                "aten::sigmoid", "SigmoidBackward", \
-                "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
-                "aten::mse_loss", "MseLossBackward", \
-                "aten::avg_pool2d", "AvgPool2D", \
-                "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-                "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
-                "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
-                "torch::autograd::AccumulateGrad", "torch.distributed.ddp.reducer::copy_bucket_to_grad", \
-                "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
+    "aten::linear", "AddmmBackward", \
+    "aten::bmm", "BmmBackward", \
+    "aten::matmul", "MmBackward", \
+    "aten::conv1d", "ConvolutionBackward", \
+    "aten::conv2d", "CudnnConvolutionBackward", \
+    "LookupFunction", "LookupFunctionBackward", \
+    "aten::batch_norm", "CudnnBatchNormBackward", \
+    "aten::index", "IndexBackward", \
+    "aten::relu", "aten::relu_", "ReluBackward", \
+    "aten::sigmoid", "SigmoidBackward", \
+    "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
+    "aten::mse_loss", "MseLossBackward", \
+    "aten::avg_pool2d", "AvgPool2D", \
+    "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
+    "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
+    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
+    "autograd::engine::evaluate_function: torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
+    "torch::autograd::AccumulateGrad", \
+    "torch.distributed.ddp.reducer::copy_bucket_to_grad", \
+    "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
 ]
 
 
 SKIP = [    "SliceBackward",
             "FusedDropoutBackward",
-            "DLRM distribute emb data"
+            "## Distribute emb data ##"
 ] # Temporary solution for ops occur during skipped intervals (see trace analysis code)
 # FusedDropoutBackward somehow occurs in DeepFM exgrs
 
@@ -270,7 +268,7 @@ def op_name_in_list(op, lst):
 
 
 def to_consider(op):
-    return op_name_in_list(op, CONSIDER)
+    return op_name_in_list(op, CONSIDER) or is_fbgemm(op)
 
 
 def to_skip(op):
@@ -400,13 +398,33 @@ def process_smem(x):
     return x
 
 
-def preprocessing(df):
+def preprocess(df):
     df.dropna(inplace=True)
     df = df.apply(func=p2f, axis=1)
     df = df.apply(func=strip_unit, axis=1)
     df = df.apply(func=strip_parenthesis, axis=1)
     df = df.apply(func=process_smem, axis=1)
     return df
+
+
+def preprocess_fbgemm(data, backward=False):
+    # Filter all irrelavant kernels
+    data = data[~(
+        (data["kernel_name"].str.contains('elementwise')) | \
+        (data["kernel_name"].str.contains('Accessor'))
+    )]
+    # # Keep compute kernels only
+    # data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
+    if backward:
+        data = data[~(data['kernel_name'].str.contains('forward'))]
+
+    # Sum up all related kernels
+    if 'dataset_path' in data.columns:
+        size_columns = data.columns[:7].to_list()
+    else:
+        size_columns = data.columns[:6].to_list()
+    data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
+    return data
 
 
 def div_round_up(x, y):
@@ -453,7 +471,9 @@ def get_pretrained_net(op_type, backward=False):
     with open("{}/analysis/ml_predictors/{}/best_config_{}.json".format(PM_HOME, GPU_NAME, suffix), "r") as f:
         best_config = json.load(f)
         n_hidden = [best_config["size"]] * best_config["num_layers"]
-    if op_type == "fully_connected":
+    if op_type == "embedding_lookup":
+        n_feature = 21
+    elif op_type == "fully_connected":
         n_feature = 4
     elif op_type == "conv2d":
         n_feature = 9
@@ -485,31 +505,115 @@ class MLP(torch.nn.Module):
         self.layers = torch.nn.ModuleList()
         for nxt in n_hidden:
             self.layers.append(torch.nn.Linear(prv, nxt))
-            self.layers.append(torch.nn.Sigmoid())
+            self.layers.append(torch.nn.ReLU())
             prv = nxt
         self.layers.append(torch.nn.Linear(prv, n_output))
-    def forward(self, x):
-        for l in self.layers:
-            x = l(x)
-        return x
+    def forward(self, X, fbgemm=False):
+        if fbgemm:
+            device = X[0].device
+            X_len = torch.tensor([x.shape[0] for x in X]).to(device)
+
+            X = torch.cat(X, dim=0)
+            for l in self.layers[:-3]: # Hold for the last two FCs and one sigmoid
+                X = l(X)
+
+            ind = torch.repeat_interleave(torch.arange(len(X_len)).to(device), X_len).to(device)
+            tmp = torch.zeros((X_len.shape[0], X.shape[1])).to(device)
+            tmp.index_add_(0, ind, X)
+            X = tmp
+
+            for l in self.layers[-3:]:
+                X = l(X)
+        else:
+            for l in self.layers:
+                X = l(X)
+
+        return X.view(-1)
 
 
-def get_data(op_type, backward=False, gpu=True):
+def transform_emb_data(data, table_configs, test_frac=0.2):
+    train_data, test_data = (data, None) if test_frac == 1.0 else train_test_split(data, test_size=test_frac)
+
+    def f(x):
+        return torch.tensor([
+            ([
+                np.log(x['batch_size']),
+                np.log(table_configs[x['dataset_path']][int(t_idx)]['num_embeddings']),
+                np.log(float(L) if float(L) != 0.0 else 1e-3), # Avoid L = 0
+                np.log(float(D)),
+            ] + [
+                float(rf) for rf in rfs.split('-') # All in range (0, 1)
+            ]) for t_idx, L, D, rfs in zip(
+                x['num_embeddings'].split('-'),
+                x['bag_size'].split('-'),
+                x['embedding_dim'].split('-'),
+                x['reuse_factors'].split('_'),
+            )
+        ], dtype=torch.float32)
+
+    train_x = [x for x in train_data.apply(f, axis=1).tolist()]
+    train_y = torch.tensor(np.log(train_data["kernel_runtime"].values), dtype=torch.float32)
+    if test_frac == 1.0: # Use train data as test data if only testing
+        return None, None, train_x, train_y
+
+    test_x = [x for x in test_data.apply(f, axis=1).tolist()]
+    test_y = torch.tensor(np.log(test_data["kernel_runtime"].values), dtype=torch.float32)
+
+    return train_x, train_y, test_x, test_y
+
+
+def get_emb_train_test_data(backward=False, test_frac=0.2, **kwargs):
+    suffix = ('_' + kwargs['suffix']) if 'suffix' in kwargs.keys() else ''
+    data_path = '{}/data/{}/kernel/embedding_lookup_{}{}.csv'.format(
+        PM_HOME,
+        GPU_NAME,
+        '1' if not backward else '0_sgd',
+        suffix,
+    )
+    data = pd.read_csv(data_path, delimiter=',')
+    data = preprocess_fbgemm(data, backward=backward)
+
+    rf_file_path = '/'.join(data_path.split('/')[:-1] + ['embedding_lookup_{}_rf.csv'.format(kwargs['suffix'])])
+    rf = pd.read_csv(rf_file_path, delimiter=',')
+    # print(data.shape, rf.shape)
+    # print(data.shape)#drop_duplicates(subset=['num_embeddings'], keep='last').shape)
+    data = pd.merge(data, rf, on=data.columns[:6].tolist()) # kernel_name & BETLD
+    # print(data.shape, data.drop_duplicates(subset=data.columns, keep='last'))
+    # print(data.iloc[6])
+    # print(data.columns, rf.columns)
+    # exit()
+
+    dataset_paths = data["dataset_path"].unique().tolist()
+    table_config_paths = [(os.path.splitext(x)[0] + '_configs.json') for x in dataset_paths]
+    table_configs = {}
+    for dp, cp in zip(dataset_paths, table_config_paths):
+        with open(cp) as f:
+            table_config = json.load(f)["tables"]
+        table_configs[dp] = table_config
+
+    train_x, train_y, test_x, test_y = transform_emb_data(data, table_configs, test_frac=test_frac)
+    return test_x[0].shape[1], train_x, train_y, test_x, test_y
+
+
+def get_train_test_data(op_type, backward=False, test_frac=0.2, **kwargs):
+    if op_type == "embedding_lookup":
+        return get_emb_train_test_data(backward=backward, test_frac=test_frac, **kwargs)
+
     data = pd.read_csv('{}/data/{}/kernel/{}_{}.csv'.format(PM_HOME, GPU_NAME, op_type, 1 if not backward else 0), delimiter=',')
-    data = preprocessing(data)
-
+    data = preprocess(data)
     if op_type == 'fully_connected':
         data = data[data['kernel_name'].str.contains("sgemm")] # Train on samples with 'sgemm' in kernel name
-        input_df = pd.DataFrame({
+        df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
             'M': np.log(data['M']),
             'N': np.log(data['N']),
-            'K': np.log(data['K'])
+            'K': np.log(data['K']),
+            'kernel_runtime': np.log(data['kernel_runtime']),
         })
     elif op_type == 'conv2d':
         data = data[~(data['kernel_name'].str.contains("at::"))] # Exclude ATen kernels for training
         data = data[['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw', 'kernel_runtime']].groupby(['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw'], as_index=False).sum() # Sum up all kernels
-        input_df = pd.DataFrame({
+        df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
             'H': np.log(data['H']),
             'IC': np.log(data['IC']),
@@ -519,48 +623,49 @@ def get_data(op_type, backward=False, gpu=True):
             'FH': data['FH'],
             'FW': data['FW'],
             'is_dw': data['is_dw'],
+            'kernel_runtime': np.log(data['kernel_runtime']),
         })
     elif op_type == 'conv1d':
         data = data[~((data['kernel_name'].str.contains("at::")) & (~(data['kernel_name'].str.contains("conv"))))] # Exclude ATen kernels that are not conv for training
         data = data[['batch_size', 'L', 'IC', 'OC', 'groups', 'kernel_runtime']].groupby(['batch_size', 'L', 'IC', 'OC', 'groups'], as_index=False).sum() # Sum up all kernels
-        input_df = pd.DataFrame({
+        df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
             'L': np.log(data['L']),
             'IC': np.log(data['IC']),
             'OC': np.log(data['OC']),
             'groups': data['groups'],
+            'kernel_runtime': np.log(data['kernel_runtime']),
         })
     elif op_type == 'transpose':
-        input_df = pd.DataFrame({
+        df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
             'M': np.log(data['M']),
-            'N': np.log(data['N'])
+            'N': np.log(data['N']),
+            'kernel_runtime': np.log(data['kernel_runtime']),
         })
     elif op_type == 'bn':
-        data = data[data['kernel_name'].str.contains("cudnn")] # Train on samples with 'cudnn' in kernel name
-        input_df = pd.DataFrame({
+        data = data[data['kernel_name'].str.contains("bn")] # Train on samples with 'bn' in kernel name
+        df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
             'H': np.log(data['H']),
             'OC': np.log(data['OC']),
+            'kernel_runtime': np.log(data['kernel_runtime']),
         })
     else: # tril
         if backward:
             data = data[['batch_size', 'M', 'N', 'diag', 'kernel_runtime']].groupby(['batch_size', 'M', 'N', 'diag'], as_index=False).sum() # Sum up all kernels
-        input_df = pd.DataFrame({
+        df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
             'M': np.log(data['M']),
             'N': np.log(data['N']),
-            'diag': data['diag']
+            'diag': data['diag'],
+            'kernel_runtime': np.log(data['kernel_runtime']),
         })
 
-    x = torch.tensor(input_df.values).float()
+    train_data, test_data = train_test_split(df, test_size=test_frac)
+    train_x = torch.tensor(train_data[train_data.columns[:-1]].values).float()
+    train_y = torch.tensor(train_data[train_data.columns[-1]].values).float()
+    test_x = torch.tensor(test_data[test_data.columns[:-1]].values).float()
+    test_y = torch.tensor(test_data[test_data.columns[-1]].values).float()
 
-    output_df = pd.DataFrame({
-        'kernel_runtime': np.log(data['kernel_runtime'])
-    })
-    y = torch.tensor(output_df.values).float()
-
-    if gpu:
-        x, y = x.to('cuda:0'), y.to('cuda:0')
-
-    return x.shape[1], x, y
+    return train_x.shape[1], train_x, train_y, test_x, test_y

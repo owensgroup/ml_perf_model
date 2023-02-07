@@ -32,7 +32,7 @@ import argparse, json, re, os
 import analysis.extend_distributed as ext_dist
 from analysis.utils import PM_HOME, GPU_NAME
 from analysis.inference import get_e2e_time
-from param_bench.train.compute.python.lib.pytorch.exec_graph_utils import ExecutionGraph
+from param_bench.train.compute.python.tools.execution_graph import ExecutionGraph
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.")
@@ -59,8 +59,8 @@ if __name__ == '__main__':
                 ", early barrier" if args.early_barrier else "",
                 ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
             )
-        print("======= {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
-                args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
+        print("======= [Training time prediction] {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
+            args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
 
     if "DLRM" in args.model_name:
         dlrm_folder_str = "b/" if args.is_batched_emb else "f/"
@@ -81,7 +81,8 @@ if __name__ == '__main__':
         args.batch_size,
         "_distributed" if args.num_gpus > 1 else ""
     )
-    exec_graph_file = "{}{}_graph.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if args.num_gpus > 1 else "")
+    per_device_prefix = "{}{}".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "")
+    exec_graph_file = "{}_graph.json".format(per_device_prefix)
     with open(exec_graph_file) as f:
         graph = ExecutionGraph(json.load(f))
     if args.use_shared_overheads:
@@ -101,14 +102,17 @@ if __name__ == '__main__':
             if re.search("Overall per-batch", line):
                 real_e2e_time = float(line.split(' ')[4]) * 1000 # In us
     assert real_e2e_time != -1
-    summary_file = "{}{}_summary_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    summary_file = "{}_summary_{}.log".format(per_device_prefix, args.iters)
     if os.path.exists(summary_file):
         for line in open(summary_file, 'r'):
             if re.search("Total per-batch GPU time", line):
                 real_gpu_active_time = float(line.split(' ')[-3]) # In us
     assert real_gpu_active_time != -1
 
-    e2e_time, gpu_active_time = get_e2e_time(graph, overheads, debug=args.debug)
+    embedding_rfs_file = "{}_rfs_trimmed_{}.txt".format(per_device_prefix, args.iters)
+    e2e_time, gpu_active_time = get_e2e_time(
+        graph, overheads, iters=args.iters,
+        embedding_rfs_file=embedding_rfs_file, debug=args.debug)
     # Only rank 0 prints
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
         st = "E2E time: {:.2f}, GPU time: {:.2f}".format(e2e_time, gpu_active_time)
@@ -120,8 +124,7 @@ if __name__ == '__main__':
                 (gpu_active_time / real_e2e_time - 1) * 100,
             )
         print(st)
-        prediction_name = "{}{}_prediction_{}{}.log".format(
-            prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "",
-            args.iters, '_shared' if args.use_shared_overheads else '')
+        prediction_name = "{}_prediction_{}{}.log".format(
+            per_device_prefix, args.iters, '_shared' if args.use_shared_overheads else '')
         with open(prediction_name, 'w') as f:
             f.write(st)

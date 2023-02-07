@@ -56,8 +56,8 @@ if __name__ == '__main__':
                 ", early barrier" if args.early_barrier else "",
                 ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
             )
-        print("======= {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
-                args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
+        print("======= [Trace analysis] {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
+            args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
 
     if "DLRM" in args.model_name:
         dlrm_folder_str = "b/" if args.is_batched_emb else "f/"
@@ -78,13 +78,14 @@ if __name__ == '__main__':
         args.batch_size,
         "_distributed" if args.num_gpus > 1 else ""
     )
-    trace_file = "{}{}.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "")
+    per_device_prefix = "{}{}".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "")
+    trace_file = "{}.json".format(per_device_prefix)
     if not os.path.exists(trace_file):
         print("Trace file doesn't exist! Please run the benchmark first.")
         exit(1)
-    trimmed_trace_file="{}{}_trimmed_{}.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    trimmed_trace_file="{}_trimmed_{}.json".format(per_device_prefix, args.iters)
     if not os.path.exists(trimmed_trace_file):
-        trimmed_trace_file = trim_trace_by_num_iter(trace_file, iters=args.iters, trimmed_file=trimmed_trace_file)
+        trimmed_trace_file = trim_trace_by_num_iter(trace_file, trimmed_trace_file, iters=args.iters)
     with open(trimmed_trace_file) as f:
         trace = json.load(f)
 
@@ -98,8 +99,8 @@ if __name__ == '__main__':
 
     # Extract and save overheads
     overhead_stats, overhead_raw = get_overheads(ops)
-    overhead_stats_name = "{}{}_overhead_stats_{}.json".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
-    overhead_raw_name = "{}{}_overhead_raw_{}.csv".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    overhead_stats_name = "{}_overhead_stats_{}.json".format(per_device_prefix, args.iters)
+    overhead_raw_name = "{}_overhead_raw_{}.csv".format(per_device_prefix, args.iters)
     print("Rank {}: export overheads to JSON...".format(ext_dist.my_local_rank if ext_dist.my_size > 1 else 0))
     with open(overhead_stats_name, "w") as f:
         json.dump(overhead_stats, f)
@@ -161,6 +162,6 @@ QPS: {QPS:.2f}
             eg_comm
         )
 
-    summary_file = "{}{}_summary_{}.log".format(prefix, ("_" + str(ext_dist.my_local_rank)) if ext_dist.my_size > 1 else "", args.iters)
+    summary_file = "{}_summary_{}.log".format(per_device_prefix, args.iters)
     with open(summary_file, 'w') as f:
         f.write(st)

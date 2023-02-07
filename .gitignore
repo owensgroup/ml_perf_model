@@ -10,5 +10,6 @@ analysis/ml_predictors/*
 */*.pdf
 */*.png
 analysis/*.json
+analysis/collective_params/*
 run_kaggle_pt/*
 benchmark/run_kaggle_pt/*

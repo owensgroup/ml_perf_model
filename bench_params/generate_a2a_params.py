@@ -29,40 +29,43 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-from analysis.inference import infer
+import numpy as np
+from itertools import combinations_with_replacement
+
+TABLE_LIMIT = {
+    2: 15,
+    4: 10,
+    8: 6,
+}
+MEMORY_SCALE_FACTOR = 0.9
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Get performance model error for ops.')
-    parser.add_argument('--op-type', type=str, default='all')
-    parser.add_argument('--backward', action='store_true', default=False)
-    parser.add_argument('--emb-heuristic', action='store_true', default=False)
-    parser.add_argument("--emb-data-path-suffix", type=str, default='fbgemm_dlrm_datasets_test')
+    parser = argparse.ArgumentParser('Generate all-to-all params.')
+    parser.add_argument('--num-gpus', type=int, default=4)
+    parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024) # V100, in bytes
+    parser.add_argument('--num-samples', type=int, default=10000)
     args = parser.parse_args()
 
-    if args.op_type == 'all':
-        op_list = ['embedding_lookup', 'fully_connected', 'conv2d', 'conv1d', 'concat', 'memcpy', 'transpose', 'bn', 'tril']
-        pass_list = ['forward', 'backward']
-    else:
-        op_list = [args.op_type]
-        pass_list = ['backward' if args.backward else 'forward']
+    num_table_limit = TABLE_LIMIT[args.num_gpus]
+    batch_sizes = [256, 512, 1024, 2048, 4096]
+    embedding_dims = [32, 64, 128, 256]
+    all_perms = []
+    if args.num_samples == -1: # All permutations
+        for B in batch_sizes:
+            cs = combinations_with_replacement(np.arange(1, num_table_limit+1), args.num_gpus)
+            for c in cs:
+                for D in embedding_dims:
+                    if B * sum(c) * D * 4 < args.per_gpu_memory * MEMORY_SCALE_FACTOR:
+                        all_perms.append(tuple([B] + list(c) + [D]))
+    else: # Random
+        for iter in range(args.num_samples):
+            B = np.random.choice(batch_sizes, 1).item()
+            c = np.random.choice(np.arange(1, num_table_limit+1), args.num_gpus, replace=True).tolist()
+            D = np.random.choice(embedding_dims, 1).item()
+            if B * sum(c) * D * 4 < args.per_gpu_memory * MEMORY_SCALE_FACTOR:
+                all_perms.append(tuple([B] + c + [D]))
+    all_perms = sorted(list(set(all_perms)))
 
-    for op_type in op_list:
-        for p in pass_list:
-            if (op_type == 'fully_connected' or \
-                    op_type == 'transpose' or \
-                    op_type == 'concat' or \
-                    op_type == 'memcpy') and \
-                        p == 'backward': # No backward for these ops
-                continue
-            if op_type == 'embedding_lookup' and args.emb_heuristic:
-                for big in [False, True]:
-                    for hit_rate_estimation in [False, True]:
-                        for fbgemm in [False, True]:
-                            infer(op_type, p=='backward', big=big, hit_rate_estimation=hit_rate_estimation, fbgemm=fbgemm)
-            else:
-                infer(
-                    op_type,
-                    backward=(p=='backward'),
-                    emb_use_mlp=True,
-                    suffix=args.emb_data_path_suffix,
-                )
+    with open('./a2a_{}_params.txt'.format(args.num_gpus), 'a+') as f:
+        for p in all_perms:
+            f.write(' '.join([str(x) for x in p]) + '\n')
