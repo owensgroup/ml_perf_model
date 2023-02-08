@@ -501,7 +501,6 @@ def get_kernel_time(op, embedding_rfs=None):
         kernel_times.append(t1)
         kernel_times.append(t2)
         t = t1 + t2
-        # print(" -- ", bmm_op.name, batch_size, M, K, N, bmm_op.input_shapes, t)
     elif op.name == "aten::conv2d":
         batch_size, IC, IH, _ = op.input_shapes[0]
         OC, FH, FW = op.input_shapes[1][0], op.input_shapes[1][2], op.input_shapes[1][3]
@@ -526,28 +525,25 @@ def get_kernel_time(op, embedding_rfs=None):
                 OC, FH, FW = conv_bw_op.input_shapes[0][1], conv_bw_op.input_shapes[2][2], conv_bw_op.input_shapes[2][3]
                 stride, padding_h, dilation, is_dw = conv_bw_op.inputs[4][0], conv_bw_op.inputs[5][0], conv_bw_op.inputs[6][0], int(conv_bw_op.inputs[9] != 1)
                 t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
-                kernel_times.append(t)
             else: # 1D stride -> conv1d
                 batch_size, ic_x_groups, L = conv_bw_op.input_shapes[1] # [output, input, filter]
                 oc_x_groups = conv_bw_op.input_shapes[0][1]
                 groups = ic_x_groups
                 OC = oc_x_groups // groups
                 t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
-                kernel_times.append(t)
         else: # cudnn_convolution_backward
             if len(conv_bw_op.inputs[4]) == 2: # 2D stride -> conv2d
                 batch_size, IC, IH, _ = conv_bw_op.input_shapes[0] # [input, output, filter]
                 OC, FH, FW = conv_bw_op.input_shapes[1][1], conv_bw_op.input_shapes[2][2], conv_bw_op.input_shapes[2][3]
                 stride, padding_h, dilation, is_dw = conv_bw_op.inputs[4][0], conv_bw_op.inputs[3][0], conv_bw_op.inputs[5][0], int(conv_bw_op.inputs[6] != 1)
                 t = mlp_predictor_kwargs("conv2d", backward=True, batch_size=batch_size, H=IH+2*padding_h, IC=IC, OC=OC, stride=stride, dilation=dilation, FH=FH, FW=FW, is_dw=is_dw)
-                kernel_times.append(t)
             else: # 1D stride -> conv1d
                 batch_size, ic_x_groups, L = conv_bw_op.input_shapes[0] # [input, output, filter]
                 oc_x_groups = conv_bw_op.input_shapes[1][1]
                 groups = ic_x_groups
                 OC = oc_x_groups // groups
                 t = mlp_predictor_kwargs("conv1d", backward=True, batch_size=batch_size, L=L, IC=1, OC=OC, groups=groups)
-                kernel_times.append(t)
+        kernel_times.append(t)
     elif op.name == "LookupFunction":
         embedding_ops_stack.append(op)
         s = op.inputs[0]
@@ -601,6 +597,7 @@ def get_kernel_time(op, embedding_rfs=None):
             embedding_dims=Ds,
             reuse_factors=embedding_rfs,
         )
+        kernel_times.append(t)
     elif "CppNode<SplitLookupFunction_" in op.name: # FBGEMM backward
         el_op = embedding_ops_stack.pop()
         batch_size = el_op.output_shapes[0][0]
@@ -616,6 +613,7 @@ def get_kernel_time(op, embedding_rfs=None):
             embedding_dims=Ds,
             reuse_factors=embedding_rfs,
         )
+        kernel_times.append(t)
     elif op.name == "aten::batch_norm":
         if len(op.input_shapes[0]) == 4:
             batch_size, OC, H, _ = op.input_shapes[0] # BN 2D
