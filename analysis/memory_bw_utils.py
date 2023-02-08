@@ -29,6 +29,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import numpy as np
+import pandas as pd
+import re
 from scipy.optimize import curve_fit
 
 # alg_bw -> bus_bw for multi-gpu collectives
@@ -42,6 +44,41 @@ MUL_FACTOR_FUNCS = {
     'reduce_scatter': lambda n: (n-1) / n,
     'others': lambda n: 1,
 }
+
+
+def process_param_data(
+    prefix="../../3rdparty/param/train/comms/pt/bench_results",
+    collectives=['all_to_all', 'all_to_allv', 'all_reduce', 'all_gather', 'all_gather_base', 'reduce', 'reduce_scatter'],
+    num_gpus=4,
+    epsilon=4e-4,
+):
+    data = {}
+    for collective in collectives:
+        d = {
+            'size': [],
+            'latency': [],
+            'alg_bw': [],
+            'bus_bw': []
+        }
+        filename = "{}/{}_{}.txt".format(prefix, collective, num_gpus)
+        header_found = False
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                if re.search('COMMS-RES', line):
+                    if not header_found:
+                        header_found = True
+                        continue
+                    d['size'].append(int(line.split()[1].strip(' \n\t')))
+                    d['latency'].append(float(line.split()[3].strip(' \n\t')))
+                    d['alg_bw'].append(float(line.split()[-2].strip(' \n\t')) + epsilon)
+                    d['bus_bw'].append(float(line.split()[-1].strip(' \n\t')) + epsilon)
+            d['size'] = np.array(d['size'])
+            d['latency'] = np.array(d['latency'])
+            d['alg_bw'] = np.array(d['alg_bw'])
+            d['bus_bw'] = np.array(d['bus_bw'])
+            data[collective] = pd.DataFrame(d)
+    return data
 
 
 # Get turning points of the bus BW curve for a collective

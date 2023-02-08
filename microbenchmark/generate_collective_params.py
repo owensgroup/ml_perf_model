@@ -1,48 +1,25 @@
-import re, subprocess, os
-import numpy as np
+import subprocess, os
 from analysis.memory_bw_utils import *
 from analysis.utils import GPU_COUNT, GPU_NAME
 
-num_gpus = 4
-epsilon = 4e-4
 superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 collectives = ['all_to_allv', 'all_reduce']
-
-num_of_collectives = len(collectives)
-data = {}
-for idx, collective in enumerate(collectives):
-    data[collective] = {
-        'size': [],
-        'latency': [],
-        'alg_bw': [],
-        'bus_bw': []
-    }
-    filename = '/home/m092926/daisy/Documents/ml_perf_model/3rdparty/param/train/comms/pt/bench_results/{}_{}.txt'.format(collective, num_gpus)
-    header_found = False
-    with open(filename, 'r') as f:
-        print("Processing {} data...".format(collective))
-        lines = f.readlines()
-        for line in lines:
-            if re.search('COMMS-RES', line):
-                if not header_found:
-                    header_found = True
-                    continue
-                data[collective]['size'].append(int(line.split()[1].strip(' \t\n')))
-                data[collective]['latency'].append(float(line.split()[3].strip(' \t\n')))
-                data[collective]['alg_bw'].append(float(line.split()[-2].strip(' \t\n')) + epsilon)
-                data[collective]['bus_bw'].append(float(line.split()[-1].strip(' \t\n')) + epsilon)
-        data[collective]['size'] = np.array(data[collective]['size'])
-        data[collective]['latency'] = np.array(data[collective]['latency'])
-        data[collective]['alg_bw'] = np.array(data[collective]['alg_bw'])
-        data[collective]['bus_bw'] = np.array(data[collective]['bus_bw'])
+data = process_param_data(
+    prefix="../3rdparty/param/train/comms/pt/bench_results",
+    collectives=collectives,
+    num_gpus=GPU_COUNT,
+)
 
 # Get slopes of for the 2nd section of the curves
 mem_chs = {}
 sigmoid_params = {}
-for idx, collective in enumerate(collectives):
+for collective in collectives:
     mem_chs[collective] = get_memory_characteristics(data[collective])
-    sigmoid_params[collective] = fit_sigmoid_bw_predictor(data[collective])
+    sigmoid_params[collective] = fit_sigmoid_bw_predictor(data[collective], mem_chs[collective])
 topology = subprocess.Popen(["nvidia-smi", "topo", "-m"], stdout=subprocess.PIPE).stdout.read()
+topology = str(topology).replace('\\x1b[4m', '').replace('\\x1b[0m', '').replace('\\t', '\\t\\t')
+topology = bytes(topology, "utf-8").decode("unicode_escape")[2:-1]
+
 
 template = f'''from analysis.memory_bw_utils import MUL_FACTOR_FUNCS
 """
@@ -84,10 +61,9 @@ ALL_REDUCE_PARAMS = {{
         { sigmoid_params["all_reduce"][3] },
     ),
 }}
-
 '''
 
-param_file = "../analysis/mem_params/{}x{}.py".format(GPU_COUNT, GPU_NAME)
-if not os.path.exists(param_file):
-    with open(param_file, 'w') as f:
+mem_param_file = "../analysis/mem_comm_params/{}x{}.py".format(GPU_COUNT, GPU_NAME)
+if not os.path.exists(mem_param_file):
+    with open(mem_param_file, 'w') as f:
         f.write(template)

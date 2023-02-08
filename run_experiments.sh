@@ -157,6 +157,7 @@ do
 
             # Strong scaling
             eval "$cmd -b $((batch_size*32))"
+
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
