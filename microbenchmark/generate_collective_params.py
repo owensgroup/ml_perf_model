@@ -27,10 +27,10 @@ for idx, collective in enumerate(collectives):
                 if not header_found:
                     header_found = True
                     continue
-                data[collective]['size'].append(int(line.split('\t')[2].lstrip('\t')))
-                data[collective]['latency'].append(float(line.split('\t')[4].lstrip('\t')))
-                data[collective]['alg_bw'].append(float(line.split('\t')[-2].rstrip('\n')) + epsilon)
-                data[collective]['bus_bw'].append(float(line.split('\t')[-1].rstrip('\n')) + epsilon)
+                data[collective]['size'].append(int(line.split()[1].strip(' \t\n')))
+                data[collective]['latency'].append(float(line.split()[3].strip(' \t\n')))
+                data[collective]['alg_bw'].append(float(line.split()[-2].strip(' \t\n')) + epsilon)
+                data[collective]['bus_bw'].append(float(line.split()[-1].strip(' \t\n')) + epsilon)
         data[collective]['size'] = np.array(data[collective]['size'])
         data[collective]['latency'] = np.array(data[collective]['latency'])
         data[collective]['alg_bw'] = np.array(data[collective]['alg_bw'])
@@ -87,7 +87,7 @@ ALL_REDUCE_PARAMS = {{
 
 '''
 
-param_file = "../analysis/{}x{}.py".format(GPU_COUNT, GPU_NAME)
+param_file = "../analysis/mem_params/{}x{}.py".format(GPU_COUNT, GPU_NAME)
 if not os.path.exists(param_file):
     with open(param_file, 'w') as f:
         f.write(template)
