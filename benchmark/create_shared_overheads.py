@@ -34,18 +34,24 @@ from analysis.utils import PM_HOME, GPU_NAME
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Create shared overheads for E2E prediction of all workloads.")
-    parser.add_argument("--iters", type=int, default=10)
+    parser.add_argument("--iters", type=int, default=30)
     args = parser.parse_args()
     print("======= Creating shared overheads... =======")
 
     root_dir = '{}/data/{}/e2e'.format(PM_HOME, GPU_NAME)
     # Collect all overhead files except for per-process ones
-    overhead_stats_files = \
-        set(glob.glob("{}/*/*/*overhead_stats_{}.json".format(root_dir, args.iters))) - \
-        set(glob.glob("{}/*/*/*_[0-9]_overhead_stats_{}.json".format(root_dir, args.iters)))
-    overhead_raw_files = \
-        set(glob.glob("{}/*/*/*overhead_raw_{}.csv".format(root_dir, args.iters))) - \
-        set(glob.glob("{}/*/*/*_[0-9]_overhead_raw_{}.csv".format(root_dir, args.iters)))
+    overhead_stats_files = set()
+    overhead_raw_files = set()
+    for x in range(2, 6):
+        tmp_str = "/*" * x
+        overhead_stats_files = overhead_stats_files.union(
+            (set(glob.glob("{}{}/*overhead_stats_{}.json".format(root_dir, tmp_str, args.iters))) - \
+             set(glob.glob("{}{}/*_[0-9]_overhead_stats_{}.json".format(root_dir, tmp_str, args.iters))))
+        )
+        overhead_raw_files = overhead_raw_files.union(
+            (set(glob.glob("{}{}/*overhead_raw_{}.csv".format(root_dir, tmp_str, args.iters))) - \
+             set(glob.glob("{}{}/*_[0-9]_overhead_raw_{}.csv".format(root_dir, tmp_str, args.iters))))
+        )
 
     shared_overhead = create_shared_overhead(overhead_raw_files, overhead_stats_files)
 

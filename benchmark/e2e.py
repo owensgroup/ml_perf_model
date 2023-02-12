@@ -45,7 +45,8 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--early-barrier", action="store_true", default=False)
     parser.add_argument("-a", "--aggregated-allreduce", action="store_true", default=False)
     parser.add_argument("-o", "--use-shared-overheads", action="store_true", default=False)
-    parser.add_argument("-d", "--debug", action="store_true", default=False)
+    parser.add_argument("-d", "--table-indices", type=str, default="4-24-26-156-340-404")
+    parser.add_argument("-u", "--debug", action="store_true", default=False)
     args = parser.parse_args()
 
     if args.num_gpus > 1:
@@ -53,11 +54,12 @@ if __name__ == '__main__':
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
         tmp_str = ""
         if "DLRM" in args.model_name:
-            tmp_str = "{}{}{}{}".format(
+            tmp_str = "{}{}{}{}{}".format(
                 ", batched_emb" if args.is_batched_emb else ", FBGEMM",
                 ", bucket size: {}".format(args.bucket_size_mb) if args.bucket_size_mb != 25 else "",
                 ", early barrier" if args.early_barrier else "",
                 ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
+                " ({})".format(args.table_indices) if args.model_name == "DLRM_open_source" else "",
             )
         print("======= [Training time prediction] {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
             args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
@@ -72,10 +74,11 @@ if __name__ == '__main__':
             )
     else:
         dlrm_folder_str = ""
-    prefix = "{}/data/{}/e2e/{}/{}{}_{}{}".format(
+    prefix = "{}/data/{}/e2e/{}{}/{}{}_{}{}".format(
         PM_HOME,
         GPU_NAME,
         args.model_name,
+        ("/" + args.table_indices) if args.model_name == "DLRM_open_source" else "",
         dlrm_folder_str,
         args.num_gpus,
         args.batch_size,

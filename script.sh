@@ -34,3 +34,9 @@
 ./run_experiments.sh -o -r
 ./run_experiments.sh -o -a
 ./run_experiments.sh -o
+
+ngpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
+while IFS= read -r line
+do
+    ./run_random_experiments.sh -o -r -a -d $line
+done < "benchmark/tasks_2021_${ngpus}.txt"

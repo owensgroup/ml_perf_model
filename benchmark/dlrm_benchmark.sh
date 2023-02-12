@@ -9,7 +9,8 @@ emb_type="--fbgemm-emb"
 folder_emb_type="f" # FBGEMM
 early_barrier=
 aggregated_allreduce=
-while getopts b:m:g:ts:rae: flag
+table_indices="4-24-26-156-340-404" # Default tables
+while getopts b:m:g:ts:rad:e: flag
 do
     case "${flag}" in
         b) mb_size=${OPTARG};;
@@ -20,6 +21,7 @@ do
         s) bucket_size_mb=${OPTARG};;
         r) early_barrier="--early-barrier";;
         a) aggregated_allreduce="--aggregated-allreduce";;
+        d) table_indices=${OPTARG};;
         e) dlrm_extra_option=${OPTARG};;
     esac
 done
@@ -44,6 +46,7 @@ common_args="   --use-gpu\
                 --bucket-size-mb=${bucket_size_mb}\
                 ${early_barrier}\
                 ${aggregated_allreduce} "
+model_name_and_indices=$model_name
 
 # ----------------------- Model param -----------------------
 _args=""
@@ -122,21 +125,22 @@ then
         # " --test-mini-batch-size=16384"
 elif [[ $model_name == "DLRM_open_source" ]]; # DLRM using the open-source dataset
 then
+    model_name_and_indices="${model_name_and_indices}/${table_indices}"
     _args=" --data-generation=dataset\
             --data-set=dlrm_open_source\
             --processed-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/merged_simple.pt\
-            --arch-embedding-table-indices=4-24-26-156-340-404\
+            --arch-embedding-table-indices=${table_indices}\
             --arch-mlp-bot=512-1024-512-256-128\
             --arch-mlp-top=1024-1024-512-512-256-1\
             --loss-function=bce\
             --learning-rate=1.0\
             --test-freq=102400\
-            --memory-map " # default: 4-24-26-156-340-404
+            --memory-map "
 fi
 
 # GPU Benchmarking
 echo "--------------------------------------------"
-echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
+echo "GPU Benchmarking - ${model_name_and_indices} running on $ngpus GPUs"
 echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))
@@ -152,7 +156,7 @@ cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
 echo "-------------------"
 echo "Using GPUS: $_gpus, batch size: $mb_size"
 echo "-------------------"
-folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${folder_emb_type}"
+folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name_and_indices}/${folder_emb_type}"
 if [ ${ngpus} -gt 1 ];
 then
   if [[ $early_barrier == "--early-barrier" ]];
