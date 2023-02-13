@@ -33,6 +33,10 @@ import pandas as pd
 import re
 from scipy.optimize import curve_fit
 
+# EPSILON for logarithm
+EPSILON = 4e-4
+
+
 # alg_bw -> bus_bw for multi-gpu collectives
 MUL_FACTOR_FUNCS = {
     'all_to_all': lambda n: (n-1) / n,
@@ -50,7 +54,6 @@ def process_param_data(
     prefix="../../3rdparty/param/train/comms/pt/bench_results",
     collectives=['all_to_all', 'all_to_allv', 'all_reduce', 'all_gather', 'all_gather_base', 'reduce', 'reduce_scatter'],
     num_gpus=4,
-    epsilon=4e-4,
 ):
     data = {}
     for collective in collectives:
@@ -71,14 +74,68 @@ def process_param_data(
                         continue
                     d['size'].append(int(line.split()[1].strip(' \n\t')))
                     d['latency'].append(float(line.split()[3].strip(' \n\t')))
-                    d['alg_bw'].append(float(line.split()[-2].strip(' \n\t')) + epsilon)
-                    d['bus_bw'].append(float(line.split()[-1].strip(' \n\t')) + epsilon)
+                    d['alg_bw'].append(float(line.split()[-2].strip(' \n\t')) + EPSILON)
+                    d['bus_bw'].append(float(line.split()[-1].strip(' \n\t')) + EPSILON)
             d['size'] = np.array(d['size'])
             d['latency'] = np.array(d['latency'])
             d['alg_bw'] = np.array(d['alg_bw'])
             d['bus_bw'] = np.array(d['bus_bw'])
             data[collective] = pd.DataFrame(d)
     return data
+
+
+def process_general_a2a_param_data(
+    prefix="../../3rdparty/param/train/comms/pt/bench_results",
+    num_gpus=4,
+):
+    d = {
+        'btd': [],
+        'size': [],
+        'latency': [],
+        'alg_bw': [],
+        'bus_bw': []
+    }
+    filename = "{}/general_all_to_allv_{}.txt".format(prefix, num_gpus)
+    header_found = False
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            if re.search('COMMS-RES', line):
+                if not header_found:
+                    header_found = True
+                    continue
+                d['btd'].append(line.split()[2].lstrip(' \n\t'))
+                d['size'].append(int(line.split()[1].lstrip(' \n\t')))
+                d['latency'].append(sum([float(s) for s in line.split()[3].strip(' \n\t').split('-')]) / num_gpus)
+                d['alg_bw'].append(sum([float(s) for s in line.split()[4].strip(' \n\t').split('-')]) / num_gpus + EPSILON)
+                d['bus_bw'].append(sum([float(s) for s in line.split()[5].strip(' \n\t').split('-')]) / num_gpus + EPSILON)
+        d['size'] = np.array(d['size'])
+        d['latency'] = np.array(d['latency'])
+        d['alg_bw'] = np.array(d['alg_bw'])
+        d['bus_bw'] = np.array(d['bus_bw'])
+    return pd.DataFrame(d)
+
+
+# Max of (max of sent/received) across device
+def get_max_message_size(s):
+    splitted = s.split(',')
+    tables = [int(t) for t in splitted[1].split('-')]
+    num_gpus = len(tables)
+    B = int(splitted[0]) // num_gpus
+    D = int(splitted[2])
+    T_max = max([max(sum(tables) - t, t * (num_gpus-1)) for t in tables])
+    return B * T_max * D * 4 # float32
+
+
+# Max of (max of sent/received) across device
+def get_max_sum_message_size(s):
+    splitted = s.split(',')
+    tables = [int(t) for t in splitted[1].split('-')]
+    num_gpus = len(tables)
+    B = int(splitted[0]) // num_gpus
+    D = int(splitted[2])
+    T_max = max([(sum(tables) - t + t * (num_gpus-1)) for t in tables])
+    return B * T_max * D * 4 # float32
 
 
 # Get turning points of the bus BW curve for a collective

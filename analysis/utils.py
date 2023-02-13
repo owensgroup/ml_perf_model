@@ -30,7 +30,7 @@
 
 import os
 import torch
-import argparse, json, GPUtil
+import argparse, json, GPUtil, importlib
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -184,6 +184,20 @@ MEMORY_STREAM = 1
 ADDITIONAL = 2
 
 
+ALL_TO_ALL_PARAMS = None
+ALL_REDUCE_PARAMS = None
+if GPU_COUNT > 1:
+    assert os.path.exists("{}/analysis/mem_comm_params/{}x{}.py".format(PM_HOME, GPU_COUNT, GPU_NAME)), \
+        "Memory/Communication performance modeling params don't exist!"
+    module_name = "analysis.mem_comm_params.{}x{}".format(GPU_COUNT, GPU_NAME)
+    ALL_TO_ALL_PARAMS = importlib.import_module(module_name, package=None).ALL_TO_ALL_PARAMS
+
+    assert os.path.exists("{}/analysis/mem_comm_params/{}x{}.py".format(PM_HOME, GPU_COUNT, GPU_NAME)), \
+        "Memory/Communication performance modeling params don't exist!"
+    module_name = "analysis.mem_comm_params.{}x{}".format(GPU_COUNT, GPU_NAME)
+    ALL_REDUCE_PARAMS = importlib.import_module(module_name, package=None).ALL_REDUCE_PARAMS
+
+
 # TODO: Distinguish conv1d and conv2d for ConvolutionBackward
 CONSIDER = [
     "aten::linear", "AddmmBackward", \
@@ -301,11 +315,11 @@ def err(pred, real):
 
 
 def geomean(x):
-    return np.exp(np.log(x).mean())
+    return np.exp(np.log(x+EPSILON).mean())
 
 
 def gmae(x):
-    return np.exp(np.log(abs(x)).mean())
+    return np.exp(np.log(abs(x)+EPSILON).mean())
 
 
 def mape(x):

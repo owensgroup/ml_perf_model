@@ -40,7 +40,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.op_type == 'all':
-        op_list = ['embedding_lookup', 'fully_connected', 'conv2d', 'conv1d', 'concat', 'memcpy', 'transpose', 'bn', 'tril']
+        op_list = ['embedding_lookup', 'fully_connected', \
+            'conv2d', 'conv1d', 'concat', 'memcpy', \
+            'transpose', 'bn', 'tril', \
+            'all_to_all', 'all_reduce'
+        ]
         pass_list = ['forward', 'backward']
     else:
         op_list = [args.op_type]
@@ -51,7 +55,9 @@ if __name__ == '__main__':
             if (op_type == 'fully_connected' or \
                     op_type == 'transpose' or \
                     op_type == 'concat' or \
-                    op_type == 'memcpy') and \
+                    op_type == 'memcpy' or \
+                    op_type == 'all_to_all' or \
+                    op_type == 'all_reduce') and \
                         p == 'backward': # No backward for these ops
                 continue
             if op_type == 'embedding_lookup' and args.emb_heuristic:

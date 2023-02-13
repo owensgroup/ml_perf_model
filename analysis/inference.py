@@ -231,35 +231,27 @@ def mlp_predictor_tensor(x, op_type, backward=False):
     return result
 
 
-def all_to_all_predictor(**kwargs):
-    assert os.path.exists("{}/analysis/mem_comm_params/{}x{}.py".format(PM_HOME, GPU_COUNT, GPU_NAME)), \
-        "Memory/Communication performance modeling params don't exist!"
-    module_name = "analysis.mem_comm_params.{}x{}".format(GPU_COUNT, GPU_NAME)
-    MEM_COMM_PARAMS = importlib.import_module(module_name, package=None).ALL_TO_ALL_PARAMS
+def all_to_all_predictor(tensor_size):
     return predict_data_movement_time(
-            kwargs["tensor_size"] * 4,
-            MEM_COMM_PARAMS["mul_factor"],
-            MEM_COMM_PARAMS["mem_ch"],
-            MEM_COMM_PARAMS["sigmoid_param"])
+            tensor_size,
+            ALL_TO_ALL_PARAMS["mul_factor"],
+            ALL_TO_ALL_PARAMS["mem_ch"],
+            ALL_TO_ALL_PARAMS["sigmoid_param"])
 
 
-def all_reduce_predictor(**kwargs):
-    assert os.path.exists("{}/analysis/mem_comm_params/{}x{}.py".format(PM_HOME, GPU_COUNT, GPU_NAME)), \
-        "Memory/Communication performance modeling params don't exist!"
-    module_name = "analysis.mem_comm_params.{}x{}".format(GPU_COUNT, GPU_NAME)
-    MEM_COMM_PARAMS = importlib.import_module(module_name, package=None).ALL_REDUCE_PARAMS
+def all_reduce_predictor(tensor_size):
     return predict_data_movement_time(
-            kwargs["tensor_size"] * 4,
-            MEM_COMM_PARAMS["mul_factor"],
-            MEM_COMM_PARAMS["mem_ch"],
-            MEM_COMM_PARAMS["sigmoid_param"])
+            tensor_size,
+            ALL_REDUCE_PARAMS["mul_factor"],
+            ALL_REDUCE_PARAMS["mem_ch"],
+            ALL_REDUCE_PARAMS["sigmoid_param"])
 
 
-def collective_predictor(c, **kwargs):
+def collective_predictor(c, tensor_size):
     if c == "nccl:all_to_all":
-        return all_to_all_predictor(**kwargs)
+        return all_to_all_predictor(tensor_size)
     else: # "nccl:all_reduce"
-        return all_reduce_predictor(**kwargs)
+        return all_reduce_predictor(tensor_size)
 
 
 def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
@@ -301,7 +293,7 @@ def infer_concat():
     B_size = concat_data["batch_size"] * concat_data["N"] * concat_data["K"]
     estimated_time = concat_predictor(sum_size=A_size+B_size)
     error = abs_err(estimated_time, concat_data['kernel_runtime'])
-    print("Concat: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+    print("Concat: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
     return None, error
 
 
@@ -313,7 +305,46 @@ def infer_memcpy():
     memcpy_data = memcpy_data[filter]
     estimated_time = memcpy_predictor(tensor_size=tensor_size[filter])
     error = abs_err(estimated_time, memcpy_data['kernel_runtime'])
-    print("Memcpy: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+    print("Memcpy: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
+    return None, error
+
+
+def infer_a2a():
+    a2a_data = process_general_a2a_param_data(
+        prefix="{}/3rdparty/param/train/comms/pt/bench_results".format(PM_HOME),
+        num_gpus=GPU_COUNT,
+    )
+    size = a2a_data["size"]
+    estimated_time = size.apply(all_to_all_predictor)
+    error1 = abs_err(estimated_time, a2a_data['latency'])
+    print("All-to-all (sum): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error1) * 100.0, mape(error1) * 100.0, error1.std() * 100.0))
+
+    size = a2a_data['btd'].apply(get_max_message_size)
+    estimated_time = (size).apply(all_to_all_predictor)
+    error2 = abs_err(estimated_time, a2a_data['latency'])
+    print("All-to-all (max of max): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error2) * 100.0, mape(error2) * 100.0, error2.std() * 100.0))
+
+    size = a2a_data['btd'].apply(get_max_sum_message_size)
+    estimated_time = (size).apply(all_to_all_predictor)
+    error3 = abs_err(estimated_time, a2a_data['latency'])
+    print("All-to-all (max of sum): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error3) * 100.0, mape(error3) * 100.0, error3.std() * 100.0))
+
+    error = error1 if gmae(error1) < gmae(error2) and gmae(error1) < gmae(error3) else (
+        error2 if gmae(error2) < gmae(error1) and gmae(error2) < gmae(error3) else error3
+    )
+
+    return None, error
+
+
+def infer_all_reduce():
+    all_reduce_data = process_param_data(
+        prefix="{}/3rdparty/param/train/comms/pt/bench_results".format(PM_HOME),
+        collectives=["general_all_reduce"],
+        num_gpus=GPU_COUNT,
+    )["general_all_reduce"]
+    estimated_time = all_reduce_data["size"].apply(all_reduce_predictor)
+    error = abs_err(estimated_time, all_reduce_data['latency'])
+    print("All-reduce: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
     return None, error
 
 
@@ -419,7 +450,7 @@ def infer_from_model(op_type, backward=False, **kwargs):
     estimated_time = mlp_predictor_tensor(x, op_type, backward=backward)
     real_time = torch.exp(y.cpu().detach()).view(-1)
     error = abs_err(estimated_time, real_time)
-    print("{}: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(suffix, gmae(error) * 100.0, error.mean() * 100.0, error.std() * 100.0))
+    print("{}: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(suffix, gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
     return best_config, error
 
 
@@ -428,6 +459,10 @@ def infer(op_type, backward=False, **kwargs):
         best_config, error = infer_concat()
     elif op_type == "memcpy":
         best_config, error = infer_memcpy()
+    elif op_type == "all_to_allv":
+        best_config, error = infer_a2a()
+    elif op_type == "all_reduce":
+        best_config, error = infer_all_reduce()
     elif op_type == "embedding_lookup" and ("emb_use_mlp" not in kwargs.keys() or not kwargs["emb_use_mlp"]):
         big = kwargs["big"]
         hit_rate_estimation = kwargs["hit_rate_estimation"]
@@ -664,7 +699,7 @@ def get_kernel_time(op, embedding_rfs=None):
             for c in n.children:
                 dfs(c)
         dfs(op)
-        tensor_size = np.prod(collective_op.input_shapes[0])
+        tensor_size = np.prod(collective_op.input_shapes[0]) * 4
         t = collective_predictor(collective_op.name, tensor_size=tensor_size)
         kernel_times.append(t)
     elif op.name == "aten::cat":
