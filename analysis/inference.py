@@ -85,6 +85,7 @@ def get_cached_row_count(**kwargs):
     return avg_num_rows_per_table
 
 
+# Ready for same E & D & L (both FBGEMM and non-), not ready for flexible FBGEMM. TODO: Fix this.
 def embedding_forward_predictor(**kwargs):
     avg_num_rows_per_table_in_l2 = get_cached_row_count(**kwargs)
     B = kwargs["batch_size"]
@@ -145,6 +146,7 @@ def embedding_backward_sgd_predictor_simple(**kwargs):
     return max(GPU_PARAMS["DRAM_BW_time"](total_t), total_mac / peak_throughput / 1000)
 
 
+# Not ready for any FBGEMM. TODO: Fix this.
 def embedding_backward_sgd_predictor(**kwargs):
     # hit_rate = C(X, L) / C(E, L), X = avg_num_rows_per_table
     def hit_rate(X, E, L):
@@ -289,11 +291,12 @@ def infer_concat():
     concat_data = pd.read_csv('{}/data/{}/kernel/concat_1.csv'.format(PM_HOME, GPU_NAME), delimiter=',')
     concat_data = preprocess(concat_data)
     concat_data = concat_data[concat_data["batch_size"] > 1]
+    concat_data = concat_data[concat_data["kernel_name"].str.contains("Cat")]
     A_size = concat_data["batch_size"] * concat_data["M"] * concat_data["K"]
     B_size = concat_data["batch_size"] * concat_data["N"] * concat_data["K"]
     estimated_time = concat_predictor(sum_size=A_size+B_size)
     error = abs_err(estimated_time, concat_data['kernel_runtime'])
-    print("Concat: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
+    print("Concat: GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
     return None, error
 
 
@@ -305,7 +308,7 @@ def infer_memcpy():
     memcpy_data = memcpy_data[filter]
     estimated_time = memcpy_predictor(tensor_size=tensor_size[filter])
     error = abs_err(estimated_time, memcpy_data['kernel_runtime'])
-    print("Memcpy: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
+    print("Memcpy: GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
     return None, error
 
 
@@ -317,17 +320,17 @@ def infer_a2a():
     size = a2a_data["size"]
     estimated_time = size.apply(all_to_all_predictor)
     error1 = abs_err(estimated_time, a2a_data['latency'])
-    print("All-to-all (sum): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error1) * 100.0, mape(error1) * 100.0, error1.std() * 100.0))
+    print("All-to-all (sum): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error1) * 100.0, mape(error1) * 100.0, error1.std() * 100.0))
 
     size = a2a_data['btd'].apply(get_max_message_size)
     estimated_time = (size).apply(all_to_all_predictor)
     error2 = abs_err(estimated_time, a2a_data['latency'])
-    print("All-to-all (max of max): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error2) * 100.0, mape(error2) * 100.0, error2.std() * 100.0))
+    print("All-to-all (max of max): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error2) * 100.0, mape(error2) * 100.0, error2.std() * 100.0))
 
     size = a2a_data['btd'].apply(get_max_sum_message_size)
     estimated_time = (size).apply(all_to_all_predictor)
     error3 = abs_err(estimated_time, a2a_data['latency'])
-    print("All-to-all (max of sum): GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error3) * 100.0, mape(error3) * 100.0, error3.std() * 100.0))
+    print("All-to-all (max of sum): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error3) * 100.0, mape(error3) * 100.0, error3.std() * 100.0))
 
     error = error1 if gmae(error1) < gmae(error2) and gmae(error1) < gmae(error3) else (
         error2 if gmae(error2) < gmae(error1) and gmae(error2) < gmae(error3) else error3
@@ -344,7 +347,7 @@ def infer_all_reduce():
     )["general_all_reduce"]
     estimated_time = all_reduce_data["size"].apply(all_reduce_predictor)
     error = abs_err(estimated_time, all_reduce_data['latency'])
-    print("All-reduce: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
+    print("All-reduce: GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
     return None, error
 
 
@@ -450,7 +453,7 @@ def infer_from_model(op_type, backward=False, **kwargs):
     estimated_time = mlp_predictor_tensor(x, op_type, backward=backward)
     real_time = torch.exp(y.cpu().detach()).view(-1)
     error = abs_err(estimated_time, real_time)
-    print("{}: GMAE: {:.2f}%, mean: {:.2f}%, std: {:.2f}%".format(suffix, gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
+    print("{}: GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(suffix, gmae(error) * 100.0, mape(error) * 100.0, error.std() * 100.0))
     return best_config, error
 
 

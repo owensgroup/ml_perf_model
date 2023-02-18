@@ -58,18 +58,18 @@ GPU_COUNT, GPU_NAME = get_gpu_name()
 HW_PARAMS = {
     "A100": {
         "peak_throughput": 12410.474,
-        "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
+        "peak_PCIe_BW": 16.0, # Roughly the per direction of PCIe 4.0 x16 (32 GB/s)
         "peak_DRAM_BW": 1283.578,
         "DRAM_BW_param": {
             "mul_factor": MUL_FACTOR_FUNCS["others"](1),
             "mem_ch": {
-                'ln_p': 16, 
-                'sats_p': 27, 
-                'max_bw': 816.953003, 
-                'overhead': 4.83328223
+                'ln_p': 14.0,
+                'sats_p': 29.0,
+                'max_bw': 1391.103638,
+                'overhead': 6.450239,
             },
-            "sigmoid_param": (6.53478964, 11.78536754, 0.19557855, -3.4045424),
-        }, # Use V100 param as a placeholder. TODO: Fix this.
+            "sigmoid_param": (2.20955621, 20.35203082, 0.62528837, 0.93242722),
+        },
         "peak_L2_BW": 1811.562,
         "L2_BW_param": {
             "mul_factor": MUL_FACTOR_FUNCS["others"](1),
