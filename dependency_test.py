@@ -28,7 +28,7 @@ def get_dependency(graph, module_marker="##"):
             # 1. the current node is dependent on the current comm op
             # 2. meet wait ops
             # 3. meet another collective
-            if depends_on_collective_output(node, comm_op[1]) or \
+            if (comm_op and depends_on_collective_output(node, comm_op[1])) or \
                 is_wait_collective(node) or \
                 has_comm_collective(node):
                 branch = False
@@ -52,9 +52,9 @@ def get_dependency(graph, module_marker="##"):
             # Some cases that nccl:all_to_all/nccl:all_reduce comes with trailing record_param_comms
             elif prev_node and (is_all2all(prev_node) or is_allreduce(prev_node)):
                 branch = True
-                comm_op = ("all_to_all", node.outputs[0], node.output_shapes[0]) \
+                comm_op = ("all_to_all", node.outputs[0], node.output_shapes[0], node) \
                             if is_all2all(prev_node) \
-                            else ("all_reduce", node.outputs[0], node.output_shapes[0])
+                            else ("all_reduce", node.outputs[0], node.output_shapes[0], node)
         prev_node = node
 
     # pprint(overlaps)
