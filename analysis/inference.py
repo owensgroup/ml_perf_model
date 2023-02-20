@@ -801,6 +801,8 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
     }
     stream = COMPUTE_STREAM
     gpu_all_streams_front = 0
+    last_comm_op = None
+    prev_node = None
 
     forward_found = False
     for _, node in sorted_nodes:
@@ -811,6 +813,18 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
         if node.is_op() and not to_skip(node):
             shapes = str(DUMMY_SHAPES)
             stream = infer_multi_stream(node)
+
+            # Sync all GPU streams in 3 cases (similar to dependency_test):
+            # 1. the current node is dependent on the current comm op
+            # 2. meet wait ops
+            # 3. meet another collective
+            if (last_comm_op and depends_on_collective_output(node, last_comm_op[1])) or \
+                    is_wait_collective(node) or \
+                    has_comm_collective(node):
+                last_comm_op = None
+                gpu_time[COMPUTE_STREAM] = gpu_all_streams_front
+                gpu_time[MEMORY_STREAM] = gpu_all_streams_front
+
             cpu_time += overheads["t1"][0] # T1: between two nodes
             if debug:
                 print(" ", node.name, "--------")
@@ -885,8 +899,23 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
                         print("    t5: {:.2f}".format(overheads["t5"][node.name][shapes][0]))
                     else:
                         print("Warning: {} is skipped for not found in the overheads.".format(node.name))
+
+            if has_comm_collective(node) and not is_wait_collective(node):
+                if is_all2all_parent(node): # Has a2a call
+                    tmp = node.get_child_by_name(["aten::new_empty", "aten::empty"])
+                    last_comm_op = ("all_to_all", tmp.outputs[0], tmp.output_shapes[0], node)
+                elif is_allreduce_parent(node): # Has all_reduce call
+                    tmp = node.get_child_by_name("nccl:all_reduce")
+                    last_comm_op = ("all_reduce", tmp.inputs[0], tmp.input_shapes[0], node)
+                # Some cases that nccl:all_to_all/nccl:all_reduce comes with trailing record_param_comms
+                elif prev_node and (is_all2all(prev_node) or is_allreduce(prev_node)):
+                    last_comm_op = ("all_to_all", node.outputs[0], node.output_shapes[0], node) \
+                                if is_all2all(prev_node) \
+                                else ("all_reduce", node.outputs[0], node.output_shapes[0], node)
+
+            prev_node = node
             if debug:
-                print(node.name, cpu_time, gpu_time, node.input_shapes)
+                print("      ", node.name, cpu_time, gpu_time, node.input_shapes)
 
     # It's safe because gpu_time["active"] won't be the maximum
     total_time = max(max(gpu_time.values()), cpu_time)
@@ -917,7 +946,7 @@ def get_e2e_time(graph, overheads, iters, embedding_rfs_file=None, module_marker
 
     e2e_time_list = []
     gpu_active_time_list = []
-    for idx in range(iters):
+    for idx in range(1):
         embedding_rfs = [[float(x) for x in x_.split('-')] for x_ in all_rfs[idx].split('_')]
         e2e_time, gpu_active_time = get_e2e_time_for_each_iter(
             graph, overheads,
