@@ -146,14 +146,6 @@ def trim_trace_by_num_iter(trace_path, trimmed_trace_path, iters=10, skip_iters=
             }
             json.dump(trace, out_file)
 
-        rfs_file = os.path.splitext(trace_path)[0] + "_rfs.txt"
-        if os.path.exists(rfs_file):
-            with open(rfs_file, 'r') as f:
-                rfs = f.readlines()[skip_iters:(skip_iters+iters)]
-            trimmed_rfs_file = os.path.splitext(rfs_file)[0] + "_trimmed_{}.txt".format(iters)
-            with open(trimmed_rfs_file, 'w') as f:
-                f.writelines(rfs)
-
     return trimmed_trace_path
 
 

@@ -184,7 +184,7 @@ then
     cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${folder}/${ngpus}_${mb_size}_graph.json"
   else
     count=0
-    for g in `ls /tmp/pytorch_execution_graph*`
+    for g in `ls /tmp/pytorch_execution_graph*`;
     do
       cp $g "${folder}/${ngpus}_${mb_size}_distributed_${count}_graph.json"
       count=$((count+1))
@@ -199,18 +199,28 @@ then
   outp="dlrm_s_pytorch.prof"
   mv $outp ${outf//".log"/".prof"}
   mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
-  mv "rfs.txt" ${outf//".log"/"_rfs.txt"}
 else
   outf="${folder}/${ngpus}_${mb_size}_distributed.log"
   count=0
-  for g in `ls dlrm_s_pytorch*.prof`
+  for g in `ls dlrm_s_pytorch*.prof`;
   do
     mv $g "${folder}/${ngpus}_${mb_size}_distributed_${count}.prof"
     mv ${g//".prof"/".json"} "${folder}/${ngpus}_${mb_size}_distributed_${count}.json"
-    mv "rfs_${count}.txt" "${folder}/${ngpus}_${mb_size}_distributed_${count}_rfs.txt"
     count=$((count+1))
   done
 fi
 eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
+# move rfs file(s)
+if [ ${ngpus} = 1 ];
+then
+  mv "rfs.txt" ${outf//".log"/"_rfs.txt"}
+else
+  count=0
+  for g in $(seq 1 $ngpus);
+  do
+    mv "rfs_${count}.txt" "${folder}/${ngpus}_${mb_size}_distributed_${count}_rfs.txt"
+    count=$((count+1))
+  done
+fi
 min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $8) best=$8} END{print best}')
 echo "Min time per iteration = $min ms"

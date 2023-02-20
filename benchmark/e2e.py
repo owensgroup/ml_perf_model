@@ -112,7 +112,7 @@ if __name__ == '__main__':
                 real_gpu_active_time = float(line.split(' ')[-3]) # In us
     assert real_gpu_active_time != -1
 
-    embedding_rfs_file = "{}_rfs_trimmed_{}.txt".format(per_device_prefix, args.iters)
+    embedding_rfs_file = "{}_rfs.txt".format(per_device_prefix)
     e2e_time, gpu_active_time = get_e2e_time(
         graph, overheads, iters=args.iters,
         embedding_rfs_file=embedding_rfs_file, debug=args.debug)
