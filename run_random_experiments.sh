@@ -36,7 +36,6 @@ emb_type= # FBGEMM for DLRM
 bucket_size_mb=25 # Bucket size in MB
 early_barrier= # Whether launch a barrier at the beginning of the iteration
 aggregated_allreduce= # Whether extract an execution graph with aggregated allreduce for DDP (i.e. iteration 0)
-table_indices= # Table indices for DLRM open source datasets
 dataset_suffix=2021
 while getopts i:ots:rad:x: flag
 do
@@ -47,17 +46,41 @@ do
         s) bucket_size_mb=${OPTARG};;
         r) early_barrier="-r";;
         a) aggregated_allreduce="-a";;
-        d) table_indices=${OPTARG};;
         x) dataset_suffix=${OPTARG};;
     esac
 done
 
+# Get GPU memory size
+GPU_memory=0
+nvidia-smi --query-gpu=gpu_name,memory.total --format=csv,noheader > /tmp/gpu_name.csv
+for GPU_NAME in "A100" "V100" "P100" "Xp";
+do
+    if grep -q "$GPU_NAME" /tmp/gpu_name.csv
+    then
+        tmp=`grep -e "$GPU_NAME" /tmp/gpu_name.csv`
+        read -a array <<< "$tmp"
+        GPU_memory_MB=${array[${#array[@]} - 2]}
+        GPU_memory="$( echo "$GPU_memory_MB * 1000 * 1000" | bc -l )"
+        break
+    fi
+done
+if [[ $GPU_memory == 0 ]];
+then
+    echo "Unrecognized GPU name! Exit..."
+    exit
+fi
+
 ngpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
 cd benchmark
 
+# Extract random tables from DLRM open-source dataset
+python generate_random_dlrm_tasks.py --per-gpu-memory $GPU_memory
+
 # Benchmark and trace analysis
-for batch_size in 16 32 64 128;
+while IFS= read -r table_indices
 do
+    for batch_size in 16 32 64 128;
+    do
         for model in DLRM_open_source;
         do
             # Multi-GPU?
@@ -85,14 +108,17 @@ do
             ./dlrm_benchmark.sh -b $((batch_size*32)) $options
             eval "$trace_cmd -b $((batch_size*32))" < /dev/null
         done
-done
+    done
+done < "tasks_2021_${ngpus}.txt"
 
 # Create shared overheads
 python create_shared_overheads.py --iters $trimmed_iters
 
 # Run prediction
-for batch_size in 16 32 64 128;
+while IFS= read -r table_indices
 do
+    for batch_size in 16 32 64 128;
+    do
         for model in DLRM_open_source;
         do
             # Multi-GPU?
@@ -119,6 +145,7 @@ do
 
             eval "$cmd -b $((batch_size*32))" < /dev/null
         done
-done
+    done
+done < "tasks_2021_${ngpus}.txt"
 
 cd ..

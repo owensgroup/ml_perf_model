@@ -71,6 +71,9 @@ if __name__ == '__main__':
     dataset_suffix = args.data_dir.split('/')[-1]
 
     out_path = os.path.join(args.out_dir, "tasks_{}_{}.txt".format(dataset_suffix, GPU_COUNT))
+    if os.path.exists(out_path):
+        exit()
+
     # Generate tasks
     i = 0
     with open(out_path, "w") as f:

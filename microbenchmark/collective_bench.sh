@@ -29,13 +29,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# -i 30 -s 25 -t
-./run_experiments.sh -o -r -a
-./run_experiments.sh -o -r
 
-ngpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
-while IFS= read -r line
-do
-    ./run_random_experiments.sh -o -r -a -d $line
-    ./run_random_experiments.sh -o -r -d $line
-done < "benchmark/tasks_2021_${ngpus}.txt"
+# Run PARAM benchmark for communication collectives (a2a, all_reduce)
+cd ${PM_HOME}/3rdparty/param/train/comms/pt/
+source ./init.sh
+num_gpus="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)"
+echo $num_gpus
+./comms_collective_bench.sh $num_gpus
+cd ../../../../../microbenchmark
+
+python generate_collective_params.py
