@@ -946,7 +946,7 @@ def get_e2e_time(graph, overheads, iters, embedding_rfs_file=None, module_marker
 
     e2e_time_list = []
     gpu_active_time_list = []
-    for idx in range(1):
+    for idx in range(iters):
         embedding_rfs = [[float(x) for x in x_.split('-')] for x_ in all_rfs[idx].split('_')]
         e2e_time, gpu_active_time = get_e2e_time_for_each_iter(
             graph, overheads,
