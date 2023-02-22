@@ -215,7 +215,7 @@ CONSIDER = [
     "aten::avg_pool2d", "AvgPool2D", \
     "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
     "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
-    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", \
+    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", \
     "autograd::engine::evaluate_function: torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
     "torch::autograd::AccumulateGrad", \
     "torch.distributed.ddp.reducer::copy_bucket_to_grad", \
