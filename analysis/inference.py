@@ -768,21 +768,6 @@ def get_kernel_time(op, embedding_rfs=None):
         t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
         t = 0 if s > 5e6 else t # Tmp solution to avoid dense add for embedding table lookup
         kernel_times.append(t)
-    elif op.name == "Optimizer.step#SGD.step":
-        for child in op.children:
-            s = np.prod(child.input_shapes[0])
-            if s > 5e6:
-                continue # Tmp solution to avoid dense add for embedding table lookup
-            t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # Two reads one write
-            kernel_times.append(t)
-    elif op.name == "Optimizer.zero_grad#SGD.zero_grad": # Mismatch: empty, while in trace it's zero
-        # for child in op.children:
-        #     s = np.prod(child.input_shapes[0])
-        #     if s > 5e6:
-        #         continue # Tmp solution to avoid dense add for embedding table lookup
-        #     t = memcpy_predictor(tensor_size=s)
-        #     kernel_times.append(t)
-        kernel_times.append(0)
     else:
         kernel_times.append(0)
     # print(op.name, op.input_shapes, kernel_times)
