@@ -117,25 +117,15 @@ def process_general_a2a_param_data(
 
 
 # Max of (max of sent/received) across device
-def get_max_message_size(s):
-    splitted = s.split(',')
-    tables = [int(t) for t in splitted[1].split('-')]
-    num_gpus = len(tables)
-    B = int(splitted[0]) // num_gpus
-    D = int(splitted[2])
-    T_max = max([max(sum(tables) - t, t * (num_gpus-1)) for t in tables])
-    return B * T_max * D * 4 # float32
+def get_max_message_size(sizes):
+    num_gpus = len(sizes)
+    return max([max(sum(sizes) - s, s * (num_gpus-1)) for s in sizes])
 
 
-# Max of (max of sent/received) across device
-def get_max_sum_message_size(s):
-    splitted = s.split(',')
-    tables = [int(t) for t in splitted[1].split('-')]
-    num_gpus = len(tables)
-    B = int(splitted[0]) // num_gpus
-    D = int(splitted[2])
-    T_max = max([(sum(tables) - t + t * (num_gpus-1)) for t in tables])
-    return B * T_max * D * 4 # float32
+# Max of (sum of sent/received) across device
+def get_max_sum_message_size(sizes):
+    num_gpus = len(sizes)
+    return max([(sum(sizes) - s + s * (num_gpus-1)) for s in sizes])
 
 
 # Get turning points of the bus BW curve for a collective

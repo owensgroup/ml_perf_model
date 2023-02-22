@@ -322,12 +322,19 @@ def infer_a2a():
     error1 = abs_err(estimated_time, a2a_data['latency'])
     print("All-to-all (sum): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error1) * 100.0, mape(error1) * 100.0, error1.std() * 100.0))
 
-    size = a2a_data['btd'].apply(get_max_message_size)
+    a2a_data[['batch_size', "tables", "dim"]] = a2a_data['btd'].str.split(',', expand=True)
+    tables = a2a_data["tables"].str.split('-', expand=True).astype(int)
+    num_gpus = len(tables.iloc[0])
+    a2a_data["batch_size"] = a2a_data["batch_size"].astype(int) // num_gpus
+    a2a_data["dim"] = a2a_data["dim"].astype(int)
+    sizes = tables.mul(a2a_data["batch_size"], axis="index").mul(a2a_data["dim"], axis="index") * 4 # float32
+
+    size = sizes.apply(lambda x: get_max_message_size(x.tolist()), axis=1)
     estimated_time = (size).apply(all_to_all_predictor)
     error2 = abs_err(estimated_time, a2a_data['latency'])
     print("All-to-all (max of max): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error2) * 100.0, mape(error2) * 100.0, error2.std() * 100.0))
 
-    size = a2a_data['btd'].apply(get_max_sum_message_size)
+    size = sizes.apply(lambda x: get_max_sum_message_size(x.tolist()), axis=1)
     estimated_time = (size).apply(all_to_all_predictor)
     error3 = abs_err(estimated_time, a2a_data['latency'])
     print("All-to-all (max of sum): GMAE: {:.2f}%, MAPE: {:.2f}%, std: {:.2f}%".format(gmae(error3) * 100.0, mape(error3) * 100.0, error3.std() * 100.0))
@@ -462,7 +469,7 @@ def infer(op_type, backward=False, **kwargs):
         best_config, error = infer_concat()
     elif op_type == "memcpy":
         best_config, error = infer_memcpy()
-    elif op_type == "all_to_allv":
+    elif op_type == "all_to_all":
         best_config, error = infer_a2a()
     elif op_type == "all_reduce":
         best_config, error = infer_all_reduce()
@@ -703,6 +710,10 @@ def get_kernel_time(op, embedding_rfs=None):
                 dfs(c)
         dfs(op)
         tensor_size = np.prod(collective_op.input_shapes[0]) * 4
+        ipTensor = torch.tensor([tensor_size], dtype=torch.float) # On the CPU
+        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
+        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+        tensor_size = get_max_message_size([x.item() for x in opTensorList])
         t = collective_predictor(collective_op.name, tensor_size=tensor_size)
         kernel_times.append(t)
     elif op.name == "aten::cat":
