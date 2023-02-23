@@ -517,7 +517,7 @@ def get_kernel_time(op, embedding_rfs=None):
         kernel_times.append(t1)
         t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=m2, N=n2, K=k2)
         kernel_times.append(t2)
-        t = t1 + t2
+        # t = t1 + t2
         # print(" -- ", addmm_op.name, M, K, N, addmm_op.input_shapes, t)
     elif op.name == "aten::matmul":
         for child in op.children:
@@ -779,6 +779,12 @@ def get_kernel_time(op, embedding_rfs=None):
         t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
         t = 0 if s > 5e6 else t # Tmp solution to avoid dense add for embedding table lookup
         kernel_times.append(t)
+    elif "All2All_ReqBackward" in op.name:
+        sub_op = op.get_child_by_name("All2All_ReqBackward")
+        for output_shape in sub_op.output_shapes:
+            s = np.prod(output_shape)
+            t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
+            kernel_times.append(t)
     else:
         kernel_times.append(0)
     # print(op.name, op.input_shapes, kernel_times)
@@ -831,7 +837,7 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
                     print("    t2: {:.2f}".format(overheads["t2"][node.name][shapes][0]))
                 launches = overheads["launches"][node.name]
                 if to_consider(node) or has_comm_collective(node):
-                    t = [tt + GPU_EVENT_OVERHEAD for tt in get_kernel_time(node, embedding_rfs=embedding_rfs)] # Get kernel time and (arguably) compensate with the overheads
+                    t = [tt + GPU_KERNEL_OVERHEAD for tt in get_kernel_time(node, embedding_rfs=embedding_rfs)] # Get kernel time and (arguably) compensate with the overheads
 
                     for idx, l in enumerate(launches):
                         t4 = overheads["t4"][l][0] # Kernel launches
@@ -854,7 +860,9 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
                                 ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float) # On the CPU
                                 opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
                                 ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
-                                gpu_time[stream] = max([x.item() for x in opTensorList])
+                                front = max([x.item() for x in opTensorList])
+                                gpu_time["active"] += front - gpu_time[stream]
+                                gpu_time[stream] = front
                             if debug:
                                 print("    kernel: {:.2f}".format(t[idx]))
 
