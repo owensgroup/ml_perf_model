@@ -175,7 +175,8 @@ GPU_PARAMS["L2_BW_time"] = lambda x: predict_data_movement_time(x, **GPU_PARAMS[
 
 
 CPU_EVENT_OVERHEAD = 2
-GPU_EVENT_OVERHEAD = 4
+GPU_EVENT_OVERHEAD = 4 # GPU trace event overhead
+GPU_KERNEL_OVERHEAD = 5 # GPU kernel fixed overhead
 KERNEL_LAUNCH_LENGTH = 10
 
 
