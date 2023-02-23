@@ -676,10 +676,16 @@ def get_train_test_data(op_type, backward=False, test_frac=0.2, **kwargs):
             'kernel_runtime': np.log(data['kernel_runtime']),
         })
 
-    train_data, test_data = train_test_split(df, test_size=test_frac)
-    train_x = torch.tensor(train_data[train_data.columns[:-1]].values).float()
-    train_y = torch.tensor(train_data[train_data.columns[-1]].values).float()
-    test_x = torch.tensor(test_data[test_data.columns[:-1]].values).float()
-    test_y = torch.tensor(test_data[test_data.columns[-1]].values).float()
+    if test_frac == 1.0:
+        train_x = None
+        train_y = None
+        test_x = torch.tensor(df[df.columns[:-1]].values).float()
+        test_y = torch.tensor(df[df.columns[-1]].values).float()
+    else:
+        train_data, test_data = train_test_split(df, test_size=test_frac)
+        train_x = torch.tensor(train_data[train_data.columns[:-1]].values).float()
+        train_y = torch.tensor(train_data[train_data.columns[-1]].values).float()
+        test_x = torch.tensor(test_data[test_data.columns[:-1]].values).float()
+        test_y = torch.tensor(test_data[test_data.columns[-1]].values).float()
 
-    return train_x.shape[1], train_x, train_y, test_x, test_y
+    return test_x.shape[1], train_x, train_y, test_x, test_y
