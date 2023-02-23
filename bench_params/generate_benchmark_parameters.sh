@@ -163,7 +163,7 @@ fi
 if [ ! -f concat_params.txt ];
 then
     touch concat_params.txt
-    for batch_size in 1 128 256 512 1024 2048;
+    for batch_size in 1 128 256 512 1024 2048 4096;
     do
         for M in 64 198 256 512 1024 32768;
         do
@@ -190,7 +190,7 @@ fi
 if [ ! -f memcpy_params.txt ];
 then
     touch memcpy_params.txt
-    for batch_size in 1 64 128 256 512 1024 2048;
+    for batch_size in 1 128 256 512 1024 2048 4096;
     do
         for M in 64 128 256 512 1024 2048 4096 8192 16384 32768 65536;
         do
@@ -211,7 +211,7 @@ fi
 if [ ! -f transpose_params.txt ];
 then
     touch transpose_params.txt
-    for batch_size in 1 16 32 64 128 256 512 1024 2048;
+    for batch_size in 1 128 256 512 1024 2048 4096;
     do
         for M in 64 96 128 192 256 384 512 768 1024 1536 2048 3072 4096 6144 8192 12288 16384 24576 32768 48652 65536;
         do
@@ -234,7 +234,7 @@ fi
 if [ ! -f tril_params.txt ];
 then
     touch tril_params.txt
-    for batch_size in 1 64 128 256 512 1024 2048;
+    for batch_size in 1 64 128 256 512 1024 2048 4096;
     do
         for MN in {5..40};
         do
