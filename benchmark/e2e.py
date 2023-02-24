@@ -121,13 +121,13 @@ if __name__ == '__main__':
         st = "E2E time: {:.2f}, GPU time: {:.2f}".format(e2e_time, gpu_active_time)
         if real_e2e_time != -1:
             st += "\nReference time: {:.2f}, {:.2f}".format(real_e2e_time, real_gpu_active_time)
-            st += "\nPrediction error: {:.2f}%, {:.2f}%, {:.2f}%".format(
+            st += "\nPrediction error: {:.2f}%, {:.2f}%, {:.2f}%\n".format(
                 (gpu_active_time / real_gpu_active_time - 1) * 100,
                 (e2e_time / real_e2e_time - 1) * 100,
                 (gpu_active_time / real_e2e_time - 1) * 100,
             )
         print(st)
         prediction_name = "{}_prediction_{}{}.log".format(
-            per_device_prefix, args.iters, '_shared' if args.use_shared_overheads else '')
+            prefix, args.iters, '_shared' if args.use_shared_overheads else '')
         with open(prediction_name, 'w') as f:
             f.write(st)
