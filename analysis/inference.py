@@ -856,13 +856,6 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
 
                             # Current stream
                             gpu_time[stream] += t[idx]
-                            if ext_dist.my_size > 1 and has_comm_collective(node): # Only sync after a multi-GPU collective
-                                ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float) # On the CPU
-                                opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
-                                ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
-                                front = max([x.item() for x in opTensorList])
-                                gpu_time["active"] += front - gpu_time[stream]
-                                gpu_time[stream] = front
                             if debug:
                                 print("    kernel: {:.2f}".format(t[idx]))
 
@@ -878,6 +871,13 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
                             print("    t4: {:.2f}".format(t4))
                             print("    t5: {:.2f}".format(t5))
 
+                    if ext_dist.my_size > 1 and has_comm_collective(node): # Only sync after a multi-GPU collective
+                        ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float) # On the CPU
+                        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
+                        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+                        front = max([x.item() for x in opTensorList])
+                        gpu_time["active"] += front - gpu_time[stream]
+                        gpu_time[stream] = front
                     # print(node.name, t)
                 else:
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
