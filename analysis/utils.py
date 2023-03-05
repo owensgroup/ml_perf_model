@@ -83,6 +83,7 @@ HW_PARAMS = {
         }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 2903.956,
         "num_SM": 108,
+        "DRAM_size": 40 * 1024 * 1024 * 1024,
         "L2_size": 40 * 1024 * 1024,
         "SMEM_size": 160 * 1024,
     },
@@ -113,6 +114,7 @@ HW_PARAMS = {
         }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
         "peak_SMEM_BW": 3918.911,
         "num_SM": 80,
+        "DRAM_size": 16 * 1024 * 1024 * 1024,
         "L2_size": 6 * 1024 * 1024,
         "SMEM_size": 64 * 1024,
     },
@@ -143,6 +145,7 @@ HW_PARAMS = {
         }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 1831.258,
         "num_SM": 30,
+        "DRAM_size": 12 * 1024 * 1024 * 1024,
         "L2_size": 3 * 1024 * 1024,
         "SMEM_size": 48 * 1024,
     },
@@ -161,8 +164,19 @@ HW_PARAMS = {
             "sigmoid_param": (6.53478964, 11.78536754, 0.19557855, -3.4045424),
         }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_L2_BW": 1591.259,
+        "L2_BW_param": {
+            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+            "mem_ch": {
+                "ln_p": 0.0,
+                "sats_p": 40.0,
+                "max_bw": 2289.23,
+                "overhead": 1,
+            },
+            "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
+        }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,
+        "DRAM_size": 16 * 1024 * 1024 * 1024,
         "L2_size": 4 * 1024 * 1024,
         "SMEM_size": 64 * 1024,
     }
