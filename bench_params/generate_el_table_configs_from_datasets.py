@@ -38,7 +38,7 @@ import numpy as np
 import torch
 
 
-def gen_config_per_table(args, dataset_path):
+def generate_config_per_table(args, dataset_path):
     indices, offsets, lengths = torch.load(dataset_path)
     num_tables, batch_size = lengths.shape
 
@@ -100,14 +100,14 @@ def gen_config_per_table(args, dataset_path):
     return lS_rows
 
 
-def gen_table_configs(args, datasets):
+def generate_table_configs(args, datasets):
     final_rows_per_table = None
     for d in datasets:
         print("Processing dataset:", d)
         np.random.seed(args.seed) # Guarantee datasets with the same number of tables use the same dims
         config_path = os.path.splitext(d)[0] + '_configs.json'
         if not os.path.exists(config_path):
-            lS_rows = gen_config_per_table(args, d)
+            lS_rows = generate_config_per_table(args, d)
         else:
             lS_rows = None
             with open(config_path, "r") as f:
@@ -115,7 +115,7 @@ def gen_table_configs(args, datasets):
                 if "num_embeddings" in tables[0].keys():
                     lS_rows = [x["num_embeddings"] for x in tables]
             if not lS_rows:
-                lS_rows = gen_config_per_table(args, d)
+                lS_rows = generate_config_per_table(args, d)
         if not final_rows_per_table:
             final_rows_per_table = lS_rows
         else:
@@ -136,26 +136,45 @@ def compare_and_generate_common_configs(args, datasets):
     common_config = {
         "tables": []
     }
+    num_tables = -1
+    all_zero_table_idx = None
+
+    # Compare each pair of configs
     for i in range(len(configs)):
         for j in range(i+1, len(configs)):
             with open(configs[i], 'r') as f:
                 json1 = json.load(f)["tables"]
             with open(configs[j], 'r') as f:
                 json2 = json.load(f)["tables"]
+            if num_tables == -1:
+                num_tables = len(json1)
+            if not all_zero_table_idx:
+                all_zero_table_idx = set(list(range(num_tables)))
+            # Delete all data-specific info e.g. bin-x and pooling factors
             for idy, x in enumerate([json1, json2]):
                 for idx in range(len(x)):
                     tbd = []
-                    for k, v in x[idx].items():
+                    for k, _ in x[idx].items():
                         if k.startswith('bin') or k.startswith('pooling'):
                             tbd.append(k)
+                    # Filter out non-all-zero tables
+                    tmp = x[idx].copy()
+                    if np.sum([tmp[k] for k in tbd]) != 0.0:
+                        all_zero_table_idx.discard(idx)
                     for k in tbd:
                         del x[idx][k]
+                    # Save table info
                     if i == 0 and j == 1 and idy == 0:
                         common_config["tables"].append(x[idx])
                     x[idx] = tuple(sorted(x[idx].items()))
+            # Verify table info is all matched
             for x, y in zip(json1, json2):
                 if x != y:
-                    sys.exit("{} and {} are not from the same dataset! (Different field: {}, {})", configs[i], configs[j], x, y)
+                    sys.exit("{} and {} are not from the same dataset! (Different field: {}, {})".format(configs[i], configs[j], x, y))
+
+    for idx in range(num_tables):
+        common_config["tables"][idx]["all_zero"] = int(idx in all_zero_table_idx)
+
     with open(os.path.join(args.dataset_path, "common_configs.json"), 'w') as f:
         json.dump(common_config, f)
 
@@ -172,5 +191,5 @@ if __name__ == "__main__":
         datasets = [f for f_ in [glob.glob(args.dataset_path + e) for e in ('/*.pt',)] for f in f_ if not os.path.basename(f).startswith('merged')]
     else:
         datasets = [args.dataset_path]
-    gen_table_configs(args, datasets)
+    # generate_table_configs(args, datasets)
     compare_and_generate_common_configs(args, datasets)
