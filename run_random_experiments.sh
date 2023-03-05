@@ -59,7 +59,7 @@ do
     then
         tmp=`grep -e "$GPU_NAME" /tmp/gpu_name.csv`
         read -a array <<< "$tmp"
-        GPU_memory_MB=${array[${#array[@]} - 2]}
+        GPU_memory_MB="${array[${#array[@]}-2]}"
         GPU_memory="$( echo "$GPU_memory_MB * 1000 * 1000" | bc -l )"
         break
     fi
@@ -81,7 +81,7 @@ while IFS= read -r table_indices
 do
     for batch_size in 16 32 64 128;
     do
-        for model in DLRM_open_source;
+        for sharder in naive greedy hardcode;
         do
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
@@ -92,13 +92,14 @@ do
             fi
 
             # Options for both benchmark and trace_stats
-            options="   -m ${model}\
+            options="   -m DLRM_open_source\
                         -g ${ngpus}\
                         ${emb_type}\
                         -s ${bucket_size_mb}\
                         ${early_barrier}\
                         ${aggregated_allreduce}\
-                        -d ${table_indices}"
+                        -d ${table_indices}\
+                        -h ${sharder}"
 
             trace_cmd="$trace_cmd \
                         trace_stats.py \
@@ -109,7 +110,7 @@ do
             eval "$trace_cmd -b $((batch_size*32))" < /dev/null
         done
     done
-done < "tasks_2021_${ngpus}.txt"
+done < "tasks_${dataset_suffix}_${ngpus}.txt"
 
 # Create shared overheads
 python create_shared_overheads.py --iters $trimmed_iters
@@ -119,7 +120,7 @@ while IFS= read -r table_indices
 do
     for batch_size in 16 32 64 128;
     do
-        for model in DLRM_open_source;
+        for sharder in naive greedy hardcode;
         do
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
@@ -130,7 +131,7 @@ do
             fi
 
             options="   -i ${trimmed_iters}\
-                        -m ${model}\
+                        -m DLRM_open_source\
                         -g ${ngpus}\
                         ${emb_type}\
                         -s ${bucket_size_mb}\
@@ -146,6 +147,6 @@ do
             eval "$cmd -b $((batch_size*32))" < /dev/null
         done
     done
-done < "tasks_2021_${ngpus}.txt"
+done < "tasks_${dataset_suffix}_${ngpus}.txt"
 
 cd ..

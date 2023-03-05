@@ -45,7 +45,7 @@ do
     then
         tmp=`grep -e "$GPU_NAME" /tmp/gpu_name.csv`
         read -a array <<< "$tmp"
-        GPU_memory_MB=${array[${#array[@]} - 2]}
+        GPU_memory_MB="${array[${#array[@]}-2]}"
         GPU_memory="$( echo "$GPU_memory_MB * 1000 * 1000" | bc -l )"
         break
     fi

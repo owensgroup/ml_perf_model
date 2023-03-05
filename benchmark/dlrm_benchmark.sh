@@ -10,7 +10,8 @@ folder_emb_type="f" # FBGEMM
 early_barrier=
 aggregated_allreduce=
 table_indices="4-24-26-156-340-404" # Default tables
-while getopts b:m:g:ts:rad:e: flag
+sharder="naive" # Default sharder scheme
+while getopts b:m:g:ts:rad:h:e: flag
 do
     case "${flag}" in
         b) mb_size=${OPTARG};;
@@ -22,6 +23,7 @@ do
         r) early_barrier="--early-barrier";;
         a) aggregated_allreduce="--aggregated-allreduce";;
         d) table_indices=${OPTARG};;
+        h) sharder=${OPTARG};;
         e) dlrm_extra_option=${OPTARG};;
     esac
 done
@@ -42,6 +44,7 @@ common_args="   --use-gpu\
                 --print-freq=5\
                 --print-time\
                 --pin-memory\
+                --sharder=${sharder}\
                 ${emb_type}\
                 --bucket-size-mb=${bucket_size_mb}\
                 ${early_barrier}\
@@ -159,6 +162,7 @@ echo "-------------------"
 folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name_and_indices}/${folder_emb_type}"
 if [ ${ngpus} -gt 1 ];
 then
+  folder="${folder}/${sharder}"
   if [[ $early_barrier == "--early-barrier" ]];
   then
       folder="${folder}/barrier"

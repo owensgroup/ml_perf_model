@@ -35,7 +35,7 @@ from analysis.inference import get_e2e_time
 from param_bench.train.compute.python.tools.execution_graph import ExecutionGraph
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.")
+    parser = argparse.ArgumentParser("Predict end-to-end training time of DLRM models.", add_help=False)
     parser.add_argument("-i", "--iters", type=int, default=30)
     parser.add_argument("-b", "--batch-size", type=int, default=2048)
     parser.add_argument("-m", "--model-name", type=str, required=True)
@@ -46,6 +46,7 @@ if __name__ == '__main__':
     parser.add_argument("-a", "--aggregated-allreduce", action="store_true", default=False)
     parser.add_argument("-o", "--use-shared-overheads", action="store_true", default=False)
     parser.add_argument("-d", "--table-indices", type=str, default="4-24-26-156-340-404")
+    parser.add_argument("-h", "--sharder", type=str, default="naive")
     parser.add_argument("-u", "--debug", action="store_true", default=False)
     args = parser.parse_args()
 
@@ -54,8 +55,9 @@ if __name__ == '__main__':
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
         tmp_str = ""
         if "DLRM" in args.model_name:
-            tmp_str = "{}{}{}{}{}".format(
+            tmp_str = "{}{}{}{}{}{}".format(
                 ", batched_emb" if args.is_batched_emb else ", FBGEMM",
+                ", {} sharder".format(args.sharder),
                 ", bucket size: {}".format(args.bucket_size_mb) if args.bucket_size_mb != 25 else "",
                 ", early barrier" if args.early_barrier else "",
                 ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
@@ -64,16 +66,16 @@ if __name__ == '__main__':
         print("======= [Training time prediction] {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
             args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
 
+    dlrm_folder_str = ""
     if "DLRM" in args.model_name:
-        dlrm_folder_str = "b/" if args.is_batched_emb else "f/"
+        dlrm_folder_str += "b/" if args.is_batched_emb else "f/"
         if args.num_gpus > 1:
-            dlrm_folder_str += "{}_{}/{}/".format(
+            dlrm_folder_str += "{}/{}_{}/{}/".format(
+                args.sharder,
                 "barrier" if args.early_barrier else "no_barrier",
                 "aggregated_allreduce" if args.aggregated_allreduce else "bucketed_allreduce",
                 args.bucket_size_mb,
             )
-    else:
-        dlrm_folder_str = ""
     prefix = "{}/data/{}/e2e/{}{}/{}{}_{}{}".format(
         PM_HOME,
         GPU_NAME,
