@@ -30,8 +30,10 @@
 
 import torch, argparse, os, json, glob
 import numpy as np
+from analysis.utils import GPU_PARAMS
 
-MEMORY_SCALE_FACTOR = 0.9
+MEMORY_SCALE_FACTOR = 0.8
+
 
 def process_data(args):
     torch.set_printoptions(profile="full")
@@ -77,7 +79,8 @@ def process_data(args):
 
         # Skip if OOM
         table_mem_sum = sum([E * D for E, D in zip(Es, Ds)]) * 4
-        if table_mem_sum > args.per_gpu_memory * MEMORY_SCALE_FACTOR:
+        DRAM_size = GPU_PARAMS["DRAM_size"] if args.per_gpu_memory == -1 else args.per_gpu_memory
+        if table_mem_sum > DRAM_size * MEMORY_SCALE_FACTOR:
             continue
 
         params.append("{} {} {} 0 {} {}\n".format(
@@ -99,10 +102,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('Sample batches of embedding lookup params from datasets.')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument("--is-test", action="store_true", default=False)
-    parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024) # V100, in bytes
+    parser.add_argument('--per-gpu-memory', type=int, default=-1)
     parser.add_argument('--dataset-path', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag")
     parser.add_argument('--num-samples', type=int, default=10000)
-    parser.add_argument('--per-gpu-table-limit', type=int, default=8)
+    parser.add_argument('--per-gpu-table-limit', type=int, default=15)
     parser.add_argument('--batch-sizes', type=str, default="512,1024,2048,4096")
     args = parser.parse_args()
     np.random.seed(args.seed + (42 if args.is_test else 0))

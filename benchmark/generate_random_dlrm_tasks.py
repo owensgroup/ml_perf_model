@@ -33,30 +33,29 @@
 ###############
 
 
-import argparse
-import os
-import json
-
+import argparse, os, json
 import numpy as np
-import torch
 
-from analysis.utils import PM_HOME, GPU_COUNT
+from analysis.utils import PM_HOME, GPU_COUNT, GPU_PARAMS
 
-MEMORY_SCALE_FACTOR = 0.9
+MEMORY_SCALE_FACTOR = 0.8
+TABLE_LOWER_LIMIT_FACTOR = 0.7
+TABLE_UPPER_LIMIT_FACTOR = 1.3
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Generate DLRM tasks")
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--per-gpu-memory', type=int, default=16*1024*1024*1024) # V100, in bytes
+    parser.add_argument('--per-gpu-memory', type=int, default=-1)
     parser.add_argument('--data-dir', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag/2021")
     parser.add_argument('--out-dir', type=str, default="{}/benchmark".format(PM_HOME))
-    parser.add_argument('--per-gpu-table-limit', type=int, default=8)
+    parser.add_argument('--per-gpu-table-limit', type=int, default=13)
     parser.add_argument('--num-tasks', type=int, default=30)
 
     args = parser.parse_args()
     np.random.seed(args.seed)
-    min_table_count = int(args.per_gpu_table_limit * GPU_COUNT * 0.9)
-    max_table_count = int(args.per_gpu_table_limit * GPU_COUNT * 1.1)
+    min_table_count = int(args.per_gpu_table_limit * GPU_COUNT * TABLE_LOWER_LIMIT_FACTOR)
+    max_table_count = int(args.per_gpu_table_limit * GPU_COUNT * TABLE_UPPER_LIMIT_FACTOR)
 
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
@@ -64,9 +63,7 @@ if __name__ == '__main__':
     with open(os.path.join(args.data_dir, "common_configs.json"), "r") as f:
         table_configs = json.load(f)["tables"]
     T = len(table_configs)
-    Es = [t["num_embeddings"] for t in table_configs]
-    Ds = [t["embedding_dim"] for t in table_configs]
-    table_indices = [i for i in range(T)]
+    table_indices = [i for i in range(T) if table_configs[i]["all_zero"] == 0]
     np.random.shuffle(table_indices)
     dataset_suffix = args.data_dir.split('/')[-1]
 
@@ -84,9 +81,10 @@ if __name__ == '__main__':
             Ds = [table_configs[t]["embedding_dim"] for t in table_ids]
             # Skip if OOM
             table_mem_sum = sum([E * D for E, D in zip(Es, Ds)]) * 4
-            if table_mem_sum > args.per_gpu_memory * MEMORY_SCALE_FACTOR:
+            DRAM_size = GPU_PARAMS["DRAM_size"] if args.per_gpu_memory == -1 else args.per_gpu_memory
+            if table_mem_sum > GPU_PARAMS["DRAM_size"] * MEMORY_SCALE_FACTOR:
                 continue
-            
+
             table_ids = "-".join(list(map(str, table_ids)))
             f.write(table_ids + "\n")
             i += 1
