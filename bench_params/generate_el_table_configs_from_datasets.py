@@ -191,5 +191,5 @@ if __name__ == "__main__":
         datasets = [f for f_ in [glob.glob(args.dataset_path + e) for e in ('/*.pt',)] for f in f_ if not os.path.basename(f).startswith('merged')]
     else:
         datasets = [args.dataset_path]
-    # generate_table_configs(args, datasets)
+    generate_table_configs(args, datasets)
     compare_and_generate_common_configs(args, datasets)
