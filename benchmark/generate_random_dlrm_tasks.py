@@ -48,9 +48,11 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--per-gpu-memory', type=int, default=-1)
     parser.add_argument('--data-dir', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag/2021")
+    parser.add_argument('--config-name', type=str, default="common")
     parser.add_argument('--out-dir', type=str, default="{}/benchmark".format(PM_HOME))
     parser.add_argument('--per-gpu-table-limit', type=int, default=13)
     parser.add_argument('--num-tasks', type=int, default=30)
+    parser.add_argument('--heavy-only', action="store_true", default=False)
 
     args = parser.parse_args()
     np.random.seed(args.seed)
@@ -60,10 +62,15 @@ if __name__ == '__main__':
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
 
-    with open(os.path.join(args.data_dir, "common_configs.json"), "r") as f:
+    with open(os.path.join(args.data_dir, args.config_name + "_configs.json"), "r") as f:
         table_configs = json.load(f)["tables"]
     T = len(table_configs)
-    table_indices = [i for i in range(T) if table_configs[i]["all_zero"] == 0]
+    # Only consider L >= 2 if heavy-only
+    table_indices = [i for i in range(T) if (
+        (table_configs[i]["all_zero"] == 0 and table_configs[i]["pooling_factor"] >= 2) \
+            if args.heavy_only else \
+        (table_configs[i]["all_zero"] == 0)
+    )]
     np.random.shuffle(table_indices)
     dataset_suffix = args.data_dir.split('/')[-1]
 
