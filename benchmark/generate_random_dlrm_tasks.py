@@ -65,9 +65,9 @@ if __name__ == '__main__':
     with open(os.path.join(args.data_dir, args.config_name + "_configs.json"), "r") as f:
         table_configs = json.load(f)["tables"]
     T = len(table_configs)
-    # Only consider L >= 2 if heavy-only
+    # Only consider L >= 20 if heavy-only
     table_indices = [i for i in range(T) if (
-        (table_configs[i]["all_zero"] == 0 and table_configs[i]["pooling_factor"] >= 2) \
+        (table_configs[i]["all_zero"] == 0 and table_configs[i]["pooling_factor"] >= 20) \
             if args.heavy_only else \
         (table_configs[i]["all_zero"] == 0)
     )]
