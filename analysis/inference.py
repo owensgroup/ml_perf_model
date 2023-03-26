@@ -486,12 +486,11 @@ def infer(op_type, backward=False, **kwargs):
 def get_embedding_op_info(s):
     info = zlib.decompress(eval(s)).decode()
     Es = [int(x) for x in info.split('/')[0].split('-')]
-    Ls = [float(x) for x in info.split('/')[1].split('-')]
-    Ds = [int(x) for x in info.split('/')[2].split('-')]
-    return Es, Ls, Ds
+    Ds = [int(x) for x in info.split('/')[1].split('-')]
+    return Es, Ds
 
 
-def get_kernel_time(op, embedding_rfs=None):
+def get_kernel_time(op, ls=None, embedding_rfs=None):
     kernel_times = []
     if op.name == "aten::linear":
         # transpose will sometimes trigger a kernel call and sometimes not
@@ -592,10 +591,10 @@ def get_kernel_time(op, embedding_rfs=None):
     elif op.name == "LookupFunction":
         embedding_ops_stack.append(op)
         s = op.inputs[0]
-        Es, Ls, Ds = get_embedding_op_info(s)
+        Es, Ds = get_embedding_op_info(s)
         T = op.input_shapes[1][0]
         B = int((op.input_shapes[3][0] - 1) / T)
-        L = Ls[0]
+        L = ls[0]
         D = Ds[0]
         rows_per_block = max(int(256 / D), 1)
         t = sum([embedding_forward_predictor(
@@ -611,10 +610,10 @@ def get_kernel_time(op, embedding_rfs=None):
     elif "LookupFunctionBackward" in op.name:
         el_op = embedding_ops_stack.pop()
         s = el_op.inputs[0]
-        Es, Ls, Ds = get_embedding_op_info(s)
+        Es, Ds = get_embedding_op_info(s)
         T = el_op.input_shapes[1][0]
         B = int((el_op.input_shapes[3][0] - 1) / T)
-        L = Ls[0]
+        L = ls[0]
         D = Ds[0]
         rows_per_block = max(int(256 / D), 1)
         t = sum([embedding_backward_sgd_predictor(
@@ -632,13 +631,13 @@ def get_kernel_time(op, embedding_rfs=None):
         batch_size = op.output_shapes[0][0]
         fbgemm_op = op.get_parent_by_name("embedding_lookup")
         s = fbgemm_op.inputs[0]
-        Es, Ls, Ds = get_embedding_op_info(s)
+        Es, Ds = get_embedding_op_info(s)
         t = mlp_predictor_kwargs(
             op_type="embedding_lookup",
             backward=False,
             batch_size=batch_size,
             num_embeddings=Es,
-            pooling_factors=Ls,
+            pooling_factors=ls,
             embedding_dims=Ds,
             reuse_factors=embedding_rfs,
         )
@@ -648,13 +647,13 @@ def get_kernel_time(op, embedding_rfs=None):
         batch_size = el_op.output_shapes[0][0]
         fbgemm_op = el_op.get_parent_by_name("embedding_lookup")
         s = fbgemm_op.inputs[0]
-        Es, Ls, Ds = get_embedding_op_info(s)
+        Es, Ds = get_embedding_op_info(s)
         t = mlp_predictor_kwargs(
             op_type="embedding_lookup",
             backward=True,
             batch_size=batch_size,
             num_embeddings=Es,
-            pooling_factors=Ls,
+            pooling_factors=ls,
             embedding_dims=Ds,
             reuse_factors=embedding_rfs,
         )
@@ -791,7 +790,7 @@ def get_kernel_time(op, embedding_rfs=None):
     return kernel_times
 
 
-def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_marker="## ", debug=False):
+def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, module_marker="## ", debug=False):
     nodes = graph.get_nodes(clean=True, to_be_pruned=SKIP)
     sorted_nodes = sorted(nodes.items(), key=lambda x: x[0])
 
@@ -837,7 +836,7 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
                     print("    t2: {:.2f}".format(overheads["t2"][node.name][shapes][0]))
                 launches = overheads["launches"][node.name]
                 if to_consider(node) or has_comm_collective(node):
-                    t = [tt + GPU_KERNEL_OVERHEAD for tt in get_kernel_time(node, embedding_rfs=embedding_rfs)] # Get kernel time and (arguably) compensate with the overheads
+                    t = [tt + GPU_KERNEL_OVERHEAD for tt in get_kernel_time(node, ls=ls, embedding_rfs=embedding_rfs)] # Get kernel time and (arguably) compensate with the overheads
 
                     for idx, l in enumerate(launches):
                         t4 = overheads["t4"][l][0] # Kernel launches
@@ -942,7 +941,11 @@ def get_e2e_time_for_each_iter(graph, overheads, embedding_rfs=None, module_mark
 
 
 # Infer E2E time from an execution graph and an overhead file
-def get_e2e_time(graph, overheads, iters, embedding_rfs_file=None, module_marker="## ", debug=False):
+def get_e2e_time(graph, overheads, iters, ls_file=None, embedding_rfs_file=None, module_marker="## ", debug=False):
+    all_Ls = [None] * iters
+    if ls_file is not None:
+        with open(ls_file, 'r') as f:
+            all_Ls = f.readlines()
     all_rfs = [None] * iters
     if embedding_rfs_file is not None:
         with open(embedding_rfs_file, 'r') as f:
@@ -951,9 +954,11 @@ def get_e2e_time(graph, overheads, iters, embedding_rfs_file=None, module_marker
     e2e_time_list = []
     gpu_active_time_list = []
     for idx in range(iters):
+        Ls = [float(x) for x in all_Ls[idx].split('-')]
         embedding_rfs = [[float(x) for x in x_.split('-')] for x_ in all_rfs[idx].split('_')]
         e2e_time, gpu_active_time = get_e2e_time_for_each_iter(
             graph, overheads,
+            ls=Ls,
             embedding_rfs=embedding_rfs,
             module_marker=module_marker,
             debug=debug

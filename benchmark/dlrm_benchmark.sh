@@ -214,14 +214,16 @@ else
   done
 fi
 eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
-# move rfs file(s)
+# move Ls and rfs file(s)
 if [ ${ngpus} = 1 ];
 then
+  mv "Ls.txt" ${outf//".log"/"_Ls.txt"}
   mv "rfs.txt" ${outf//".log"/"_rfs.txt"}
 else
   count=0
   for g in $(seq 1 $ngpus);
   do
+    mv "Ls_${count}.txt" "${folder}/${ngpus}_${mb_size}_distributed_${count}_Ls.txt"
     mv "rfs_${count}.txt" "${folder}/${ngpus}_${mb_size}_distributed_${count}_rfs.txt"
     count=$((count+1))
   done

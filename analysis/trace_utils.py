@@ -340,6 +340,9 @@ def process_event_hierarchy(raw_trace, skip_module=False, module_marker="## "):
     # Skip all events in skipped intervals
     sorted_events = [s for s in sorted_events if not should_skip(s, skipped_intervals)]
 
+    # Skip all events with negative tid
+    sorted_events = [s for s in sorted_events if s.tid() >= 0]
+
     # Start the analysis from the first module detected, if module is not to be skipped
     start_idx = 0
     end_idx = len(sorted_events) - 1
