@@ -28,7 +28,7 @@ do
     esac
 done
 
-model_list="DLRM_vipul DLRM_test DLRM_default DLRM_MLPerf DLRM_DDP DLRM_open_source"
+model_list="DLRM_test DLRM_default DLRM_MLPerf DLRM_DDP DLRM_open_source"
 if [[ $model_list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
@@ -53,18 +53,7 @@ model_name_and_indices=$model_name
 
 # ----------------------- Model param -----------------------
 _args=""
-if [[ $model_name == "DLRM_vipul" ]]; # From Vipul
-then
-    _args=" --data-generation=random\
-            --arch-mlp-bot=13-512-256-64-16\
-            --arch-mlp-top=512-256-128-1\
-            --arch-sparse-feature-size=16\
-            --arch-embedding-size=1461-584-10131227-2202608-306-24-12518-634-4-93146-5684-8351593-3195-28-14993-5461306-11-5653-2173-4-7046547-18-16-286181-105-142572\
-            --num-indices-per-lookup=38\
-            --arch-interaction-op=dot\
-            --numpy-rand-seed=727\
-            --num-workers=2 "
-elif [[ $model_name == "DLRM_test" ]]; # DLRM test
+if [[ $model_name == "DLRM_test" ]]; # DLRM test
 then
     _args=" --data-generation=random\
             --processed-data-file=/nvme/deep-learning/dlrm_random\
@@ -101,7 +90,6 @@ then
             --arch-mlp-top=512-512-512-256-1\
             --arch-sparse-feature-size=128\
             --arch-embedding-size=80000-80000-80000-80000-80000-80000-80000-80000\
-            --max-ind-range=40000000\
             --num-indices-per-lookup-fixed\
             --loss-function=bce\
             --learning-rate=1.0 "
@@ -124,8 +112,6 @@ then
             --mlperf-auc-threshold=0.8025\
             --mlperf-bin-loader\
             --mlperf-bin-shuffle "
-        # " --test-num-workers=16"
-        # " --test-mini-batch-size=16384"
 elif [[ $model_name == "DLRM_open_source" ]]; # DLRM using the open-source dataset
 then
     model_name_and_indices="${model_name_and_indices}/${table_indices}"
@@ -133,8 +119,8 @@ then
             --data-set=dlrm_open_source\
             --processed-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/merged_simple.pt\
             --arch-embedding-table-indices=${table_indices}\
-            --arch-mlp-bot=512-1024-512-256-128\
-            --arch-mlp-top=1024-1024-512-512-256-1\
+            --arch-mlp-bot=512-1024-256-128\
+            --arch-mlp-top=1024-512-256-1\
             --loss-function=bce\
             --learning-rate=1.0\
             --test-freq=102400\

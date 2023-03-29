@@ -81,8 +81,14 @@ while IFS= read -r table_indices
 do
     for batch_size in 16 32 64 128;
     do
-        for sharder in naive greedy hardcode;
+        for sharder in naive naive_chunk random dim_greedy size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
         do
+            # size_greedy for 16, 32, 64
+            if [ "$batch_size" != 128 ] && [ "$sharder" != "size_greedy" ];
+            then
+                continue
+            fi
+
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
@@ -106,7 +112,7 @@ do
                         -i ${trimmed_iters} \
                         ${options}"
 
-            ./dlrm_benchmark.sh -b $((batch_size*32)) $options
+            # ./dlrm_benchmark.sh -b $((batch_size*32)) $options
             eval "$trace_cmd -b $((batch_size*32))" < /dev/null
         done
     done
@@ -120,8 +126,14 @@ while IFS= read -r table_indices
 do
     for batch_size in 16 32 64 128;
     do
-        for sharder in naive greedy hardcode;
+        for sharder in size_greedy; # naive naive_chunk random dim_greedy size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
         do
+            # size_greedy for 16, 32, 64
+            if [ "$batch_size" != 128 ] && [ "$sharder" != "size_greedy" ];
+            then
+                continue
+            fi
+
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
@@ -138,6 +150,7 @@ do
                         ${early_barrier}\
                         ${aggregated_allreduce}\
                         -d ${table_indices}\
+                        -h ${sharder}\
                         ${share_overheads}"
 
             cmd="   $cmd\
