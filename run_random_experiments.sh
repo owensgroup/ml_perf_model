@@ -79,12 +79,12 @@ python generate_random_dlrm_tasks.py --per-gpu-memory $GPU_memory
 # Benchmark and trace analysis
 while IFS= read -r table_indices
 do
-    for batch_size in 16 32 64 128;
+    for batch_size in 8 16 32 64;
     do
         for sharder in naive naive_chunk random dim_greedy size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
         do
-            # size_greedy for 16, 32, 64
-            if [ "$batch_size" != 128 ] && [ "$sharder" != "size_greedy" ];
+            # size_greedy for (8, 16, 32) * 64
+            if [ "$batch_size" != 64 ] && [ "$sharder" != "size_greedy" ];
             then
                 continue
             fi
@@ -112,8 +112,8 @@ do
                         -i ${trimmed_iters} \
                         ${options}"
 
-            # ./dlrm_benchmark.sh -b $((batch_size*32)) $options
-            eval "$trace_cmd -b $((batch_size*32))" < /dev/null
+            ./dlrm_benchmark.sh -b $((batch_size*64)) $options
+            eval "$trace_cmd -b $((batch_size*64))" < /dev/null
         done
     done
 done < "tasks_${dataset_suffix}_${ngpus}.txt"
@@ -124,12 +124,12 @@ python create_shared_overheads.py --iters $trimmed_iters
 # Run prediction
 while IFS= read -r table_indices
 do
-    for batch_size in 16 32 64 128;
+    for batch_size in 8 16 32 64;
     do
-        for sharder in size_greedy; # naive naive_chunk random dim_greedy size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
+        for sharder in naive naive_chunk random dim_greedy size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
         do
-            # size_greedy for 16, 32, 64
-            if [ "$batch_size" != 128 ] && [ "$sharder" != "size_greedy" ];
+            # size_greedy for (8, 16, 32) * 64
+            if [ "$batch_size" != 64 ] && [ "$sharder" != "size_greedy" ];
             then
                 continue
             fi
@@ -157,7 +157,7 @@ do
                     e2e.py\
                     ${options}"
 
-            eval "$cmd -b $((batch_size*32))" < /dev/null
+            eval "$cmd -b $((batch_size*64))" < /dev/null
         done
     done
 done < "tasks_${dataset_suffix}_${ngpus}.txt"
