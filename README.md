@@ -1,37 +1,10 @@
 A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) models on single-GPU and multi-GPU platforms.
 
-<s>Note: This code also depends on the execution graph observer, which will be integrated into Pytorch soon.</s> Updates: The execution graph observer has been integrated into Pytorch starting from [d76af8f41c](https://github.com/pytorch/pytorch/tree/d76af8f41c6404b090b13ab9a868a71423d6d298) (nightly build at 2022/05/31).
+The execution graph observer has been integrated into Pytorch since [d76af8f41c](https://github.com/pytorch/pytorch/tree/d76af8f41c6404b090b13ab9a868a71423d6d298) (nightly build at 2022/05/31).
 
 ### Prerequisites and Installation
 ```bash
-pip install h5py tqdm sklearn tensorboard tensorboardX torchviz onnx gputil spacy dill pandas scikit-build pydot mpi4py # Dependencies
-git clone --recursive https://github.com/owensgroup/ml_perf_model.git
-
-cd ml_perf_model/3rdparty/bench_params
-./generate_benchmark_parameters.sh # Generate benchmark parameters.
-cd ../sparse-ads-baselines
-python setup.py install # Install table batched embedding lookup kernel.
-cd ../mlperf-logging
-python setup.py install # Install MLPerf logging for DLRM
-cd ../param/train/comms/pt
-./init.sh # Initialization for PARAM
-cd ../../../../../
-source ./init_vars.sh # Turn off turbo, turn on performance, lock frequency, etc.
-
-# Torchvision for ConvNet benchmark
-cd ..
-git clone https://github.com/pytorch/vision.git torchvision
-cd torchvision
-python setup.py clean --all install
-cd ../ml_perf_model
-
-# Torchtext for NLP benchmark
-cd ..
-git clone https://github.com/pytorch/text.git torchtext
-cd torchtext
-git submodule update --init --recursive
-python setup.py clean --all install
-cd ../ml_perf_model
+./prereq.sh
 ```
 
 ### Microbenchmark
@@ -87,9 +60,9 @@ python kernel_pm_acc.py
 ### Execution graph extraction and profiler trace generation
 ```bash
 cd ${PM_HOME}/benchmark
-./dlrm_benchmark.sh <model_name> <batch_size>
+./dlrm_benchmark.sh -m <model_name> -b <batch_size>
 ./convnet_benchmark.sh <model_name> <batch_size>
-./nlp_benchmark.sh <model_name> <batch_size>
+./nlp_benchmark.sh -m <model_name> -b <batch_size>
 ./rm_benchmark.sh <model_name> <batch_size>
 ```
 

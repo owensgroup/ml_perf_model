@@ -30,21 +30,32 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-# Get model name
-model_name=$1
-list="transformer"
-if [[ $list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
+# Arguments
+ngpus=1
+bucket_size_mb=25
+early_barrier=
+aggregated_allreduce=
+num_batches=200
+while getopts b:m:g:ts:rad:h:e: flag
+do
+    case "${flag}" in
+        b) mb_size=${OPTARG};;
+        m) model_name=${OPTARG};;
+        g) ngpus=${OPTARG};;
+        s) bucket_size_mb=${OPTARG};;
+        r) early_barrier="--early-barrier";;
+        a) aggregated_allreduce="--aggregated-allreduce";;
+    esac
+done
+
+model_list="bert gpt2"
+if [[ $model_list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
 else
     echo "Model name not supported!"
     exit
 fi
-mb_size=$2
-
-gpu="1"
-ngpus="1" #"1 2 4"
-num_batches=200
 
 CORES=`lscpu | grep "Core(s)" | awk '{print $4}'`
 SOCKETS=`lscpu | grep Socket | awk '{print $2}'`
@@ -55,52 +66,71 @@ export OMP_NUM_THREADS=$TOTAL_CORES
 export $KMP_SETTING
 export KMP_BLOCKTIME=$KMP_BLOCKTIME
 
-if [ ${model_name} == "transformer" ];
-then
-    if [[ ! -d "${PM_HOME}/3rdparty/transformer-pt/.data" ]]; # Data preprocessing
-    then
-
-        cd ${PM_HOME}/3rdparty/transformer-pt
-        python -m spacy download en_core_web_sm
-        python -m spacy download de_core_news_sm
-        python preprocess.py -lang_src de -lang_trg en -share_vocab -save_data m30k_deen_shr.pkl
-        cd ${PM_HOME}
-    fi
-fi
-
 # GPU Benchmarking
-if [ $gpu = 1 ];
+echo "--------------------------------------------"
+echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
+echo "--------------------------------------------"
+rm -f /tmp/pytorch_execution_graph*
+_gpus=$(seq -s, 0 $((ngpus-1)))
+nlp_pt_bin="accelerate launch --num_processes ${ngpus} nlp_transformers.py"
+graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
+cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
+echo "-------------------"
+echo "Using GPUS: $_gpus, batch size: $mb_size"
+echo "-------------------"
+folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/"
+if [ ${ngpus} -gt 1 ];
 then
-  echo "--------------------------------------------"
-  echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
-  echo "--------------------------------------------"
-  for _ng in $ngpus
+  if [[ $early_barrier == "--early-barrier" ]];
+  then
+      folder="${folder}/barrier"
+  else
+      folder="${folder}/no_barrier"
+  fi
+  if [[ $aggregated_allreduce == "--aggregated-allreduce" ]];
+  then
+      folder="${folder}_aggregated_allreduce"
+  else
+      folder="${folder}_bucketed_allreduce"
+  fi
+  folder="${folder}/${bucket_size_mb}"
+fi
+mkdir -p "${folder}"
+cmd="$cuda_arg $nlp_pt_bin --model-name ${model_name} --batch-size=${mb_size} "
+if [[ ${ngpus} != `ls ${folder} | grep -e $graph_filename_pattern | wc -l` ]];
+then
+  echo "Execution graph doesn't exist! Extract it..."
+  eval "$cmd --num-batches 2 --collect-execution-graph --enable-profiling --profile-out-dir . &> /dev/null" # Collect execution graph
+  if [ ${ngpus} = 1 ];
+  then
+    cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${folder}/${ngpus}_${mb_size}_graph.json"
+  else
+    count=0
+    for g in `ls /tmp/pytorch_execution_graph*`;
+    do
+      cp $g "${folder}/${ngpus}_${mb_size}_distributed_${count}_graph.json"
+      count=$((count+1))
+    done
+  fi
+fi
+eval "$cmd --num-batches ${num_batches} --enable-profiling --profile-out-dir . &> /dev/null" # Profile to get trace
+# move profiling file(s)
+if [ ${ngpus} = 1 ];
+then
+  outf="${folder}/${ngpus}_${mb_size}.log"
+  outp="nlp.prof"
+  mv $outp ${outf//".log"/".prof"}
+  mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
+else
+  outf="${folder}/${ngpus}_${mb_size}_distributed.log"
+  count=0
+  for g in `ls nlp*.prof`;
   do
-    rm -f /tmp/pytorch_execution_graph*
-    cd ${PM_HOME}/3rdparty/transformer-pt
-    _gpus=$(seq -s, 0 $((_ng-1)))
-    cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
-    echo "-------------------"
-    echo "Using GPUS: "$_gpus
-    echo "-------------------"
-    mkdir -p "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}"
-    outf="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}.log"
-    outp="${model_name}_benchmark.prof"
-    echo "-------------------------------"
-    echo "Running benchmark (log file: $outf)"
-    echo "-------------------------------"
-    cmd="python train.py -data_pkl m30k_deen_shr.pkl -embs_share_weight -proj_share_weight -label_smoothing -output_dir output -b ${mb_size} -warmup 5000 -no_eval"
-    if [ ! -f "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json" ];
-    then
-      echo "Execution graph doesn't exist! Extract it..."
-      eval "$cmd -epoch 1 -collect_execution_graph -profile &> /dev/null" # Collect execution graph
-      cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/${_ng}_${mb_size}_graph.json"
-    fi
-    eval "$cmd -epoch 1 -profile -num_batches ${num_batches} # > $outf" # Profile to get trace
-    # move profiling file(s)
-    mv $outp ${outf//".log"/".prof"}
-    mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
-    eval "$cmd -epoch 1 > $outf" # No profile to get E2E time
-    cd ${PM_HOME}
+    mv $g "${folder}/${ngpus}_${mb_size}_distributed_${count}.prof"
+    mv ${g//".prof"/".json"} "${folder}/${ngpus}_${mb_size}_distributed_${count}.json"
+    count=$((count+1))
   done
 fi
+eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
+min=$(grep "Finished" $outf | awk 'BEGIN{best=999999} {if (best > $4) best=$4} END{print best}')
+echo "Min time per iteration = $min ms"

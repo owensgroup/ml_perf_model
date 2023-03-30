@@ -5,8 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 # Arguments
+ngpus=1
 emb_type="--fbgemm-emb"
 folder_emb_type="f" # FBGEMM
+bucket_size_mb=25
 early_barrier=
 aggregated_allreduce=
 table_indices="4-24-26-156-340-404" # Default tables

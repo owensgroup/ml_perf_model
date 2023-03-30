@@ -51,7 +51,7 @@ done
 cd benchmark
 
 # Benchmark and trace analysis
-for batch_size in 16 32 64 128;
+for batch_size in 8 16 32 64;
 do
     for ngpus in 1 2 4 8;
     do
@@ -86,42 +86,63 @@ do
                         ${options}"
 
             # Strong scaling
-            ./dlrm_benchmark.sh -b $((batch_size*32)) $options
-            eval "$trace_cmd -b $((batch_size*32))"
+            ./dlrm_benchmark.sh -b $((batch_size*64)) ${options}
+            eval "$trace_cmd -b $((batch_size*64))"
 
             # Weak scaling
-            if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
+            if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 64 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                ./dlrm_benchmark.sh -b $((batch_size*32*ngpus)) $options
-                eval "$trace_cmd -b $((batch_size*32*ngpus))"
+                ./dlrm_benchmark.sh -b $((batch_size*64*ngpus)) ${options}
+                eval "$trace_cmd -b $((batch_size*64*ngpus))"
             fi
+        done
+
+        for model in bert gpt2;
+        do
+            # Multi-GPU?
+            if [ "$ngpus" -gt "1" ];
+            then
+                trace_cmd="mpirun -np $ngpus -N $ngpus python"
+            else
+                trace_cmd="python"
+            fi
+
+            options="   -m ${model}\
+                        -g ${ngpus}\
+                        -s ${bucket_size_mb}\
+                        ${early_barrier}\
+                        ${aggregated_allreduce}"
+
+            trace_cmd="$trace_cmd \
+                        trace_stats.py \
+                        -i ${trimmed_iters} \
+                        ${options}"
+
+            ./nlp_benchmark.sh -b ${batch_size} ${options}
+            eval "$trace_cmd -b ${batch_size}"
         done
     done
 
     for model in resnet50 inception_v3;
     do
-        ./convnet_benchmark.sh ${model} ${batch_size}
-        python trace_stats.py -m ${model} -i ${trimmed_iters} -b ${batch_size}
+        ./convnet_benchmark.sh ${model} $((batch_size*2))
+        python trace_stats.py -m ${model} -i ${trimmed_iters} -b $((batch_size*2))
     done
-
-    # for model in transformer;
-    # do
-    #     ./nlp_benchmark.sh transformer $((batch_size*4))
-    #     python trace_stats.py -m ${model} -i ${trimmed_iters} -b $((batch_size*4))
-    # done
 
     for model in ncf deepfm;
     do
-        ./rm_benchmark.sh ${model} $((batch_size*32))
-        python trace_stats.py -m ${model} -i ${trimmed_iters} -b $((batch_size*32))
+        ./rm_benchmark.sh ${model} $((batch_size*64))
+        python trace_stats.py -m ${model} -i ${trimmed_iters} -b $((batch_size*64))
     done
 done
+
 
 # Create shared overheads
 python create_shared_overheads.py --iters $trimmed_iters
 
+
 # Run prediction
-for batch_size in 16 32 64 128;
+for batch_size in 8 16 32 64;
 do
     for ngpus in 1 2 4 8;
     do
@@ -156,30 +177,49 @@ do
                     ${options}"
 
             # Strong scaling
-            eval "$cmd -b $((batch_size*32))"
+            eval "$cmd -b $((batch_size*64))"
 
             # Weak scaling
-            if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 32 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
+            if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 64 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                eval "$cmd -b $((batch_size*32*ngpus))"
+                eval "$cmd -b $((batch_size*64*ngpus))"
             fi
+        done
+
+        for model in bert gpt2;
+        do
+            # Multi-GPU?
+            if [ "$ngpus" -gt "1" ];
+            then
+                cmd="mpirun -np $ngpus -N $ngpus python"
+            else
+                cmd="python"
+            fi
+
+            options="   -i ${trimmed_iters}\
+                        -m ${model}\
+                        -g ${ngpus}\
+                        -s ${bucket_size_mb}\
+                        ${early_barrier}\
+                        ${aggregated_allreduce}\
+                        ${share_overheads}"
+
+            cmd="   $cmd\
+                    e2e.py\
+                    ${options}"
+
+            eval "$cmd -b ${batch_size}"
         done
     done
 
     for model in resnet50 inception_v3;
     do
-        python e2e.py -m ${model} -i ${trimmed_iters} -b ${batch_size}
+        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*2))
     done
-
-    # for model in transformer;
-    # do
-    #     ./nlp_benchmark.sh transformer $((batch_size*4))
-    #     python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*4))
-    # done
 
     for model in ncf deepfm;
     do
-        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*32))
+        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*64))
     done
 done
 

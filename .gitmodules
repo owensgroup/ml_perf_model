@@ -16,9 +16,6 @@
 [submodule "convnet-benchmark-py"]
 	path = 3rdparty/convnet-benchmark-py
 	url = https://github.com/moderato/convnet-benchmark-py.git
-[submodule "transformer-pt"]
-	path = 3rdparty/transformer-pt
-	url = https://github.com/moderato/attention-is-all-you-need-pytorch.git
 [submodule "deepfm"]
 	path = 3rdparty/deepfm
 	url = https://github.com/moderato/Pytorch_DeepFM.git
