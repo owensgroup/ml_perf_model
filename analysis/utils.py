@@ -41,7 +41,7 @@ PM_HOME = os.environ.get('PM_HOME')
 if PM_HOME is None:
     PM_HOME = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Call dirname twice to get the upper director
 
-SUPPORTED_GPUS = {"A100", "V100", "P100", "Xp"}
+SUPPORTED_GPUS = ("A100", "GV100", "V100", "P100", "Xp")
 def get_gpu_name():
     gpus = GPUtil.getGPUs()
     assert len(gpus) > 0, "No GPUs detected!"
@@ -88,6 +88,37 @@ HW_PARAMS = {
         "SMEM_size": 160 * 1024,
     },
     "V100": {
+        "peak_throughput": 15441.524,
+        "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
+        "peak_DRAM_BW": 816.953,
+        "DRAM_BW_param": {
+            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+            "mem_ch": {
+                'ln_p': 16.0,
+                'sats_p': 30.0,
+                'max_bw': 816.953003,
+                'overhead': 4.83328223
+            },
+            "sigmoid_param": (1.9472268, 19.81699009, 0.55556443, 0.95523816),
+        },
+        "peak_L2_BW": 2847.457,
+        "L2_BW_param": {
+            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+            "mem_ch": {
+                "ln_p": 0.0,
+                "sats_p": 40.0,
+                "max_bw": 2289.23,
+                "overhead": 1,
+            },
+            "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
+        }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
+        "peak_SMEM_BW": 3918.911,
+        "num_SM": 80,
+        "DRAM_size": 16 * 1024 * 1024 * 1024,
+        "L2_size": 6 * 1024 * 1024,
+        "SMEM_size": 64 * 1024,
+    },
+    "GV100": {
         "peak_throughput": 15441.524,
         "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
         "peak_DRAM_BW": 816.953,

@@ -52,6 +52,9 @@ mkdir -p data/${GPU_NAME}/kernel
 if [[ $GPU_NAME == "A100" ]];
 then
   sudo nvidia-smi -ac 1215,1095
+elif [[ $GPU_NAME == "GV100" ]];
+then
+  sudo nvidia-smi -ac 850,1297
 elif [[ $GPU_NAME == "V100" ]];
 then
   sudo nvidia-smi -ac 877,1297
