@@ -316,18 +316,18 @@ do
 
     # Get gpu trace
     echo "Get GPU trace of kernels ..."
-    nsys profile --trace=cuda --force-overwrite true --output "/tmp/${BUS_ID}_profile_results.qdrep" \
+    nsys profile --trace=cuda --force-overwrite true --output "/tmp/${BUS_ID}_profile_results.nsys-rep" \
     python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters \
     --warmup-iters $warmup_iters >& /dev/null
 
     # Extract stats
     if [ "$op_type" != "memcpy" ];
     then
-        nsys stats --report gpukernsum --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.qdrep >& /dev/null
+        nsys stats --report gpukernsum --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.nsys-rep >& /dev/null
     else
-        nsys stats --report gpumemtimesum --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.qdrep >& /dev/null
+        nsys stats --report gpumemtimesum --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.nsys-rep >& /dev/null
     fi
-    nsys stats --report gputrace --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.qdrep >& /dev/null
+    nsys stats --report gputrace --format csv --output . --force-overwrite true /tmp/${BUS_ID}_profile_results.nsys-rep >& /dev/null
     mv /tmp/${BUS_ID}_profile_results_gputrace.csv /tmp/${BUS_ID}_kernel_trace.csv
 
     ./get_kernel_names.sh "$op_type"
