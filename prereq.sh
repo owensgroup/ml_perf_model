@@ -30,7 +30,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-pip install h5py tqdm scikit-learn tensorboard tensorboardX torchviz onnx gputil pandas scikit-build pydot mpi4py # General dependencies
+pip install h5py tqdm scikit-learn matplotlib tensorboard tensorboardX torchviz onnx gputil pandas scikit-build pydot mpi4py # General dependencies
 pip install transformers accelerate datasets # Transformers
 git clone --recursive https://github.com/owensgroup/ml_perf_model.git
 
