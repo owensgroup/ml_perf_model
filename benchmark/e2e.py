@@ -47,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--use-shared-overheads", action="store_true", default=False)
     parser.add_argument("-d", "--table-indices", type=str, default="4-24-26-156-340-404")
     parser.add_argument("-h", "--sharder", type=str, default="naive")
+    parser.add_argument("-x", "--year", type=str, default="2021")
     parser.add_argument("-u", "--debug", action="store_true", default=False)
     args = parser.parse_args()
 
@@ -61,7 +62,7 @@ if __name__ == '__main__':
                 ", bucket size: {}".format(args.bucket_size_mb) if args.bucket_size_mb != 25 else "",
                 ", early barrier" if args.early_barrier else "",
                 ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
-                " ({})".format(args.table_indices) if args.model_name == "DLRM_open_source" else "",
+                " ({}: {})".format(args.year, args.table_indices) if args.model_name == "DLRM_open_source" else "",
             )
         print("======= [Training time prediction] {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
             args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
@@ -76,10 +77,11 @@ if __name__ == '__main__':
                 "aggregated_allreduce" if args.aggregated_allreduce else "bucketed_allreduce",
                 args.bucket_size_mb,
             )
-    prefix = "{}/data/{}/e2e/{}{}/{}{}_{}{}".format(
+    prefix = "{}/data/{}/e2e/{}{}{}/{}{}_{}{}".format(
         PM_HOME,
         GPU_NAME,
         args.model_name,
+        ("/" + args.year) if args.model_name == "DLRM_open_source" else "",
         ("/" + args.table_indices) if args.model_name == "DLRM_open_source" else "",
         dlrm_folder_str,
         args.num_gpus,

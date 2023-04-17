@@ -42,7 +42,7 @@ if __name__ == '__main__':
     # Collect all overhead files except for per-process ones
     overhead_stats_files = set()
     overhead_raw_files = set()
-    for x in range(2, 7):
+    for x in range(2, 8):
         tmp_str = "/*" * x
         overhead_stats_files = overhead_stats_files.union(
             (set(glob.glob("{}{}/*overhead_stats_{}.json".format(root_dir, tmp_str, args.iters))) - \

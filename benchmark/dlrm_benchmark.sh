@@ -13,7 +13,8 @@ early_barrier=
 aggregated_allreduce=
 table_indices="4-24-26-156-340-404" # Default tables
 sharder="naive" # Default sharder scheme
-while getopts b:m:g:ts:rad:h:e: flag
+dataset_suffix=2021
+while getopts b:m:g:ts:rad:h:e:x: flag
 do
     case "${flag}" in
         b) mb_size=${OPTARG};;
@@ -27,6 +28,7 @@ do
         d) table_indices=${OPTARG};;
         h) sharder=${OPTARG};;
         e) dlrm_extra_option=${OPTARG};;
+        x) dataset_suffix=${OPTARG};;
     esac
 done
 
@@ -41,7 +43,7 @@ fi
 
 tnworkers=0
 tmb_size=-1 #256
-num_batches=200
+num_batches=150
 common_args="   --use-gpu\
                 --print-freq=5\
                 --print-time\
@@ -51,7 +53,7 @@ common_args="   --use-gpu\
                 --bucket-size-mb=${bucket_size_mb}\
                 ${early_barrier}\
                 ${aggregated_allreduce} "
-model_name_and_indices=$model_name
+model_name_year_indices=$model_name
 
 # ----------------------- Model param -----------------------
 _args=""
@@ -116,10 +118,10 @@ then
             --mlperf-bin-shuffle "
 elif [[ $model_name == "DLRM_open_source" ]]; # DLRM using the open-source dataset
 then
-    model_name_and_indices="${model_name_and_indices}/${table_indices}"
+    model_name_year_indices="${model_name_year_indices}/${dataset_suffix}/${table_indices}"
     _args=" --data-generation=dataset\
             --data-set=dlrm_open_source\
-            --processed-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/2021/merged_simple.pt\
+            --processed-data-file=/nvme/deep-learning/dlrm_datasets/embedding_bag/${dataset_suffix}/merged_simple.pt\
             --arch-embedding-table-indices=${table_indices}\
             --arch-mlp-bot=512-1024-256-128\
             --arch-mlp-top=1024-512-256-1\
@@ -131,7 +133,7 @@ fi
 
 # GPU Benchmarking
 echo "--------------------------------------------"
-echo "GPU Benchmarking - ${model_name_and_indices} running on $ngpus GPUs"
+echo "GPU Benchmarking - ${model_name_year_indices} running on $ngpus GPUs"
 echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))
@@ -147,7 +149,7 @@ cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
 echo "-------------------"
 echo "Using GPUS: $_gpus, batch size: $mb_size"
 echo "-------------------"
-folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name_and_indices}/${folder_emb_type}"
+folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name_year_indices}/${folder_emb_type}"
 if [ ${ngpus} -gt 1 ];
 then
   folder="${folder}/${sharder}"

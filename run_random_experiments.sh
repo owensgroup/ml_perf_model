@@ -36,8 +36,7 @@ emb_type= # FBGEMM for DLRM
 bucket_size_mb=25 # Bucket size in MB
 early_barrier= # Whether launch a barrier at the beginning of the iteration
 aggregated_allreduce= # Whether extract an execution graph with aggregated allreduce for DDP (i.e. iteration 0)
-dataset_suffix=2021
-while getopts i:ots:rad:x: flag
+while getopts i:ots:rad: flag
 do
     case "${flag}" in
         i) trimmed_iters=${OPTARG};;
@@ -46,7 +45,6 @@ do
         s) bucket_size_mb=${OPTARG};;
         r) early_barrier="-r";;
         a) aggregated_allreduce="-a";;
-        x) dataset_suffix=${OPTARG};;
     esac
 done
 
@@ -77,14 +75,17 @@ cd benchmark
 python generate_random_dlrm_tasks.py --per-gpu-memory $GPU_memory
 
 # Benchmark and trace analysis
-while IFS= read -r table_indices
+while IFS= read -r line
 do
+    IFS=',' read -r -a array <<< "$line"
+    dataset_suffix=${array[0]}
+    table_indices=${array[1]}
     for batch_size in 8 16 32 64;
     do
-        for sharder in naive naive_chunk random dim_greedy size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
+        for sharder in naive naive_chunk random size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
         do
-            # size_greedy for (8, 16, 32) * 64
-            if [ "$batch_size" != 64 ] && [ "$sharder" != "size_greedy" ];
+            # size_lookup_greedy for (8, 16, 32) * 64
+            if [ "$batch_size" != 64 ] && [ "$sharder" != "size_lookup_greedy" ];
             then
                 continue
             fi
@@ -105,7 +106,8 @@ do
                         ${early_barrier}\
                         ${aggregated_allreduce}\
                         -d ${table_indices}\
-                        -h ${sharder}"
+                        -h ${sharder}\
+                        -x ${dataset_suffix}"
 
             trace_cmd="$trace_cmd \
                         trace_stats.py \
@@ -116,20 +118,23 @@ do
             eval "$trace_cmd -b $((batch_size*64))" < /dev/null
         done
     done
-done < "tasks_${dataset_suffix}_${ngpus}.txt"
+done < "tasks_${ngpus}x${GPU_NAME}.txt"
 
 # Create shared overheads
 python create_shared_overheads.py --iters $trimmed_iters
 
 # Run prediction
-while IFS= read -r table_indices
+while IFS= read -r line
 do
+    IFS=',' read -r -a array <<< "$line"
+    dataset_suffix=${array[0]}
+    table_indices=${array[1]}
     for batch_size in 8 16 32 64;
     do
-        for sharder in naive naive_chunk random dim_greedy size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
+        for sharder in naive naive_chunk random size_greedy lookup_greedy norm_lookup_greedy size_lookup_greedy;
         do
-            # size_greedy for (8, 16, 32) * 64
-            if [ "$batch_size" != 64 ] && [ "$sharder" != "size_greedy" ];
+            # size_lookup_greedy for (8, 16, 32) * 64
+            if [ "$batch_size" != 64 ] && [ "$sharder" != "size_lookup_greedy" ];
             then
                 continue
             fi
@@ -151,7 +156,8 @@ do
                         ${aggregated_allreduce}\
                         -d ${table_indices}\
                         -h ${sharder}\
-                        ${share_overheads}"
+                        ${share_overheads}\
+                        -x ${dataset_suffix}"
 
             cmd="   $cmd\
                     e2e.py\
@@ -160,6 +166,6 @@ do
             eval "$cmd -b $((batch_size*64))" < /dev/null
         done
     done
-done < "tasks_${dataset_suffix}_${ngpus}.txt"
+done < "tasks_${ngpus}x${GPU_NAME}.txt"
 
 cd ..

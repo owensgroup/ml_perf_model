@@ -36,7 +36,7 @@
 import argparse, os, json
 import numpy as np
 
-from analysis.utils import PM_HOME, GPU_COUNT, GPU_PARAMS
+from analysis.utils import PM_HOME, GPU_NAME, GPU_COUNT, GPU_PARAMS
 
 MEMORY_SCALE_FACTOR = 0.8
 TABLE_LOWER_LIMIT_FACTOR = 0.7
@@ -47,11 +47,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser("Generate DLRM tasks")
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--per-gpu-memory', type=int, default=-1)
-    parser.add_argument('--data-dir', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag/2021")
+    parser.add_argument('--data-dir', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag")
     parser.add_argument('--config-name', type=str, default="common")
     parser.add_argument('--out-dir', type=str, default="{}/benchmark".format(PM_HOME))
     parser.add_argument('--per-gpu-table-limit', type=int, default=13)
-    parser.add_argument('--num-tasks', type=int, default=30)
+    parser.add_argument('--num-tasks-per-year', type=int, default=10)
     parser.add_argument('--heavy-only', action="store_true", default=False)
 
     args = parser.parse_args()
@@ -62,36 +62,45 @@ if __name__ == '__main__':
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
 
-    with open(os.path.join(args.data_dir, args.config_name + "_configs.json"), "r") as f:
-        table_configs = json.load(f)["tables"]
-    T = len(table_configs)
-    # Only consider L >= 20 if heavy-only
-    table_indices = [i for i in range(T) if (
-        (table_configs[i]["all_zero"] == 0 and table_configs[i]["pooling_factor"] >= 20) \
-            if args.heavy_only else \
-        (table_configs[i]["all_zero"] == 0)
-    )]
-    np.random.shuffle(table_indices)
-    dataset_suffix = args.data_dir.split('/')[-1]
-
-    out_path = os.path.join(args.out_dir, "tasks_{}_{}.txt".format(dataset_suffix, GPU_COUNT))
+    out_path = os.path.join(args.out_dir, "tasks_{}x{}.txt".format(GPU_COUNT, GPU_NAME))
     if os.path.exists(out_path):
         exit()
 
-    # Generate tasks
-    i = 0
-    with open(out_path, "w") as f:
-        while i < args.num_tasks:
-            all_device_table_count = np.random.randint(min_table_count, max_table_count)
-            table_ids = np.random.choice(table_indices, size=all_device_table_count, replace=False)
-            Es = [table_configs[t]["num_embeddings"] for t in table_ids]
-            Ds = [table_configs[t]["embedding_dim"] for t in table_ids]
-            # Skip if OOM
-            table_mem_sum = sum([E * D for E, D in zip(Es, Ds)]) * 4
-            DRAM_size = GPU_PARAMS["DRAM_size"] if args.per_gpu_memory == -1 else args.per_gpu_memory
-            if table_mem_sum > GPU_PARAMS["DRAM_size"] * MEMORY_SCALE_FACTOR:
-                continue
+    # Only consider L >= 20 if heavy-only
+    if args.heavy_only:
+        num_heavy_jobs = args.num_tasks_per_year
+        num_non_heavy_jobs = 0
+    else:
+        num_heavy_jobs = int(args.num_tasks_per_year / 2)
+        num_non_heavy_jobs = args.num_tasks_per_year - int(args.num_tasks_per_year / 2)
 
-            table_ids = "-".join(list(map(str, table_ids)))
-            f.write(table_ids + "\n")
-            i += 1
+    # Generate tasks
+    with open(out_path, "w") as f:
+        for dataset_suffix in [2021, 2022]: # Year
+            with open(os.path.join(args.data_dir, str(dataset_suffix), args.config_name + "_configs.json"), "r") as ff:
+                table_configs = json.load(ff)["tables"]
+            T = len(table_configs)
+            for idx, num_tasks in enumerate([num_heavy_jobs, num_non_heavy_jobs]):
+                table_indices = [
+                    i for i in range(T) if (
+                        (table_configs[i]["all_zero"] == 0 and table_configs[i]["pooling_factor"] >= 20) \
+                        if idx == 0 else \
+                        (table_configs[i]["all_zero"] == 0)
+                    )
+                ]
+                np.random.shuffle(table_indices)
+                i = 0
+                while i < num_tasks:
+                    all_device_table_count = np.random.randint(min_table_count, max_table_count)
+                    table_ids = np.random.choice(table_indices, size=all_device_table_count, replace=False)
+                    Es = [table_configs[t]["num_embeddings"] for t in table_ids]
+                    Ds = [table_configs[t]["embedding_dim"] for t in table_ids]
+                    # Skip if OOM
+                    table_mem_sum = sum([E * D for E, D in zip(Es, Ds)]) * 4
+                    DRAM_size = GPU_PARAMS["DRAM_size"] if args.per_gpu_memory == -1 else args.per_gpu_memory
+                    if table_mem_sum > GPU_PARAMS["DRAM_size"] * MEMORY_SCALE_FACTOR:
+                        continue
+
+                    table_ids = "{},".format(dataset_suffix) + "-".join(list(map(str, table_ids)))
+                    f.write(table_ids + "\n")
+                    i += 1
