@@ -145,6 +145,11 @@ def init_distributed(rank=-1, local_rank=-1, size=-1, use_gpu=False, backend="")
                                 world_size=size if backend != "mpi" else -1)
         my_rank = dist.get_rank()
         my_size = dist.get_world_size()
+        # Brutal!! Might fix later.
+        if my_rank == -1 and backend == "mpi":
+            my_rank = rank
+        if my_size == -1 and backend == "mpi":
+            my_size = size
         if my_rank == 0:
             print("Running on %d ranks using %s backend" % (my_size, backend))
     else:
