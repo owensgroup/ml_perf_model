@@ -72,7 +72,7 @@ ngpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
 cd benchmark
 
 # Extract random tables from DLRM open-source dataset
-python generate_random_dlrm_tasks.py --per-gpu-memory $GPU_memory
+python generate_random_dlrm_tasks.py --per-gpu-memory $GPU_memory --config-name merged_simple
 
 # Benchmark and trace analysis
 while IFS= read -r line
