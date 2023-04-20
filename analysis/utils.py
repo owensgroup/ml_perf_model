@@ -471,7 +471,11 @@ def preprocess_fbgemm(data, backward=False):
     # Filter all irrelavant kernels
     data = data[~(
         (data["kernel_name"].str.contains('elementwise')) | \
-        (data["kernel_name"].str.contains('Accessor'))
+        (
+            (data["kernel_name"].str.contains('Accessor')) & \
+            ~(data["kernel_name"].str.contains('split_')) & \
+            ~(data["kernel_name"].str.contains('bound_'))
+        )
     )]
     # # Keep compute kernels only
     # data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
@@ -630,6 +634,7 @@ def get_emb_train_test_data(backward=False, test_frac=0.2, **kwargs):
         '1' if not backward else '0_sgd',
         suffix,
     )
+    # pd.set_option('display.max_columns', None)
     data = pd.read_csv(data_path, delimiter=',')
     data = preprocess_fbgemm(data, backward=backward)
 

@@ -289,6 +289,7 @@ do
     echo "$bench_param"
 
     # Benchmark operator runtime: no nsight
+    rm /tmp/${BUS_ID}*
     python ${PM_HOME}/3rdparty/sparse-ads-baselines/kernel_benchmark.py $bench_param --iters $runtime_batch_iters --warmup-iters $warmup_iters >& "/tmp/${BUS_ID}_op.txt"
     op_time="$( < /tmp/${BUS_ID}_op.txt grep 'Time: ' | awk '{ x=gensub("    ","","G",$NF); x=gensub("us","","G",x); printf x }' )"
 
