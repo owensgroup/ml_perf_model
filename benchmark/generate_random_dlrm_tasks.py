@@ -98,7 +98,7 @@ if __name__ == '__main__':
                     # Skip if OOM
                     table_mem_sum = sum([E * D for E, D in zip(Es, Ds)]) * 4
                     DRAM_size = GPU_PARAMS["DRAM_size"] if args.per_gpu_memory == -1 else args.per_gpu_memory
-                    if table_mem_sum > GPU_PARAMS["DRAM_size"] * MEMORY_SCALE_FACTOR:
+                    if table_mem_sum > GPU_PARAMS["DRAM_size"] * MEMORY_SCALE_FACTOR * GPU_COUNT:
                         continue
 
                     table_ids = "{},".format(dataset_suffix) + "-".join(list(map(str, table_ids)))
