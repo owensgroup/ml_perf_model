@@ -200,19 +200,20 @@ else
     header="${header},throughput"
 fi
 
-file_name="${file_prefix}.csv"
-if [ ! -f "$file_name" ];
-then
-    touch "$file_name"
-    echo "${header}" >> "$file_name"
-fi
-
 # Benchmark operator
+file_name="${file_prefix}.csv"
 while IFS= read -r line
 do
     IFS=', ' read -r -a array <<< "$line"
     bench_param=""
     last_array=""
+
+    # Protection from unexpected absence of data file
+    if [ ! -f "$file_name" ];
+    then
+        touch "$file_name"
+        echo "${header}" >> "$file_name"
+    fi
 
     if [ "$op_type" == "embedding_lookup" ];
     then

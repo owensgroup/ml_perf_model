@@ -140,7 +140,7 @@ then
     python generate_el_table_configs_from_datasets.py --dataset-path /nvme/deep-learning/dlrm_datasets/embedding_bag/2021
     python generate_el_table_configs_from_datasets.py --dataset-path /nvme/deep-learning/dlrm_datasets/embedding_bag/2022
     python sample_batches_from_dataset.py --per-gpu-memory $GPU_memory --num-samples 10000
-    python sample_batches_from_dataset.py --per-gpu-memory $GPU_memory --num-samples 10000 --is-test
+    python sample_batches_from_dataset.py --per-gpu-memory $GPU_memory --num-samples 5000 --is-test
 fi
 
 

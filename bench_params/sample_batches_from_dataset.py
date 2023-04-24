@@ -112,7 +112,7 @@ if __name__ == "__main__":
     args.batch_sizes = list(map(int, args.batch_sizes.split(",")))
 
     if os.path.isdir:
-        datasets = glob.glob(args.dataset_path + '/*/*.pt')
+        datasets = glob.glob(args.dataset_path + '/*/fbgemm*.pt')
         if not args.is_test: # Only sample from half of the datasets for training
             idxs = np.random.choice(len(datasets), len(datasets) // 2, replace=False)
             datasets = [datasets[i] for i in idxs]
