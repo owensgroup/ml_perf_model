@@ -31,7 +31,7 @@
 import torch
 import pandas as pd
 import numpy as np
-import json, math, zlib, importlib
+import json, math, zlib
 from scipy.stats import binom
 from .utils import *
 from .memory_bw_utils import *

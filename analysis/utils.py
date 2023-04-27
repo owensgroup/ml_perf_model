@@ -213,9 +213,9 @@ HW_PARAMS = {
     }
 }
 GPU_PARAMS = HW_PARAMS[GPU_NAME]
-GPU_PARAMS["DRAM_BW_func"] = lambda x: predict_bw(x, **GPU_PARAMS["DRAM_BW_param"])
+GPU_PARAMS["DRAM_BW_func"] = lambda x: predict_bus_bw(x, **GPU_PARAMS["DRAM_BW_param"])
 GPU_PARAMS["DRAM_BW_time"] = lambda x: predict_data_movement_time(x, **GPU_PARAMS["DRAM_BW_param"])
-GPU_PARAMS["L2_BW_func"] = lambda x: predict_bw(x, **GPU_PARAMS["L2_BW_param"])
+GPU_PARAMS["L2_BW_func"] = lambda x: predict_bus_bw(x, **GPU_PARAMS["L2_BW_param"])
 GPU_PARAMS["L2_BW_time"] = lambda x: predict_data_movement_time(x, **GPU_PARAMS["L2_BW_param"])
 
 
@@ -233,15 +233,12 @@ ADDITIONAL = 2
 ALL_TO_ALL_PARAMS = None
 ALL_REDUCE_PARAMS = None
 if GPU_COUNT > 1:
-    assert os.path.exists("{}/analysis/mem_comm_params/{}x{}.py".format(PM_HOME, GPU_COUNT, GPU_NAME)), \
-        "Memory/Communication performance modeling params don't exist!"
-    module_name = "analysis.mem_comm_params.{}x{}".format(GPU_COUNT, GPU_NAME)
-    ALL_TO_ALL_PARAMS = importlib.import_module(module_name, package=None).ALL_TO_ALL_PARAMS
-
-    assert os.path.exists("{}/analysis/mem_comm_params/{}x{}.py".format(PM_HOME, GPU_COUNT, GPU_NAME)), \
-        "Memory/Communication performance modeling params don't exist!"
-    module_name = "analysis.mem_comm_params.{}x{}".format(GPU_COUNT, GPU_NAME)
-    ALL_REDUCE_PARAMS = importlib.import_module(module_name, package=None).ALL_REDUCE_PARAMS
+    if os.path.exists("{}/analysis/mem_comm_params/{}x{}.py".format(PM_HOME, GPU_COUNT, GPU_NAME)):
+        module_name = "analysis.mem_comm_params.{}x{}".format(GPU_COUNT, GPU_NAME)
+        ALL_TO_ALL_PARAMS = importlib.import_module(module_name, package=None).ALL_TO_ALL_PARAMS
+        ALL_REDUCE_PARAMS = importlib.import_module(module_name, package=None).ALL_REDUCE_PARAMS
+    else:
+        print("Memory/Communication performance modeling params don't exist!")
 
 
 # TODO: Distinguish conv1d and conv2d for ConvolutionBackward

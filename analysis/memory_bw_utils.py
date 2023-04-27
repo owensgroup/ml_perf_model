@@ -67,8 +67,12 @@ def process_param_data(
         header_found = False
         with open(filename, 'r') as f:
             lines = f.readlines()
+            skip_count = 0
             for line in lines:
                 if re.search('COMMS-RES', line):
+                    if skip_count < 2:
+                        skip_count += 1
+                        continue
                     if not header_found:
                         header_found = True
                         continue
@@ -129,7 +133,7 @@ def get_max_sum_message_size(sizes):
 
 
 # Get turning points of the bus BW curve for a collective
-def get_turning_points(data, ratio_th=0.05, bw='bus_bw', latency='latency'):
+def get_turning_points(data, ratio_th=0.1, bw='bus_bw', latency='latency'):
     num_samples = len(data)
     max_bw = data[bw].max()
     bw_ratios = []
@@ -139,8 +143,8 @@ def get_turning_points(data, ratio_th=0.05, bw='bus_bw', latency='latency'):
             bw_ratios.append(-1)
             latency_ratios.append(-1)
             continue
-        bw_ratios.append(data[bw][idx-1] * data[bw][idx+1] / data[bw][idx] / data[bw][idx])
-        latency_ratios.append(data[latency][idx-1] * data[latency][idx+1] / data[latency][idx] / data[latency][idx])
+        bw_ratios.append((data[bw][idx+1] - data[bw][idx-1]) / 2 / data[bw][idx+1])
+        latency_ratios.append((data[latency][idx+1] - data[latency][idx-1]) / 2 / data[latency][idx])
 
     # Mark the saturation point as two dps after 95% of the peak
     saturation_idx = num_samples - 1
@@ -156,7 +160,7 @@ def get_turning_points(data, ratio_th=0.05, bw='bus_bw', latency='latency'):
     for idx in range(num_samples):
         if idx < 5 or idx == num_samples - 1:
             continue
-        if abs(latency_ratios[idx] - 1) > ratio_th * 2:
+        if abs(latency_ratios[idx]) > ratio_th:
             linearity_idx = idx - 1
             break
 
@@ -207,19 +211,18 @@ def get_sigmoid_bw(s, sigmoid_param):
     return 10 ** sigmoid(s, *sigmoid_param)
 
 
-# In GB/s
-def predict_bw(size, mul_factor, mem_ch, sigmoid_param):
+# BUS BW in GB/s
+def predict_bus_bw(size, mul_factor, mem_ch, sigmoid_param):
     log_size = np.log2(size)
     if log_size <= mem_ch["ln_p"]:
-        return size / mem_ch["overhead"] / 1e3 # us -> GB/s
+        return size / mem_ch["overhead"] * mul_factor / 1e3 # us -> GB/s
     elif log_size > mem_ch["sats_p"]:
         return mem_ch["max_bw"]
     else:
-        bw = get_sigmoid_bw(log_size, sigmoid_param)
-        return bw / mul_factor
+        return get_sigmoid_bw(log_size, sigmoid_param) # BUS BW
 
 
-# In us
+# Time in us
 def predict_data_movement_time(size, mul_factor, mem_ch, sigmoid_param):
     log_size = np.log2(size)
     if log_size <= mem_ch["ln_p"]:
@@ -227,5 +230,5 @@ def predict_data_movement_time(size, mul_factor, mem_ch, sigmoid_param):
     elif log_size > mem_ch["sats_p"]:
         return size / mem_ch["max_bw"] * mul_factor / 1e3 + mem_ch["overhead"] # GB/s -> us
     else:
-        bw = get_sigmoid_bw(log_size, sigmoid_param)
-        return size / bw * mul_factor / 1e3 # GB/s -> us
+        bwb = get_sigmoid_bw(log_size, sigmoid_param)
+        return size / bwb * mul_factor / 1e3 # GB/s -> us
