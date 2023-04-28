@@ -71,16 +71,16 @@ HW_PARAMS = {
             "sigmoid_param": (2.20955621, 20.35203082, 0.62528837, 0.93242722),
         },
         "peak_L2_BW": 1811.562,
-        "L2_BW_param": {
-            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-            "mem_ch": {
-                "ln_p": 0.0,
-                "sats_p": 40.0,
-                "max_bw": 2289.23,
-                "overhead": 1,
-            },
-            "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        }, # Use V100 param as a placeholder. TODO: Fix this.
+        # "L2_BW_param": {
+        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+        #     "mem_ch": {
+        #         "ln_p": 0.0,
+        #         "sats_p": 40.0,
+        #         "max_bw": 2289.23,
+        #         "overhead": 1,
+        #     },
+        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
+        # }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 2903.956,
         "num_SM": 108,
         "DRAM_size": 40 * 1024 * 1024 * 1024,
@@ -119,33 +119,33 @@ HW_PARAMS = {
         "SMEM_size": 64 * 1024,
     },
     "GV100": {
-        "peak_throughput": 15441.524,
-        "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
-        "peak_DRAM_BW": 816.953,
+        "peak_throughput": 13035.91,
+        "peak_PCIe_BW": 5.0, # Weird but use it for now. TODO: Fix it.
+        "peak_DRAM_BW": 601.045,
         "DRAM_BW_param": {
             "mul_factor": MUL_FACTOR_FUNCS["others"](1),
             "mem_ch": {
-                'ln_p': 16.0,
-                'sats_p': 30.0,
-                'max_bw': 816.953003,
-                'overhead': 4.83328223
+                'ln_p': 15.0, 
+                'sats_p': 28.0, 
+                'max_bw': 601.045715, 
+                'overhead': 6.963206
             },
-            "sigmoid_param": (1.9472268, 19.81699009, 0.55556443, 0.95523816),
+            "sigmoid_param": (2.56635526, 18.54562595, 0.4196576, 0.27275451),
         },
-        "peak_L2_BW": 2847.457,
-        "L2_BW_param": {
-            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-            "mem_ch": {
-                "ln_p": 0.0,
-                "sats_p": 40.0,
-                "max_bw": 2289.23,
-                "overhead": 1,
-            },
-            "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
-        "peak_SMEM_BW": 3918.911,
+        "peak_L2_BW": 2466.657,
+        # "L2_BW_param": {
+        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+        #     "mem_ch": {
+        #         "ln_p": 0.0,
+        #         "sats_p": 40.0,
+        #         "max_bw": 2289.23,
+        #         "overhead": 1,
+        #     },
+        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
+        # }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
+        "peak_SMEM_BW": 3299.471,
         "num_SM": 80,
-        "DRAM_size": 16 * 1024 * 1024 * 1024,
+        "DRAM_size": 32 * 1024 * 1024 * 1024,
         "L2_size": 6 * 1024 * 1024,
         "SMEM_size": 64 * 1024,
     },
@@ -164,16 +164,16 @@ HW_PARAMS = {
             "sigmoid_param": (6.53478964, 11.78536754, 0.19557855, -3.4045424),
         }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_L2_BW": 1406.454,
-        "L2_BW_param": {
-            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-            "mem_ch": {
-                "ln_p": 0.0,
-                "sats_p": 40.0,
-                "max_bw": 2289.23,
-                "overhead": 1,
-            },
-            "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        }, # Use V100 param as a placeholder. TODO: Fix this.
+        # "L2_BW_param": {
+        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+        #     "mem_ch": {
+        #         "ln_p": 0.0,
+        #         "sats_p": 40.0,
+        #         "max_bw": 2289.23,
+        #         "overhead": 1,
+        #     },
+        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
+        # }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 1831.258,
         "num_SM": 30,
         "DRAM_size": 12 * 1024 * 1024 * 1024,
@@ -195,16 +195,16 @@ HW_PARAMS = {
             "sigmoid_param": (6.53478964, 11.78536754, 0.19557855, -3.4045424),
         }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_L2_BW": 1591.259,
-        "L2_BW_param": {
-            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-            "mem_ch": {
-                "ln_p": 0.0,
-                "sats_p": 40.0,
-                "max_bw": 2289.23,
-                "overhead": 1,
-            },
-            "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        }, # Use V100 param as a placeholder. TODO: Fix this.
+        # "L2_BW_param": {
+        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+        #     "mem_ch": {
+        #         "ln_p": 0.0,
+        #         "sats_p": 40.0,
+        #         "max_bw": 2289.23,
+        #         "overhead": 1,
+        #     },
+        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
+        # }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,
         "DRAM_size": 16 * 1024 * 1024 * 1024,
