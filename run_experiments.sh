@@ -99,6 +99,12 @@ do
 
         for model in bert gpt2;
         do
+            # OOM
+            if [ "$batch_size" == 64 ] && [ "$model" == "bert" ];
+            then
+                continue
+            fi
+
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
@@ -188,6 +194,12 @@ do
 
         for model in bert gpt2;
         do
+            # OOM
+            if [ "$batch_size" == 64 ] && [ "$model" == "bert" ];
+            then
+                continue
+            fi
+
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then

@@ -64,26 +64,33 @@ if __name__ == '__main__':
                 ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
                 " ({}: {})".format(args.year, args.table_indices) if args.model_name == "DLRM_open_source" else "",
             )
+        else:
+            tmp_str = "{}{}{}".format(
+                ", bucket size: {}".format(args.bucket_size_mb) if args.bucket_size_mb != 25 else "",
+                ", early barrier" if args.early_barrier else "",
+                ", aggregated allreduce" if args.aggregated_allreduce else ", bucketed allreduce",
+            )
         print("======= [Training time prediction] {}, {} GPU(s), batch size: {}, iters: {}{} =======".format(
             args.model_name, args.num_gpus, args.batch_size, args.iters, tmp_str))
 
-    dlrm_folder_str = ""
+    folder_str = ""
     if "DLRM" in args.model_name:
-        dlrm_folder_str += "b/" if args.is_batched_emb else "f/"
-        if args.num_gpus > 1:
-            dlrm_folder_str += "{}/{}_{}/{}/".format(
-                args.sharder,
-                "barrier" if args.early_barrier else "no_barrier",
-                "aggregated_allreduce" if args.aggregated_allreduce else "bucketed_allreduce",
-                args.bucket_size_mb,
-            )
+        folder_str += "b/" if args.is_batched_emb else "f/"
+        folder_str += "{}/".format(args.sharder)
+    if args.num_gpus > 1:
+        folder_str += "{}_{}/{}/".format(
+            "barrier" if args.early_barrier else "no_barrier",
+            "aggregated_allreduce" if args.aggregated_allreduce else "bucketed_allreduce",
+            args.bucket_size_mb,
+        )
+
     prefix = "{}/data/{}/e2e/{}{}{}/{}{}_{}{}".format(
         PM_HOME,
         GPU_NAME,
         args.model_name,
         ("/" + args.year) if args.model_name == "DLRM_open_source" else "",
         ("/" + args.table_indices) if args.model_name == "DLRM_open_source" else "",
-        dlrm_folder_str,
+        folder_str,
         args.num_gpus,
         args.batch_size,
         "_distributed" if args.num_gpus > 1 else ""
