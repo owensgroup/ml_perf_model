@@ -72,7 +72,7 @@ echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
 echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))
-nlp_pt_bin="accelerate launch --num_processes ${ngpus} nlp_transformers.py"
+nlp_pt_bin="accelerate launch --num_processes ${ngpus} --multi_gpu nlp_transformers.py"
 graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
 cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
 echo "-------------------"
