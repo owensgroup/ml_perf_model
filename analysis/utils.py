@@ -547,7 +547,12 @@ def get_pretrained_net(op_type, backward=False):
     else: # tril
         n_feature = 4
     net = MLP(n_feature=n_feature, n_hidden=n_hidden, n_output=1)
-    net.load_state_dict(torch.load("{}/analysis/ml_predictors/{}/predictor_{}.pth".format(PM_HOME, GPU_NAME, suffix)))
+    net.load_state_dict(
+        torch.load(
+            "{}/analysis/ml_predictors/{}/predictor_{}.pth".format(PM_HOME, GPU_NAME, suffix),
+            map_location=torch.device("cpu"),
+        )
+    )
     return net
 
 
