@@ -325,7 +325,7 @@ def infer_a2a():
     a2a_data[['batch_size', "tables", "dim"]] = a2a_data['btd'].str.split(',', expand=True)
     tables = a2a_data["tables"].str.split('-', expand=True).astype(int)
     num_gpus = len(tables.iloc[0])
-    a2a_data["batch_size"] = a2a_data["batch_size"].astype(int) // num_gpus
+    a2a_data["batch_size"] = a2a_data["batch_size"].astype(int) // num_gpus # Divide evenly and send to each device
     a2a_data["dim"] = a2a_data["dim"].astype(int)
     sizes = tables.mul(a2a_data["batch_size"], axis="index").mul(a2a_data["dim"], axis="index") * 4 # float32
 
@@ -698,9 +698,53 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
             diag = 0
         t = mlp_predictor_kwargs("tril", backward=True, batch_size=batch_size, M=M, N=N, diag=diag)
         kernel_times.append(t)
-    elif is_all2all_parent(op) or is_allreduce_parent(op):
-        collective_op = None
+    elif is_all2all_parent(op):
         # Get the collective op
+        collective_op = None
+        def dfs(n):
+            nonlocal collective_op
+            if n.name in COMMS:
+                collective_op = n
+            for c in n.children:
+                dfs(c)
+        dfs(op)
+        x = collective_op.get_parent_by_name("Backward")
+        if x: # a2a backward
+            # Backward compatible to old Pytorch (np.prod(collective_op.parent.output_shapes[0]) * 4 should be enough for v2.0)
+            tensor_size = np.prod(x.get_child_by_name("record").output_shapes[0]) * 4
+
+            # Copies
+            for y in x.get_child_by_name("contiguous").parent.children:
+                if "contiguous" in y.name:
+                    s = np.prod(y.input_shapes[0])
+                    t = 2 * s * 4 / peak_DRAM_BW / 1000
+                    kernel_times.append(t)
+        else: # Forward
+            tensor_size = np.prod(collective_op.input_shapes[0]) * 4
+
+        # Concat
+        cat_op = op.get_child_by_name("cat")
+        sum_size = sum([np.prod(s) for s in cat_op.input_shapes[0]])
+        t = concat_predictor(sum_size=sum_size)
+        kernel_times.append(t)
+
+        # Size treatment (max of max) for a2a
+        tensor_size = tensor_size // ext_dist.my_size
+        ipTensor = torch.tensor([tensor_size], dtype=torch.float) # On the CPU
+        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
+        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+        tensor_size = get_max_message_size([x.item() for x in opTensorList])
+        t = collective_predictor(collective_op.name, tensor_size=tensor_size)
+        kernel_times.append(t)
+    elif is_allreduce_parent(op):
+        # Mul
+        mul_op = op.get_child_by_name("mul")
+        s = np.prod(mul_op.input_shapes[0] if mul_op.input_shapes else mul_op.children[0].input_shapes[0])
+        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000)
+        kernel_times.append(t)
+
+        # Get the collective op
+        collective_op = None
         def dfs(n):
             nonlocal collective_op
             if n.name in COMMS:
@@ -709,10 +753,6 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
                 dfs(c)
         dfs(op)
         tensor_size = np.prod(collective_op.input_shapes[0]) * 4
-        ipTensor = torch.tensor([tensor_size], dtype=torch.float) # On the CPU
-        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
-        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
-        tensor_size = get_max_message_size([x.item() for x in opTensorList])
         t = collective_predictor(collective_op.name, tensor_size=tensor_size)
         kernel_times.append(t)
     elif op.name == "aten::cat":
@@ -720,8 +760,10 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         t = concat_predictor(sum_size=sum_size)
         kernel_times.append(t)
     elif op.name == "aten::to":
-        s = np.prod(op.input_shapes[0])
-        t = memcpy_predictor(tensor_size=s)
+        t = 0
+        if "dtype_layout" in op.op_schema: # Some aten::to actually doesn't move data H2D or D2H.
+            s = np.prod(op.input_shapes[0])
+            t = memcpy_predictor(tensor_size=s)
         kernel_times.append(t)
     # Minor ops staring from here: ----
     elif op.name == "aten::t":
@@ -806,14 +848,14 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
     prev_node = None
 
     forward_found = False
+    backward_found = False
     for _, node in sorted_nodes:
         if module_marker in node.name:
             forward_found = True
-        if not forward_found:
+        if not forward_found: # Start inference at the beginning of Forward
             continue
         if node.is_op() and not to_skip(node):
             shapes = str(DUMMY_SHAPES)
-            stream = infer_multi_stream(node)
 
             # Sync all GPU streams in 3 cases (similar to dependency_test):
             # 1. the current node is dependent on the current comm op
@@ -825,6 +867,17 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                 last_comm_op = None
                 gpu_time[COMPUTE_STREAM] = gpu_all_streams_front
                 gpu_time[MEMORY_STREAM] = gpu_all_streams_front
+                if debug:
+                    print("  Communication sync: ", cpu_time, gpu_time)
+
+            # Sync CPU time at the beginning of Backward
+            if not backward_found and node.get_parent_by_name("## Backward ##"):
+                backward_found = True
+                cpu_time = gpu_all_streams_front
+                gpu_time[COMPUTE_STREAM] = gpu_all_streams_front
+                gpu_time[MEMORY_STREAM] = gpu_all_streams_front
+                if debug:
+                    print("-------- Sync CPU time at the start of Backward")
 
             cpu_time += overheads["t1"][0] # T1: between two nodes
             if debug:
@@ -838,10 +891,17 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                 if to_consider(node) or has_comm_collective(node):
                     t = [tt + GPU_KERNEL_OVERHEAD for tt in get_kernel_time(node, ls=ls, embedding_rfs=embedding_rfs)] # Get kernel time and (arguably) compensate with the overheads
 
+                    stream = infer_multi_stream(node)
                     for idx, l in enumerate(launches):
                         t4 = overheads["t4"][l][0] # Kernel launches
                         t5 = overheads["t5"][node.name][shapes][0] # Avg overhead between
 
+                        # Non-collective kernels under collective ops are on COMPUTE_STREAM
+                        if (is_all2all_parent(node) or is_allreduce_parent(node)) and idx != len(launches) - 1:
+                            stream = COMPUTE_STREAM
+                        else:
+                            stream = infer_multi_stream(node)
+                        
                         # Contribution of CPU overheads on GPU idle time
                         gpu_time[stream] = max(gpu_time[stream] + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
 

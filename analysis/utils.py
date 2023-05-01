@@ -329,7 +329,9 @@ def to_consider(op):
 
 
 def to_skip(op):
-    return op_name_in_list(op, SKIP)
+    return op_name_in_list(op, SKIP) or \
+        (op.get_child_by_name("broadcast")) or \
+        (op.name == "record_param_comms" and not op.children) # Skip weird broadcasts and empty record_param_comms trailing a2a in Pytorch 2.0
 
 
 # Currently only support All2All and AllReduce
