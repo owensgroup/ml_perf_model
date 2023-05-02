@@ -499,12 +499,12 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
             if child.name == "aten::t":
                 transpose = child
             elif "addmm" in child.name:
+                t = 0
                 if transpose is not None:
                     M, N = transpose.input_shapes[0][0], transpose.input_shapes[0][1]
-                    t = mlp_predictor_kwargs("transpose", backward=False, batch_size=1, M=M, N=N)
-                    kernel_times.append(t)
+                    t += mlp_predictor_kwargs("transpose", backward=False, batch_size=1, M=M, N=N)
                 M, K, N = child.input_shapes[1][0], child.input_shapes[1][1], child.input_shapes[2][1]
-                t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=M, N=N, K=K)
+                t += mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=M, N=N, K=K)
                 kernel_times.append(t)
                 # print(child.name, M, K, N, child.input_shapes, t)
     elif "AddmmBackward" in op.name:
