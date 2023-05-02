@@ -848,7 +848,6 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
     prev_node = None
 
     forward_found = False
-    backward_found = False
     for _, node in sorted_nodes:
         if module_marker in node.name:
             forward_found = True
@@ -869,15 +868,6 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                 gpu_time[MEMORY_STREAM] = gpu_all_streams_front
                 if debug:
                     print("  Communication sync: ", cpu_time, gpu_time)
-
-            # Sync CPU time at the beginning of Backward
-            if not backward_found and node.get_parent_by_name("## Backward ##"):
-                backward_found = True
-                cpu_time = gpu_all_streams_front
-                gpu_time[COMPUTE_STREAM] = gpu_all_streams_front
-                gpu_time[MEMORY_STREAM] = gpu_all_streams_front
-                if debug:
-                    print("-------- Sync CPU time at the start of Backward")
 
             cpu_time += overheads["t1"][0] # T1: between two nodes
             if debug:
