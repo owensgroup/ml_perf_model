@@ -501,6 +501,69 @@ then
 fi
 
 
+if [ ! -f gelu_params.txt ];
+then
+    touch gelu_params.txt
+    for batch_size in 1 8 16 32 64 128;
+    do
+        for M in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048 2560 3072 3840 4096;
+        do
+            for N in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048 2560 3072 3840 4096;
+            do
+                input_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
+                if [ "$input_size" -lt "$GPU_memory" ];
+                then
+                    echo "$batch_size $M $N" >> gelu_params.txt
+                fi
+            done
+        done
+    done
+fi
+
+
+if [ ! -f ln_params.txt ];
+then
+    touch ln_params.txt
+    for batch_size in 1 8 16 32 64 128;
+    do
+        for M in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048 2560 3072 3840 4096;
+        do
+            for N in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048 2560 3072 3840 4096;
+            do
+                input_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
+                if [ "$input_size" -lt "$GPU_memory" ];
+                then
+                    echo "$batch_size $M $N" >> ln_params.txt
+                fi
+            done
+        done
+    done
+fi
+
+
+if [ ! -f dropout_params.txt ];
+then
+    touch dropout_params.txt
+    for batch_size in 1 8 16 32 64 128;
+    do
+        for M in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048 2560 3072 3840 4096;
+        do
+            for N in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048 2560 3072 3840 4096;
+            do
+                for p in 10 20 30 50 80;
+                do
+                    input_size="$( echo "$batch_size * $M * $N * 4" | bc -l )"
+                    if [ "$input_size" -lt "$GPU_memory" ];
+                    then
+                        echo "$batch_size $M $N $( echo "scale=4; $p / 100.0" | bc -l )" >> dropout_params.txt
+                    fi
+                done
+            done
+        done
+    done
+fi
+
+
 if [ ! -f pool_params.txt ];
 then
     touch pool_params.txt

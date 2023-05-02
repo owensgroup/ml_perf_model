@@ -102,16 +102,16 @@ HW_PARAMS = {
             "sigmoid_param": (1.9472268, 19.81699009, 0.55556443, 0.95523816),
         },
         "peak_L2_BW": 2847.457,
-        "L2_BW_param": {
-            "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-            "mem_ch": {
-                "ln_p": 0.0,
-                "sats_p": 40.0,
-                "max_bw": 2289.23,
-                "overhead": 1,
-            },
-            "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
+        # "L2_BW_param": {
+        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
+        #     "mem_ch": {
+        #         "ln_p": 0.0,
+        #         "sats_p": 40.0,
+        #         "max_bw": 2289.23,
+        #         "overhead": 1,
+        #     },
+        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
+        # }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
         "peak_SMEM_BW": 3918.911,
         "num_SM": 80,
         "DRAM_size": 16 * 1024 * 1024 * 1024,
@@ -257,7 +257,7 @@ CONSIDER = [
     "aten::mse_loss", "MseLossBackward", \
     "aten::avg_pool2d", "AvgPool2D", \
     "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-    "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", \
+    "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", "aten::div", "DivBackward"\
     "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", \
     "autograd::engine::evaluate_function: torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
     "torch::autograd::AccumulateGrad", \

@@ -141,6 +141,18 @@ elif [ "$op_type" == "bn" ];
 then
     header="kernel_name,batch_size,H,W,OC"
     param_file_name="${PM_HOME}/bench_params/bn_params.txt"
+elif [ "$op_type" == "ln" ];
+then
+    header="kernel_name,batch_size,M,N"
+    param_file_name="${PM_HOME}/bench_params/ln_params.txt"
+elif [ "$op_type" == "gelu" ];
+then
+    header="kernel_name,batch_size,M,N"
+    param_file_name="${PM_HOME}/bench_params/gelu_params.txt"
+elif [ "$op_type" == "dropout" ];
+then
+    header="kernel_name,batch_size,M,N,p"
+    param_file_name="${PM_HOME}/bench_params/dropout_params.txt"
 else # memcpy
     header="kernel_name,batch_size,M,N"
     param_file_name="${PM_HOME}/bench_params/memcpy_params.txt"
@@ -182,7 +194,7 @@ fi
 while IFS= read -r line
 do
     IFS=', ' read -r -a array <<< "$line"
-    bench_param=""
+    bench_param="--op-type $op_type --batch-size ${array[0]}"
     last_array=""
 
     if [ "$op_type" == "embedding_lookup" ];
@@ -198,7 +210,7 @@ do
         last_array="${array[@]:0:5}"
         if [ "$fbgemm" -ne "0" ];
         then
-            bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --fbgemm"
+            bench_param="${bench_param} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --fbgemm"
             if [ "$fbgemm_caching" == "1" ];
             then
                 bench_param="${bench_param} --caching"
@@ -208,7 +220,7 @@ do
                 bench_param="${bench_param} --dataset /nvme/deep-learning/dlrm_datasets/embedding_bag/fbgemm_t856_bs65536.pt"
             fi
         else
-            bench_param="--op-type $op_type --batch-size ${array[0]} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"
+            bench_param="${bench_param} --num-embeddings ${array[1]} --num-tables ${array[2]} --bag-size ${array[3]} --embedding-dim ${array[4]} --rows-per-block ${array[5]}"
             if [ "${array[5]}" -gt "32" ] && [ "$is_forward" == "0" ]; # Skip when backward and rows_per_block too big
             then
                 continue
@@ -224,34 +236,43 @@ do
         fi
     elif [ "$op_type" == "fully_connected" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
     elif [ "$op_type" == "conv2d" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]} --stride ${array[5]} --dilation ${array[6]} --FH ${array[7]} --FW ${array[8]}"
+        bench_param="${bench_param} --H ${array[1]} --W ${array[2]} --IC ${array[3]} --OC ${array[4]} --stride ${array[5]} --dilation ${array[6]} --FH ${array[7]} --FW ${array[8]}"
         if [ "${array[9]}" == "1" ];
         then
             bench_param="${bench_param} --is-dw"
         fi
     elif [ "$op_type" == "conv1d" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --L ${array[1]} --IC ${array[2]} --OC ${array[3]} --groups ${array[4]}"
+        bench_param="${bench_param} --L ${array[1]} --IC ${array[2]} --OC ${array[3]} --groups ${array[4]}"
     elif [ "$op_type" == "concat" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]} --K ${array[3]}"
     elif [ "$op_type" == "cross_entropy" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]}"
+        bench_param="${bench_param}"
     elif [ "$op_type" == "transpose" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --trans-type ${array[3]}"
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]} --trans-type ${array[3]}"
     elif [ "$op_type" == "tril" ]; # lower triangular after feature interaction
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]} --diag ${array[3]}"
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]} --diag ${array[3]}"
     elif [ "$op_type" == "bn" ];
     then
-        bench_param="--op-type $op_type --batch-size ${array[0]} --H ${array[1]} --W ${array[2]} --OC ${array[3]}"
-   else # Memcpy
-        bench_param="--op-type $op_type --batch-size ${array[0]} --M ${array[1]} --N ${array[2]}"
+        bench_param="${bench_param} --H ${array[1]} --W ${array[2]} --OC ${array[3]}"
+    elif [ "$op_type" == "ln" ];
+    then
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]}"
+    elif [ "$op_type" == "gelu" ];
+    then
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]}"
+    elif [ "$op_type" == "dropout" ];
+    then
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]} --p ${array[3]}"
+    else # Memcpy
+        bench_param="${bench_param} --M ${array[1]} --N ${array[2]}"
     fi
     if [ "$is_forward" == "0" ];
     then

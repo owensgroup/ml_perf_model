@@ -54,7 +54,8 @@ do
     then
         IFS=',' read -r -a array <<< "$line"
         perc="${array[0]}"
-        kernel_name=$( echo "${array[8]/<*/}" | awk '{ sub("\"void ","",$0); printf $0 }' ) # Strip everything after <
+        kernel_name="${array[8]/*<unnamed>::/}" # Strip everything before <unnamed>::
+        kernel_name=$( echo "${kernel_name/<*/}" | awk '{ sub("\"void ","",$0); printf $0 }' ) # Strip everything after <
         kernel_name="${kernel_name/*::/}" # Strip everything before (the last) ::
         kernel_name="${kernel_name/(*/}" # Strip everything after (
         if [ "$op_type" == "memcpy" ];

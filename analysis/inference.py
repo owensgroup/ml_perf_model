@@ -278,10 +278,12 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
         input_args = torch.tensor([np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FH', 'FW', 'is_dw']], dtype=torch.float32)
     elif op_type == "conv1d":
         input_args = torch.tensor([np.log(kwargs[x]) for x in ['batch_size', 'L', 'IC', 'OC']] + [kwargs['groups']], dtype=torch.float32)
-    elif op_type == "transpose":
+    elif op_type == "transpose" or op_type == "ln" or op_type == "gelu":
         input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]], dtype=torch.float32)
     elif op_type == "bn":
         input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "H", "OC"]], dtype=torch.float32)
+    elif op_type == "gelu":
+        input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]] + [kwargs["p"]], dtype=torch.float32)
     else: # tril
         input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]] + [kwargs["diag"]], dtype=torch.float32)
     return mlp_predictor_tensor(input_args, op_type, backward=backward)
@@ -522,7 +524,7 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         for child in op.children:
             if child.name == "aten::reshape": # Equivalent to concat
                 sa = np.prod(child.input_shapes[0][0])
-                sb = np.prod(child.input_shapes[0][1])
+                sb = np.prod(child.input_shapes[0][1] if child.input_shapes[0][1] else child.input_shapes[0][0])
                 t = concat_predictor(sum_size=sa+sb)
                 kernel_times.append(t)
             elif "aten::bmm" in child.name: # aten::bmm
@@ -792,7 +794,10 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         s = np.prod(op.input_shapes[0])
         t = max(3 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 3 flops per mse; two read one write
         kernel_times.append(t)
-    elif op_name_in_list(op, ["aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", "MseLossBackward"]):
+    elif op_name_in_list(op, [
+            "aten::add", "aten::add_", "aten::__and__", "aten::sub", \
+            "aten::mul", "MulBackward", "aten::div", "DivBackward", "MseLossBackward" \
+        ]):
         s = np.prod(op.input_shapes[0] if op.input_shapes else op.children[0].input_shapes[0])
         t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 1 flops per mse backward (M' = y-t); two read one write
         kernel_times.append(t)
