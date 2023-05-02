@@ -36,7 +36,8 @@ emb_type= # FBGEMM for DLRM
 bucket_size_mb=25 # Bucket size in MB
 early_barrier= # Whether launch a barrier at the beginning of the iteration
 aggregated_allreduce= # Whether extract an execution graph with aggregated allreduce for DDP (i.e. iteration 0)
-while getopts i:ots:rad: flag
+debug= # Whether use debug mode in e2e prediction
+while getopts i:ots:rad flag
 do
     case "${flag}" in
         i) trimmed_iters=${OPTARG};;
@@ -45,6 +46,7 @@ do
         s) bucket_size_mb=${OPTARG};;
         r) early_barrier="-r";;
         a) aggregated_allreduce="-a";;
+        d) debug="--debug";;
     esac
 done
 
@@ -157,7 +159,8 @@ do
                         -d ${table_indices}\
                         -h ${sharder}\
                         ${share_overheads}\
-                        -x ${dataset_suffix}"
+                        -x ${dataset_suffix}\
+                        ${debug}"
 
             cmd="   $cmd\
                     e2e.py\
