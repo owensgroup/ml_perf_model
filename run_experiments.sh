@@ -49,6 +49,7 @@ do
 done
 
 cd benchmark
+num_gpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
 
 # Benchmark and trace analysis
 for batch_size in 8 16 32 64;
@@ -56,7 +57,6 @@ do
     for ngpus in 1 2 4 8;
     do
         # Has enough GPUs?
-        num_gpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
         if [ "$ngpus" -gt "$num_gpus" ];
         then
             continue
@@ -87,13 +87,13 @@ do
 
             # Strong scaling
             ./dlrm_benchmark.sh -b $((batch_size*64)) ${options}
-            eval "$trace_cmd -b $((batch_size*64))"
+            eval "$trace_cmd -b $((batch_size*64))" < /dev/null
 
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 64 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
                 ./dlrm_benchmark.sh -b $((batch_size*64*ngpus)) ${options}
-                eval "$trace_cmd -b $((batch_size*64*ngpus))"
+                eval "$trace_cmd -b $((batch_size*64*ngpus))" < /dev/null
             fi
         done
 
@@ -125,7 +125,7 @@ do
                         ${options}"
 
             ./nlp_benchmark.sh -b ${batch_size} ${options}
-            eval "$trace_cmd -b ${batch_size}"
+            eval "$trace_cmd -b ${batch_size}" < /dev/null
         done
     done
 
@@ -153,7 +153,6 @@ do
     for ngpus in 1 2 4 8;
     do
         # Has enough GPUs?
-        num_gpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
         if [ "$ngpus" -gt "$num_gpus" ];
         then
             continue
@@ -183,12 +182,12 @@ do
                     ${options}"
 
             # Strong scaling
-            eval "$cmd -b $((batch_size*64))"
+            eval "$cmd -b $((batch_size*64))" < /dev/null
 
             # Weak scaling
             if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 64 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                eval "$cmd -b $((batch_size*64*ngpus))"
+                eval "$cmd -b $((batch_size*64*ngpus))" < /dev/null
             fi
         done
 
@@ -220,7 +219,7 @@ do
                     e2e.py\
                     ${options}"
 
-            eval "$cmd -b ${batch_size}"
+            eval "$cmd -b ${batch_size}" < /dev/null
         done
     done
 
