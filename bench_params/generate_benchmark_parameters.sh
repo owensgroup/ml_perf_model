@@ -544,7 +544,7 @@ fi
 if [ ! -f dropout_params.txt ];
 then
     touch dropout_params.txt
-    for batch_size in 1 8 16 32 64 128;
+    for batch_size in 1 8 16 32 64;
     do
         for M in 16 24 32 64 96 128 160 192 256 320 448 512 768 1024 1280 2048 2560 3072 3840 4096;
         do

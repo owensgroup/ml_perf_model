@@ -75,7 +75,9 @@ if __name__ == '__main__':
         "conv1d",
         "transpose",
         "bn",
-        "tril"
+        "ln",
+        "dropout",
+        "tril",
     ]
     is_emb = args.op_type=="embedding_lookup"
     suffix = "{}_{}".format(args.op_type, 1 if not args.backward else 0)

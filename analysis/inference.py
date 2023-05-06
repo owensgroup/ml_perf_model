@@ -278,11 +278,11 @@ def mlp_predictor_kwargs(op_type, backward=False, **kwargs):
         input_args = torch.tensor([np.log(kwargs[x]) for x in ['batch_size', 'H', 'IC', 'OC']] + [kwargs[x] for x in ['stride', 'dilation', 'FH', 'FW', 'is_dw']], dtype=torch.float32)
     elif op_type == "conv1d":
         input_args = torch.tensor([np.log(kwargs[x]) for x in ['batch_size', 'L', 'IC', 'OC']] + [kwargs['groups']], dtype=torch.float32)
-    elif op_type == "transpose" or op_type == "ln" or op_type == "gelu":
+    elif op_type == "transpose" or op_type == "ln":
         input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]], dtype=torch.float32)
     elif op_type == "bn":
         input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "H", "OC"]], dtype=torch.float32)
-    elif op_type == "gelu":
+    elif op_type == "dropout":
         input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]] + [kwargs["p"]], dtype=torch.float32)
     else: # tril
         input_args = torch.tensor([np.log(kwargs[x]) for x in ["batch_size", "M", "N"]] + [kwargs["diag"]], dtype=torch.float32)
@@ -509,6 +509,10 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
                 t += mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=M, N=N, K=K)
                 kernel_times.append(t)
                 # print(child.name, M, K, N, child.input_shapes, t)
+    if op.name == "aten::addmm":
+        M, K, N = op.input_shapes[1][0], op.input_shapes[1][1], op.input_shapes[2][1]
+        t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=1, M=M, N=N, K=K)
+        kernel_times.append(t)
     elif "AddmmBackward" in op.name:
         addmm_op = op.get_child_by_name("AddmmBackward0")
         M, K, N = addmm_op.output_shapes[0][0], addmm_op.output_shapes[2][0], addmm_op.output_shapes[2][1]
@@ -681,6 +685,14 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
             H = 1
         t = mlp_predictor_kwargs("bn", backward=True, batch_size=batch_size, H=H, OC=OC)
         kernel_times.append(t)
+    elif op.name == "aten::layer_norm":
+        batch_size, M, N = op.input_shapes[0]
+        t = mlp_predictor_kwargs("ln", backward=False, batch_size=batch_size, M=M, N=N)
+        kernel_times.append(t)
+    elif "LayerNormBackward" in op.name:
+        batch_size, M, N = op.input_shapes[0]
+        t = mlp_predictor_kwargs("ln", backward=True, batch_size=batch_size, M=M, N=N)
+        kernel_times.append(t)
     elif op.name == "aten::index":
         batch_size, M, N = op.input_shapes[0][0], op.input_shapes[0][1], op.input_shapes[0][2]
         total_output_element = op.input_shapes[1][1][0]
@@ -793,6 +805,30 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
     elif op.name == "aten::mse_loss":
         s = np.prod(op.input_shapes[0])
         t = max(3 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 3 flops per mse; two read one write
+        kernel_times.append(t)
+    elif op.name == "aten::gelu":
+        s = np.prod(op.input_shapes[0])
+        t = max(175 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # Roughly 175 flops per element; one read one write
+        kernel_times.append(t)
+    elif "GeluBackward" in op.name:
+        s = np.prod(op.children[0].input_shapes[0])
+        t = max(255 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # Roughly 255 flops per element; one read one write
+        kernel_times.append(t)
+    elif op.name == "aten::softmax":
+        s = np.prod(op.input_shapes[0])
+        t = max(174 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # Roughly 174 flops per element; one read one write
+        kernel_times.append(t)
+    elif op.name == "aten::dropout":
+        if len(op.input_shapes[0]) == 4:
+            batch_size, M1, M2, N = op.input_shapes[0]
+            M = M1 * M2
+        elif len(op.input_shapes[0]) == 3:
+            batch_size, M, N = op.input_shapes[0]
+        else:
+            batch_size, N = op.input_shapes[0]
+            M = 1
+        p = op.inputs[-2]
+        t = mlp_predictor_kwargs("dropout", backward=False, batch_size=batch_size, M=M, N=N, p=p)
         kernel_times.append(t)
     elif op_name_in_list(op, [
             "aten::add", "aten::add_", "aten::__and__", "aten::sub", \

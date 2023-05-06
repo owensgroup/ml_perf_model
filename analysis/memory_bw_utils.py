@@ -194,10 +194,10 @@ def fit_sigmoid_bw_predictor(collective_data, mem_ch, size='size', bw='bus_bw'):
     xdata = np.log2(d[size])
     ydata = np.log10(d[bw])
     p0 = [
-        np.log2(collective_data[size]).max(), 
+        np.max(xdata), 
         np.median(xdata),
         1,
-        ydata.min()
+        np.min(ydata)
     ] # this is an mandatory initial guess
     popt, _ = curve_fit(sigmoid, xdata, ydata, p0, method='dogbox')
     return popt

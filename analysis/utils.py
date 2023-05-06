@@ -57,9 +57,9 @@ GPU_COUNT, GPU_NAME = get_gpu_name()
 
 HW_PARAMS = {
     "A100": {
-        "peak_throughput": 12410.474,
+        "peak_throughput": 15026.615,
         "peak_PCIe_BW": 16.0, # Roughly the per direction of PCIe 4.0 x16 (32 GB/s)
-        "peak_DRAM_BW": 1283.578,
+        "peak_DRAM_BW": 1391.103,
         "DRAM_BW_param": {
             "mul_factor": MUL_FACTOR_FUNCS["others"](1),
             "mem_ch": {
@@ -70,7 +70,7 @@ HW_PARAMS = {
             },
             "sigmoid_param": (2.20955621, 20.35203082, 0.62528837, 0.93242722),
         },
-        "peak_L2_BW": 1811.562,
+        "peak_L2_BW": 2270.919,
         # "L2_BW_param": {
         #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
         #     "mem_ch": {
@@ -81,7 +81,7 @@ HW_PARAMS = {
         #     },
         #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
         # }, # Use V100 param as a placeholder. TODO: Fix this.
-        "peak_SMEM_BW": 2903.956,
+        "peak_SMEM_BW": 3773.812,
         "num_SM": 108,
         "DRAM_size": 40 * 1024 * 1024 * 1024,
         "L2_size": 40 * 1024 * 1024,
@@ -243,21 +243,24 @@ if GPU_COUNT > 1:
 
 # TODO: Distinguish conv1d and conv2d for ConvolutionBackward
 CONSIDER = [
-    "aten::linear", "AddmmBackward", \
+    "aten::linear", "aten::addmm", "AddmmBackward", \
     "aten::bmm", "BmmBackward", \
     "aten::matmul", "MmBackward", \
     "aten::conv1d", "ConvolutionBackward", \
     "aten::conv2d", "CudnnConvolutionBackward", \
     "LookupFunction", "LookupFunctionBackward", \
     "aten::batch_norm", "CudnnBatchNormBackward", \
+    "aten::layer_norm", "LayerNormBackward", \
     "aten::index", "IndexBackward", \
     "aten::relu", "aten::relu_", "ReluBackward", \
+    "aten::gelu", "GeluBackward", \
     "aten::sigmoid", "SigmoidBackward", \
+    "aten::softmax", "aten::dropout", \
     "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
     "aten::mse_loss", "MseLossBackward", \
     "aten::avg_pool2d", "AvgPool2D", \
     "aten::max_pool2d", "MaxPool2DWithIndicesBackward", \
-    "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "MulBackward", "aten::div", "DivBackward"\
+    "aten::add", "aten::add_", "aten::__and__", "aten::sub", "aten::mul", "aten::mul_", "MulBackward", "aten::div", "DivBackward"\
     "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", \
     "autograd::engine::evaluate_function: torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
     "torch::autograd::AccumulateGrad", \
@@ -371,13 +374,8 @@ def mape(x):
     return abs(x).mean()
 
 
-def sigmoid(x, L, x0, k, b):
-    y = L / (1 + np.exp(-k*(x-x0)))+b
-    return y
-
-
-def get_sigmoid_bw(s, sigmoid_param):
-    return 10 ** sigmoid(s, *sigmoid_param) # L, x0, k, b
+def div_round_up(x, y):
+    return int((x + y - 1) / y)
 
 
 def histogram(df, perc=True, is_abs=True, bins=[0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0]):
@@ -490,10 +488,6 @@ def preprocess_fbgemm(data, backward=False):
     return data
 
 
-def div_round_up(x, y):
-    return int((x + y - 1) / y)
-
-
 def choose(n, k):
     """
     A fast way to calculate binomial coefficients by Andrew Dalke (contrib).
@@ -546,6 +540,10 @@ def get_pretrained_net(op_type, backward=False):
         n_feature = 3
     elif op_type == "bn":
         n_feature = 3
+    elif op_type == "ln":
+        n_feature = 3
+    elif op_type == "dropout":
+        n_feature = 4
     else: # tril
         n_feature = 4
     net = MLP(n_feature=n_feature, n_hidden=n_hidden, n_output=1)
@@ -680,7 +678,7 @@ def get_train_test_data(op_type, backward=False, test_frac=0.2, **kwargs):
             'kernel_runtime': np.log(data['kernel_runtime']),
         })
     elif op_type == 'conv2d':
-        data = data[~(data['kernel_name'].str.contains("at::"))] # Exclude ATen kernels for training
+        data = data[~(data['kernel_name'].str.contains("elementwise"))] # Exclude ATen kernels for training
         data = data[['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw', 'kernel_runtime']].groupby(['batch_size', 'H', 'W', 'IC', 'OC', 'stride', 'dilation', 'FH', 'FW', 'is_dw'], as_index=False).sum() # Sum up all kernels
         df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
@@ -695,7 +693,7 @@ def get_train_test_data(op_type, backward=False, test_frac=0.2, **kwargs):
             'kernel_runtime': np.log(data['kernel_runtime']),
         })
     elif op_type == 'conv1d':
-        data = data[~((data['kernel_name'].str.contains("at::")) & (~(data['kernel_name'].str.contains("conv"))))] # Exclude ATen kernels that are not conv for training
+        data = data[~((data['kernel_name'].str.contains("elementwise")) & (~(data['kernel_name'].str.contains("conv"))))] # Exclude ATen kernels that are not conv for training
         data = data[['batch_size', 'L', 'IC', 'OC', 'groups', 'kernel_runtime']].groupby(['batch_size', 'L', 'IC', 'OC', 'groups'], as_index=False).sum() # Sum up all kernels
         df = pd.DataFrame({
             'batch_size': np.log(data['batch_size']),
@@ -718,6 +716,24 @@ def get_train_test_data(op_type, backward=False, test_frac=0.2, **kwargs):
             'batch_size': np.log(data['batch_size']),
             'H': np.log(data['H']),
             'OC': np.log(data['OC']),
+            'kernel_runtime': np.log(data['kernel_runtime']),
+        })
+    elif op_type == "ln":
+        if backward:
+            data = data[~(data['kernel_name'].str.contains("elementwise"))]
+            data = data[['batch_size', 'M', 'N', 'kernel_runtime']].groupby(['batch_size', 'M', 'N'], as_index=False).sum() # Sum up all kernels
+        df = pd.DataFrame({
+            'batch_size': np.log(data['batch_size']),
+            'M': np.log(data['M']),
+            'N': np.log(data['N']),
+            'kernel_runtime': np.log(data['kernel_runtime']),
+        })
+    elif op_type == "dropout":
+        df = pd.DataFrame({
+            'batch_size': np.log(data['batch_size']),
+            'M': np.log(data['M']),
+            'N': np.log(data['N']),
+            'p': data['p'],
             'kernel_runtime': np.log(data['kernel_runtime']),
         })
     else: # tril
