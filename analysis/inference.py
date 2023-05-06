@@ -845,6 +845,28 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         s = np.prod(op.children[0].input_shapes[0])
         t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
         kernel_times.append(t)
+    elif op.name == "aten::copy_":
+        s = np.prod(op.input_shapes[0])
+        t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
+        kernel_times.append(t)
+    elif op_name_in_list(op, ["aten::tanh", "aten::pow"]):
+        s = np.prod(op.input_shapes[0])
+        t = max(180 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # Roughly 180 flops per element; one read one write
+        kernel_times.append(t)
+    elif "TanhBackward" in op.name:
+        s = np.prod(op.children[0].input_shapes[0])
+        t = max(260 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # Roughly 180 flops per element; one read one write
+        kernel_times.append(t)
+    elif "PowBackward" in op.name:
+        s = np.prod(op.children[0].input_shapes[0])
+
+        # "aten::pow"
+        t = max(180 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # Roughly 180 flops per element; one read one write
+        kernel_times.append(t)
+
+        # "aten::mul" * 2 & "aten::add_"
+        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 1 flops per element; two read one write
+        kernel_times.extend([t, t, t])
     elif op.name == "aten::max_pool2d" or op.name == "aten::avg_pool2d":
         s = np.prod(op.output_shapes[0])
         t = max((np.prod(op.inputs[1]) - 1) * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One reads one write
