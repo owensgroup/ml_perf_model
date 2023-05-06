@@ -36,7 +36,7 @@ bucket_size_mb=25
 early_barrier=
 aggregated_allreduce=
 num_batches=200
-while getopts b:m:g:ts:rad:h:e: flag
+while getopts b:m:g:s:ra flag
 do
     case "${flag}" in
         b) mb_size=${OPTARG};;
@@ -72,13 +72,18 @@ echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
 echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))
-nlp_pt_bin="accelerate launch --num_processes ${ngpus} --multi_gpu nlp_transformers.py"
+nlp_pt_bin="accelerate launch --num_processes ${ngpus}"
+if [ ${ngpus} -gt 1 ];
+then
+  nlp_pt_bin="${nlp_pt_bin} --multi_gpu"
+fi
+nlp_pt_bin="${nlp_pt_bin} nlp_transformers.py"
 graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
 cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
 echo "-------------------"
 echo "Using GPUS: $_gpus, batch size: $mb_size"
 echo "-------------------"
-folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}/"
+folder="${PM_HOME}/data/${GPU_NAME}/e2e/${model_name}"
 if [ ${ngpus} -gt 1 ];
 then
   if [[ $early_barrier == "--early-barrier" ]];
@@ -101,7 +106,7 @@ if [[ ${ngpus} != `ls ${folder} | grep -e $graph_filename_pattern | wc -l` ]];
 then
   echo "Execution graph doesn't exist! Extract it..."
   eval "$cmd --num-batches 2 --collect-execution-graph --enable-profiling --profile-out-dir . &> /dev/null" # Collect execution graph
-  if [ ${ngpus} = 1 ];
+  if [ ${ngpus} -eq 1 ];
   then
     cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${folder}/${ngpus}_${mb_size}_graph.json"
   else
@@ -115,7 +120,7 @@ then
 fi
 eval "$cmd --num-batches ${num_batches} --enable-profiling --profile-out-dir . &> /dev/null" # Profile to get trace
 # move profiling file(s)
-if [ ${ngpus} = 1 ];
+if [ ${ngpus} -eq 1 ];
 then
   outf="${folder}/${ngpus}_${mb_size}.log"
   outp="nlp.prof"

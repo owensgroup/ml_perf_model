@@ -196,23 +196,27 @@ MODEL_DATASET_OPTIMIZER = {
 def main():
     parser = argparse.ArgumentParser(description="NLP benchmark")
     parser.add_argument('--enable-profiling', action='store_true', default=False,
-                       help='enable autograd profiler')
+                        help='enable autograd profiler')
     parser.add_argument("--profile-out-dir", type=str, default="profiles/tmp")
     parser.add_argument('--model-name',  action='store', default='bert',
-                       choices=['bert', 'gpt2'],
-                       help='model name can be specified. bert is default.')
+                        choices=['bert', 'gpt2'],
+                        help='model name can be specified. bert is default.')
     parser.add_argument('--collect-execution-graph', action='store_true', default=False,
-                       help='collect execution graph')
+                        help='collect execution graph')
+    parser.add_argument("--aggregated-allreduce", action="store_true", default=False,
+                        help='aggregated vs. bucketed all-reduce in execution graph')
+    parser.add_argument("--early-barrier", action="store_true", default=False,
+                        help='manual sync at the beginning of each iteration')
     parser.add_argument("--batch-size", type=int, default=8,
-                       help='batch size')
+                        help='batch size')
     parser.add_argument("--gradient-accumulation-steps", type=int, default=5,
-                       help='gradient accumulation steps')
+                        help='gradient accumulation steps')
     parser.add_argument("--num-warmup-iters", type=int, default=5,
-                       help='number of warmup iterations')
+                        help='number of warmup iterations')
     parser.add_argument("--num-batches", type=int, default=50,
-                       help='number of batches in loop to average perf')
+                        help='number of batches in loop to average perf')
     parser.add_argument("--print-freq", type=int, default=5,
-                       help='print frequency')
+                        help='print frequency')
     args = parser.parse_args()
     accelerator = Accelerator()
 
@@ -262,7 +266,9 @@ def main():
                 if completed_steps >= args.num_warmup_iters + args.num_batches:
                     break
 
-                if completed_steps == 0:
+                if args.early_barrier:
+                    torch.distributed.barrier()
+                if args.collect_execution_graph and completed_steps == (0 if args.aggregated_allreduce else 1):
                     eg.start()
                 should_print = ((completed_steps + 1) % args.print_freq) == 0
 
@@ -284,7 +290,7 @@ def main():
                 end_event.record()
                 torch.cuda.synchronize()
 
-                if completed_steps == 0:
+                if args.collect_execution_graph and completed_steps == (0 if args.aggregated_allreduce else 1):
                     eg.stop()
                     eg.unregister_callback()
 

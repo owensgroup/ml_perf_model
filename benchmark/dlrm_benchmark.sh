@@ -187,7 +187,7 @@ then
 fi
 eval "$cmd --num-batches ${num_batches} --enable-profiling --profile-out-dir . &> /dev/null" # Profile to get trace
 # move profiling file(s)
-if [ ${ngpus} = 1 ];
+if [ ${ngpus} -eq 1 ];
 then
   outf="${folder}/${ngpus}_${mb_size}.log"
   outp="dlrm_s_pytorch.prof"
@@ -205,7 +205,7 @@ else
 fi
 eval "$cmd --num-batches ${num_batches} > $outf" # No profile to get E2E time
 # move Ls and rfs file(s)
-if [ ${ngpus} = 1 ];
+if [ ${ngpus} -eq 1 ];
 then
   mv "Ls.txt" ${outf//".log"/"_Ls.txt"}
   mv "rfs.txt" ${outf//".log"/"_rfs.txt"}
