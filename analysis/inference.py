@@ -831,7 +831,7 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         t = mlp_predictor_kwargs("dropout", backward=False, batch_size=batch_size, M=M, N=N, p=p)
         kernel_times.append(t)
     elif op_name_in_list(op, [
-            "aten::add", "aten::add_", "aten::__and__", "aten::sub", \
+            "aten::add", "aten::add_", "aten::__and__", "aten::sub", "AddBackward", \
             "aten::mul", "MulBackward", "aten::div", "DivBackward", "MseLossBackward" \
         ]):
         s = np.prod(op.input_shapes[0] if op.input_shapes else op.children[0].input_shapes[0])
@@ -841,7 +841,7 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         s = np.prod(op.input_shapes[0])
         t = max(s / peak_throughput / 1000, s * 4 / peak_DRAM_BW / 1000) # One reads
         kernel_times.append(t)
-    elif op_name_in_list(op, ["aten::ones_like", "aten::zero_"]):
+    elif op_name_in_list(op, ["aten::ones_like", "aten::zero_", "ViewBackward"]):
         s = np.prod(op.children[0].input_shapes[0])
         t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
         kernel_times.append(t)
