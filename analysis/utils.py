@@ -282,6 +282,16 @@ SKIP = [    "SliceBackward",
 DUMMY_SHAPES = (((-1,),), ((-1,),))
 
 
+def op_name_in_list(op, lst):
+    if op.name in lst:
+        return True
+    if "autograd::engine::evaluate_function: " in op.name:
+        bw_truncated_name = op.name.split("autograd::engine::evaluate_function: ")[-1]
+        return bw_truncated_name in lst or \
+                bw_truncated_name[:-1] in lst # Truncate trailing 0/1
+    return False
+
+
 def has_comm_collective(op):
     if op.name == "record_param_comms":
         return True
@@ -290,6 +300,10 @@ def has_comm_collective(op):
 
 def is_wait_collective(op):
     return op.name in ["All2All_Wait", "All2All_Pooled_Wait"] or "All2All_ReqBackward" in op.name
+
+
+def is_memcpy(op, strict=False):
+    return op.name == "aten::to" if strict else op_name_in_list(op, ["aten::to", "aten::copy_"])
 
 
 def depends_on_collective_output(op, collective_output):
@@ -317,16 +331,6 @@ def infer_multi_stream(op):
     if has_comm_collective(op):
         return MEMORY_STREAM
     return COMPUTE_STREAM
-
-
-def op_name_in_list(op, lst):
-    if op.name in lst:
-        return True
-    if "autograd::engine::evaluate_function: " in op.name:
-        bw_truncated_name = op.name.split("autograd::engine::evaluate_function: ")[-1]
-        return bw_truncated_name in lst or \
-                bw_truncated_name[:-1] in lst # Truncate trailing 0/1
-    return False
 
 
 def to_consider(op):

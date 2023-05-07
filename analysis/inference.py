@@ -885,6 +885,7 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         kernel_times.append(t)
     elif "All2All_ReqBackward" in op.name:
         sub_op = op.get_child_by_name("All2All_ReqBackward")
+        # Quite a few aten::contiguous
         for output_shape in sub_op.output_shapes:
             s = np.prod(output_shape)
             t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
@@ -971,7 +972,7 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                             if debug:
                                 print("    kernel: {:.2f}".format(t[idx]))
 
-                        if "aten::to" == node.name and len(node.children) == 0:
+                        if is_memcpy(node, strict=True) and len(node.children) == 0:
                             cpu_time += CPU_EVENT_OVERHEAD # Some aten::to doesn't have children
                         else:
                             cpu_time += t4
@@ -1016,6 +1017,11 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                     else:
                         print("Warning: {} is skipped for not found in the overheads.".format(node.name))
 
+            # Sync after memcpy
+            if is_memcpy(node, strict=True):
+                cpu_time = max(cpu_time, gpu_time[COMPUTE_STREAM])
+
+            # Collective and dependency
             if has_comm_collective(node) and not is_wait_collective(node):
                 if is_all2all_parent(node): # Has a2a call
                     tmp = node.get_child_by_name(["aten::new_empty", "aten::empty"])
@@ -1031,7 +1037,8 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
 
             prev_node = node
             if debug:
-                print("      ", node.name, cpu_time, gpu_time, node.input_shapes)
+                tmp_total_time = max(max(gpu_time.values()), cpu_time)
+                print("      ", node.name, tmp_total_time, cpu_time, gpu_time, node.input_shapes)
 
     # It's safe because gpu_time["active"] won't be the maximum
     total_time = max(max(gpu_time.values()), cpu_time)
