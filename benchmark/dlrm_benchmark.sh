@@ -133,7 +133,7 @@ fi
 
 # GPU Benchmarking
 echo "--------------------------------------------"
-echo "GPU Benchmarking - ${model_name_year_indices} running on $ngpus GPUs"
+echo "GPU Benchmarking - ${model_name_year_indices} running on $ngpus GPUs, ${sharder} sharder"
 echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))

@@ -246,10 +246,11 @@ def main():
     )
 
     # EG
-    fp = tempfile.NamedTemporaryFile('w+t', prefix='/tmp/pytorch_execution_graph_', suffix='.json', delete=False)
-    fp.close()
-    eg = ExecutionGraphObserver()
-    eg.register_callback(fp.name)
+    if args.collect_execution_graph:
+        fp = tempfile.NamedTemporaryFile('w+t', prefix='/tmp/pytorch_execution_graph_{}'.format(accelerator.local_process_index), suffix='.json', delete=False)
+        fp.close()
+        eg = ExecutionGraphObserver()
+        eg.register_callback(fp.name)
 
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
