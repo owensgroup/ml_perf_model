@@ -38,6 +38,9 @@ import numpy as np
 import torch
 from numpy import random as ra
 
+BATCH_SIZES = [512, 1024, 2048, 4096, 8192]
+
+
 def generate_random_output_batch(n, num_targets, round_targets=False):
     # target (probability of a click)
     if round_targets:
@@ -211,7 +214,7 @@ def get_average_L(dataset_path):
     return Ls
 
 
-def get_merged_dataset_configs(args):
+def generate_merged_dataset_configs(args):
     # Dataset
     merged_file_path = os.path.join(args.dataset_path, "merged{}.pt".format('_simple' if args.simple else ''))
 
@@ -224,7 +227,7 @@ def get_merged_dataset_configs(args):
     for x in range(len(common_configs["tables"])):
         tmp = Ls[x]
         common_configs["tables"][x]["pooling_factor"] = float(f'{tmp:.4f}')
-    for B in [512, 1024, 2048, 4096]:
+    for B in BATCH_SIZES:
         result = get_average_rfs(merged_file_path, B)
         for x in range(len(common_configs["tables"])):
             common_configs["tables"][x]["rfs_{}".format(B)] = '-'.join([f'{rf:.4f}' for rf in result[x, :].tolist()])
@@ -238,4 +241,4 @@ if __name__ == "__main__":
     parser.add_argument('--simple', action="store_true", default=False)
     args = parser.parse_args()
     merge_datasets(args)
-    get_merged_dataset_configs(args)
+    generate_merged_dataset_configs(args)
