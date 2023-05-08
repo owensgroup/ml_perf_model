@@ -73,12 +73,16 @@ echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))
 nlp_pt_bin="accelerate launch --num_processes ${ngpus}"
-if [ ${ngpus} -gt 1 ];
+if [ ${ngpus} -eq 1 ];
 then
+  graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
+  outf="${folder}/${ngpus}_${mb_size}.log"
+else
   nlp_pt_bin="${nlp_pt_bin} --multi_gpu"
+  graph_filename_pattern="${ngpus}_${mb_size}_distributed_[0-$((ngpus-1))]_graph.json"
+  outf="${folder}/${ngpus}_${mb_size}_distributed.log"
 fi
 nlp_pt_bin="${nlp_pt_bin} nlp_transformers.py"
-graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
 cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
 echo "-------------------"
 echo "Using GPUS: $_gpus, batch size: $mb_size"
@@ -122,12 +126,10 @@ eval "$cmd --num-batches ${num_batches} --enable-profiling --profile-out-dir . &
 # move profiling file(s)
 if [ ${ngpus} -eq 1 ];
 then
-  outf="${folder}/${ngpus}_${mb_size}.log"
   outp="nlp.prof"
   mv $outp ${outf//".log"/".prof"}
   mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
 else
-  outf="${folder}/${ngpus}_${mb_size}_distributed.log"
   count=0
   for g in `ls nlp*.prof`;
   do

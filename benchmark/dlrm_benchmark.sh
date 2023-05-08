@@ -137,14 +137,6 @@ echo "GPU Benchmarking - ${model_name_year_indices} running on $ngpus GPUs, ${sh
 echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))
-if [ ${ngpus} = 1 ];
-then
-  dlrm_pt_bin="python ${PM_HOME}/3rdparty/dlrm/dlrm_s_pytorch.py"
-  graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
-else
-  dlrm_pt_bin="python -m torch.distributed.run --nproc_per_node=${ngpus} ${PM_HOME}/3rdparty/dlrm/dlrm_s_pytorch.py --dist-backend=nccl "
-  graph_filename_pattern="${ngpus}_${mb_size}_distributed_[0-$((ngpus-1))]_graph.json"
-fi
 cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
 echo "-------------------"
 echo "Using GPUS: $_gpus, batch size: $mb_size"
@@ -168,12 +160,22 @@ then
   folder="${folder}/${bucket_size_mb}"
 fi
 mkdir -p "${folder}"
+if [ ${ngpus} -eq 1 ];
+then
+  dlrm_pt_bin="python ${PM_HOME}/3rdparty/dlrm/dlrm_s_pytorch.py"
+  graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
+  outf="${folder}/${ngpus}_${mb_size}.log"
+else
+  dlrm_pt_bin="python -m torch.distributed.run --nproc_per_node=${ngpus} ${PM_HOME}/3rdparty/dlrm/dlrm_s_pytorch.py --dist-backend=nccl "
+  graph_filename_pattern="${ngpus}_${mb_size}_distributed_[0-$((ngpus-1))]_graph.json"
+  outf="${folder}/${ngpus}_${mb_size}_distributed.log"
+fi
 cmd="$cuda_arg $dlrm_pt_bin --mini-batch-size=$mb_size --test-mini-batch-size=$tmb_size --test-num-workers=$tnworkers ${common_args} ${_args} $dlrm_extra_option"
 if [[ ${ngpus} != `ls ${folder} | grep -e $graph_filename_pattern | wc -l` ]];
 then
   echo "Execution graph doesn't exist! Extract it..."
   eval "$cmd --num-batches 2 --collect-execution-graph --enable-profiling --profile-out-dir . --test-freq=-1 &> /dev/null" # Collect execution graph
-  if [ ${ngpus} = 1 ];
+  if [ ${ngpus} -eq 1 ];
   then
     cp `ls -1t /tmp/pytorch_execution_graph* | tail -1` "${folder}/${ngpus}_${mb_size}_graph.json"
   else
@@ -189,12 +191,10 @@ eval "$cmd --num-batches ${num_batches} --enable-profiling --profile-out-dir . &
 # move profiling file(s)
 if [ ${ngpus} -eq 1 ];
 then
-  outf="${folder}/${ngpus}_${mb_size}.log"
   outp="dlrm_s_pytorch.prof"
   mv $outp ${outf//".log"/".prof"}
   mv ${outp//".prof"/".json"} ${outf//".log"/".json"}
 else
-  outf="${folder}/${ngpus}_${mb_size}_distributed.log"
   count=0
   for g in `ls dlrm_s_pytorch*.prof`;
   do
