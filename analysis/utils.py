@@ -226,7 +226,7 @@ KERNEL_LAUNCH_LENGTH = 10
 
 
 COMPUTE_STREAM = 0
-MEMORY_STREAM = 1
+COMMUNICATION_STREAM = 1
 ADDITIONAL = 2
 
 
@@ -329,7 +329,7 @@ def is_allreduce_parent(op):
 # Simple heuristic to infer if an op will schedule a kernel in a new stream
 def infer_multi_stream(op):
     if has_comm_collective(op):
-        return MEMORY_STREAM
+        return COMMUNICATION_STREAM
     return COMPUTE_STREAM
 
 

@@ -902,9 +902,15 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
 
     cpu_time = 0
     gpu_time = {
-        "active": 0,
-        COMPUTE_STREAM: 0,
-        MEMORY_STREAM: 0
+        "active": 0, # GPU active time, no matter whichever stream is active
+        "baseline": { # Active time of each stream, no overheads -> max of the two is the baseline
+            COMPUTE_STREAM: 0,
+            COMMUNICATION_STREAM: 0,
+        },
+        "prediction": { # Delicate sync and everything
+            COMPUTE_STREAM: 0,
+            COMMUNICATION_STREAM: 0,
+        }
     }
     stream = COMPUTE_STREAM
     gpu_all_streams_front = 0
@@ -928,8 +934,8 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                     is_wait_collective(node) or \
                     has_comm_collective(node):
                 last_comm_op = None
-                gpu_time[COMPUTE_STREAM] = gpu_all_streams_front
-                gpu_time[MEMORY_STREAM] = gpu_all_streams_front
+                gpu_time["prediction"][COMPUTE_STREAM] = gpu_all_streams_front
+                gpu_time["prediction"][COMMUNICATION_STREAM] = gpu_all_streams_front
                 if debug:
                     print("  Communication sync: ", cpu_time, gpu_time)
 
@@ -957,18 +963,20 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                             stream = infer_multi_stream(node)
                         
                         # Contribution of CPU overheads on GPU idle time
-                        gpu_time[stream] = max(gpu_time[stream] + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
+                        gpu_time["prediction"][stream] = max(gpu_time["prediction"][stream] + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
 
                         # Kernel launches like cudaStreamSynchronize do not have actual kernel calls
                         if idx < len(t):
+
                             # GPU active time:
                             # cases of max:   (stream front)   [     ]|  or  [     ]|
                             #                 (current stream)   |[-]          |[-------]
                             # cases of min:   current stream is the stream front
-                            gpu_time["active"] += min(max(gpu_time[stream] + t[idx] - gpu_all_streams_front, 0), t[idx])
+                            gpu_time["active"] += min(max(gpu_time["prediction"][stream] + t[idx] - gpu_all_streams_front, 0), t[idx])
 
                             # Current stream
-                            gpu_time[stream] += t[idx]
+                            gpu_time["prediction"][stream] += t[idx]
+                            gpu_time["baseline"][stream] += t[idx]
                             if debug:
                                 print("    kernel: {:.2f}".format(t[idx]))
 
@@ -985,12 +993,12 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                             print("    t5: {:.2f}".format(t5))
 
                     if ext_dist.my_size > 1 and has_comm_collective(node): # Only sync after a multi-GPU collective
-                        ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float) # On the CPU
+                        ipTensor = torch.tensor([gpu_time["prediction"][stream]], dtype=torch.float) # On the CPU
                         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
                         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
                         front = max([x.item() for x in opTensorList])
-                        gpu_time["active"] += front - gpu_time[stream]
-                        gpu_time[stream] = front
+                        gpu_time["active"] += front - gpu_time["prediction"][stream]
+                        gpu_time["prediction"][stream] = front
                     # print(node.name, t)
                 else:
                     # Only consider CPU time then: op_cpu_time = T2 + (T4 sum) + (T5 sum) + T3
@@ -1004,7 +1012,7 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                         else:
                             print("Warning: {} is skipped for not found in the overheads.".format(node.name))
                 cpu_time += overheads["t3"][node.name][shapes][0] # T3: after the last kernel call
-                gpu_all_streams_front = max(gpu_time.values()) # Track the GPU front among all streams
+                gpu_all_streams_front = max(gpu_time["prediction"].values()) # Track the GPU front among all streams
                 if debug:
                     print("    t3: {:.2f}".format(overheads["t3"][node.name][shapes][0]))
                 # print(node.name, ["{:.2f}".format(tt) for tt in t], gpu_time["active"])
@@ -1019,7 +1027,7 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
 
             # Sync after memcpy
             if is_memcpy(node, strict=True):
-                cpu_time = max(cpu_time, gpu_time[COMPUTE_STREAM])
+                cpu_time = max(cpu_time, gpu_time["prediction"][COMPUTE_STREAM])
 
             # Collective and dependency
             if has_comm_collective(node) and not is_wait_collective(node):
@@ -1037,16 +1045,17 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
 
             prev_node = node
             if debug:
-                tmp_total_time = max(max(gpu_time.values()), cpu_time)
+                tmp_total_time = max(max(gpu_time["prediction"].values()), cpu_time)
                 print("      ", node.name, tmp_total_time, cpu_time, gpu_time, node.input_shapes)
 
-    # It's safe because gpu_time["active"] won't be the maximum
-    total_time = max(max(gpu_time.values()), cpu_time)
+    # Prediction and baseline
+    total_time = max(max(gpu_time["prediction"].values()), cpu_time)
+    baseline_total_time = max(max(gpu_time["baseline"].values()), cpu_time)
 
     # Sync all the processes
     if ext_dist.my_size > 1:
         # Sync total_time and take the max. Gather to rank 0 is enough though but all_gather is convenient
-        ipTensor = torch.tensor([gpu_time[stream]], dtype=torch.float)
+        ipTensor = torch.tensor([gpu_time["prediction"][stream]], dtype=torch.float)
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
         total_time = max([x.item() for x in opTensorList])
@@ -1057,7 +1066,13 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
         gpu_time["active"] = max([x.item() for x in opTensorList])
 
-    return total_time, gpu_time["active"]
+        # Sync baseline_total_time and take the max. Gather to rank 0 is enough though but all_gather is convenient
+        ipTensor = torch.tensor([gpu_time["baseline"][stream]], dtype=torch.float)
+        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
+        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+        baseline_total_time = max([x.item() for x in opTensorList])
+
+    return total_time, gpu_time["active"], baseline_total_time
 
 
 # Infer E2E time from an execution graph and an overhead file
@@ -1073,10 +1088,11 @@ def get_e2e_time(graph, overheads, iters, ls_file=None, embedding_rfs_file=None,
 
     e2e_time_list = []
     gpu_active_time_list = []
+    baseline_e2e_time_list = []
     for idx in range(iters):
         Ls = [float(x) for x in all_Ls[idx].split('-')] if all_Ls[idx] else None
         embedding_rfs = [[float(x) for x in x_.split('-')] for x_ in all_rfs[idx].split('_')] if all_rfs[idx] else None
-        e2e_time, gpu_active_time = get_e2e_time_for_each_iter(
+        e2e_time, gpu_active_time, baseline_e2e_time = get_e2e_time_for_each_iter(
             graph, overheads,
             ls=Ls,
             embedding_rfs=embedding_rfs,
@@ -1085,5 +1101,6 @@ def get_e2e_time(graph, overheads, iters, ls_file=None, embedding_rfs_file=None,
         )
         e2e_time_list.append(e2e_time)
         gpu_active_time_list.append(gpu_active_time)
+        baseline_e2e_time_list.append(baseline_e2e_time)
     
-    return np.mean(e2e_time_list), np.mean(gpu_active_time_list)
+    return np.mean(e2e_time_list), np.mean(gpu_active_time_list), np.mean(baseline_e2e_time_list)
