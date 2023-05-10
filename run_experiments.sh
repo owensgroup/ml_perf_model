@@ -41,7 +41,7 @@ while getopts i:ots:rad flag
 do
     case "${flag}" in
         i) trimmed_iters=${OPTARG};;
-        o) share_overhead="-o";;
+        o) share_overheads="-o";;
         t) emb_type="-t";;
         s) bucket_size_mb=${OPTARG};;
         r) early_barrier="-r";;
