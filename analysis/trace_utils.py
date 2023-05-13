@@ -758,7 +758,6 @@ def get_device_runtime(roots, cc, depth=0):
                 if len(list(vv.keys())) != 0:
                     delete = False
             if delete:
-                print("here!")
                 to_be_deleted.append(ex_id)
         for ex_id in to_be_deleted:
             del result[ex_id]

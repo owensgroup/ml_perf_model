@@ -264,7 +264,7 @@ CONSIDER = [
     "aten::mul", "aten::mul_", "MulBackward", "aten::div", "DivBackward", \
     "aten::tanh", "aten::pow", "TanhBackward", "PowBackward", \
     "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", "aten::copy_", "ViewBackward", \
-    "autograd::engine::evaluate_function: torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
+    "torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
     "torch::autograd::AccumulateGrad", \
     "torch.distributed.ddp.reducer::copy_bucket_to_grad", \
     "Optimizer.step#SGD.step", "Optimizer.zero_grad#SGD.zero_grad"
@@ -290,6 +290,10 @@ def op_name_in_list(op, lst):
         return bw_truncated_name in lst or \
                 bw_truncated_name[:-1] in lst # Truncate trailing 0/1
     return False
+
+
+def op_name_contains(op_name, lst):
+    return any([x in op_name for x in lst])
 
 
 def has_comm_collective(op):
