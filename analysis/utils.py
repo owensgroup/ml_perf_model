@@ -474,27 +474,14 @@ def preprocess(df):
     return df
 
 
-def preprocess_fbgemm(data, backward=False):
-    # Filter all irrelavant kernels
-    data = data[~(
-        (data["kernel_name"].str.contains('elementwise')) | \
-        (
-            (data["kernel_name"].str.contains('Accessor')) & \
-            ~(data["kernel_name"].str.contains('split_')) & \
-            ~(data["kernel_name"].str.contains('bound_'))
-        )
-    )]
-    # # Keep compute kernels only
-    # data = data[(data['kernel_name'].str.contains('kernel')) & (data['kernel_name'].str.contains('embedding'))]
-    if backward:
-        data = data[~(data['kernel_name'].str.contains('forward'))]
-
-    # Sum up all related kernels
+def preprocess_fbgemm(data):
+    # Sum them all!
     if 'dataset_path' in data.columns:
         size_columns = data.columns[:7].to_list()
     else:
         size_columns = data.columns[:6].to_list()
-    data = data[size_columns + ['kernel_runtime']].groupby(size_columns[1:], as_index=False).sum()
+    data = data[size_columns + ['op_runtime']].groupby(size_columns[1:], as_index=False).first()
+    data.rename(columns={'op_runtime': 'kernel_runtime'}, inplace=True)
     return data
 
 
@@ -648,7 +635,7 @@ def get_emb_train_test_data(backward=False, test_frac=0.2, **kwargs):
     )
     # pd.set_option('display.max_columns', None)
     data = pd.read_csv(data_path, delimiter=',')
-    data = preprocess_fbgemm(data, backward=backward)
+    data = preprocess_fbgemm(data)
 
     rf_file_path = '/'.join(data_path.split('/')[:-1] + ['embedding_lookup_{}_rf.csv'.format(kwargs['suffix'])])
     rf = pd.read_csv(rf_file_path, delimiter=',')
