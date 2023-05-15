@@ -913,9 +913,10 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
         }
     }
     stream = COMPUTE_STREAM
-    gpu_all_streams_front = 0
     last_comm_op = None
     prev_node = None
+    gpu_all_streams_front = 0
+    unoverlapped_comm = 0
 
     forward_found = False
     for _, node in sorted_nodes:
@@ -967,6 +968,12 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
 
                         # Kernel launches like cudaStreamSynchronize do not have actual kernel calls
                         if idx < len(t):
+                            # Unoverlapped communication for eg_comm
+                            if stream == COMMUNICATION_STREAM:
+                                unoverlapped_comm += t[idx] - max(gpu_all_streams_front - gpu_time["prediction"][stream], 0) # Kernel time minus time overlapped by another stream
+                            elif last_comm_op is not None: # A comm kernel is running
+                                # Either fully overlapped or the compute stream becomes the front
+                                unoverlapped_comm -= t[idx] - max(gpu_time["prediction"][COMPUTE_STREAM] + t[idx] - gpu_time["prediction"][COMMUNICATION_STREAM], 0)
 
                             # GPU active time:
                             # cases of max:   (stream front)   [     ]|  or  [     ]|
@@ -1049,30 +1056,45 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                 print("      ", node.name, tmp_total_time, cpu_time, gpu_time, node.input_shapes)
 
     # Prediction and baseline
-    total_time = max(max(gpu_time["prediction"].values()), cpu_time)
-    baseline_total_time = max(max(gpu_time["baseline"].values()), cpu_time)
+    e2e_time = max(max(gpu_time["prediction"].values()), cpu_time)
+    gpu_active_time = gpu_time["active"]
+    baseline_e2e_time = max(gpu_time["baseline"].values()) # No sync so no CPU time for baseline
+    
+    # eg_comm
+    eg_comm = unoverlapped_comm / e2e_time
 
     # Sync all the processes
     if ext_dist.my_size > 1:
-        # Sync total_time and take the max. Gather to rank 0 is enough though but all_gather is convenient
-        ipTensor = torch.tensor([gpu_time["prediction"][stream]], dtype=torch.float)
+        # Sync e2e_time and take the max. Gather to rank 0 is enough though but all_gather is convenient
+        ipTensor = torch.tensor([e2e_time], dtype=torch.float)
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
-        total_time = max([x.item() for x in opTensorList])
+        e2e_time = max([x.item() for x in opTensorList])
 
         # Sync GPU active time
-        ipTensor = torch.tensor([gpu_time["active"]], dtype=torch.float)
+        ipTensor = torch.tensor([gpu_active_time], dtype=torch.float)
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
-        gpu_time["active"] = max([x.item() for x in opTensorList])
+        gpu_active_time = max([x.item() for x in opTensorList])
 
-        # Sync baseline_total_time and take the max. Gather to rank 0 is enough though but all_gather is convenient
-        ipTensor = torch.tensor([gpu_time["baseline"][stream]], dtype=torch.float)
+        # Sync baseline_total_time and take the max
+        ipTensor = torch.tensor([baseline_e2e_time], dtype=torch.float)
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
-        baseline_total_time = max([x.item() for x in opTensorList])
+        baseline_e2e_time = max([x.item() for x in opTensorList])
 
-    return total_time, gpu_time["active"], baseline_total_time
+        # Sync eg_comm
+        ipTensor = torch.tensor([eg_comm], dtype=torch.float) # On the CPU
+        opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
+        ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
+        eg_comm = min([x.item() for x in opTensorList])
+
+    return {
+        "e2e_time": e2e_time,
+        "gpu_active_time": gpu_active_time,
+        "baseline_e2e_time": baseline_e2e_time,
+        "eg_comm": eg_comm,
+    }
 
 
 # Infer E2E time from an execution graph and an overhead file
@@ -1089,18 +1111,25 @@ def get_e2e_time(graph, overheads, iters, ls_file=None, embedding_rfs_file=None,
     e2e_time_list = []
     gpu_active_time_list = []
     baseline_e2e_time_list = []
+    eg_comm_list = []
     for idx in range(iters):
         Ls = [float(x) for x in all_Ls[idx].split('-')] if all_Ls[idx] else None
         embedding_rfs = [[float(x) for x in x_.split('-')] for x_ in all_rfs[idx].split('_')] if all_rfs[idx] else None
-        e2e_time, gpu_active_time, baseline_e2e_time = get_e2e_time_for_each_iter(
+        results = get_e2e_time_for_each_iter(
             graph, overheads,
             ls=Ls,
             embedding_rfs=embedding_rfs,
             module_marker=module_marker,
             debug=debug
         )
-        e2e_time_list.append(e2e_time)
-        gpu_active_time_list.append(gpu_active_time)
-        baseline_e2e_time_list.append(baseline_e2e_time)
+        e2e_time_list.append(results["e2e_time"])
+        gpu_active_time_list.append(results["gpu_active_time"])
+        baseline_e2e_time_list.append(results["baseline_e2e_time"])
+        eg_comm_list.append(results["eg_comm"])
     
-    return np.mean(e2e_time_list), np.mean(gpu_active_time_list), np.mean(baseline_e2e_time_list)
+    return {
+        "e2e_time": np.mean(e2e_time_list),
+        "gpu_active_time": np.mean(gpu_active_time_list),
+        "baseline_e2e_time": np.mean(baseline_e2e_time_list),
+        "eg_comm": np.mean(eg_comm_list),
+    }

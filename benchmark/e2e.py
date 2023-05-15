@@ -125,24 +125,25 @@ if __name__ == '__main__':
 
     Ls_file = "{}_Ls.txt".format(per_device_prefix) if "DLRM" in args.model_name else None
     embedding_rfs_file = "{}_rfs.txt".format(per_device_prefix) if "DLRM" in args.model_name else None
-    e2e_time, gpu_active_time, baseline_e2e_time = get_e2e_time(
+    results = get_e2e_time(
         graph, overheads, iters=args.iters,
         ls_file=Ls_file,
         embedding_rfs_file=embedding_rfs_file,
         debug=args.debug)
     # Only rank 0 prints
     if ext_dist.my_size <= 1 or ext_dist.my_local_rank == 0:
-        st = "E2E time: {:.2f}, GPU time: {:.2f}".format(e2e_time, gpu_active_time)
+        st = "E2E time: {:.2f}, GPU time: {:.2f}".format(results["e2e_time"], results["gpu_active_time"])
         if real_e2e_time != -1:
             st += "\nReference time: {:.2f}, {:.2f}".format(real_e2e_time, real_gpu_active_time)
             st += "\nPrediction error: {:.2f}%, {:.2f}%".format(
-                (e2e_time / real_e2e_time - 1) * 100,
-                (gpu_active_time / real_gpu_active_time - 1) * 100,
+                (results["e2e_time"] / real_e2e_time - 1) * 100,
+                (results["gpu_active_time"] / real_gpu_active_time - 1) * 100,
             ) # E2E, prediction, GPU active time prediction
-            st += "\nBaseline error: {:.2f}%, {:.2f}%\n".format(
-                (baseline_e2e_time / real_e2e_time - 1) * 100,
-                (gpu_active_time / real_e2e_time - 1) * 100,
-            )
+            st += "\nBaseline error: {:.2f}%, {:.2f}%".format(
+                (results["baseline_e2e_time"] / real_e2e_time - 1) * 100,
+                (results["gpu_active_time"] / real_e2e_time - 1) * 100,
+            ) # Baseline
+            st += "\neg_comm: {:.2f}\n".format(results["eg_comm"]) # eg_comm
         print(st)
         prediction_name = "{}_prediction_{}{}.log".format(
             prefix, args.iters, '_shared' if args.use_shared_overheads else '')
