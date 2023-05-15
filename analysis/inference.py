@@ -972,8 +972,9 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                             if stream == COMMUNICATION_STREAM:
                                 unoverlapped_comm += t[idx] - max(gpu_all_streams_front - gpu_time["prediction"][stream], 0) # Kernel time minus time overlapped by another stream
                             elif last_comm_op is not None: # A comm kernel is running
-                                # Either fully overlapped or the compute stream becomes the front
-                                unoverlapped_comm -= t[idx] - max(gpu_time["prediction"][COMPUTE_STREAM] + t[idx] - gpu_time["prediction"][COMMUNICATION_STREAM], 0)
+                                # (If communication leads) either fully overlapped or the compute stream becomes the front next
+                                if gpu_time["prediction"][COMPUTE_STREAM] < gpu_time["prediction"][COMMUNICATION_STREAM]:
+                                    unoverlapped_comm -= t[idx] - max(gpu_time["prediction"][COMPUTE_STREAM] + t[idx] - gpu_time["prediction"][COMMUNICATION_STREAM], 0)
 
                             # GPU active time:
                             # cases of max:   (stream front)   [     ]|  or  [     ]|
