@@ -1062,7 +1062,7 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
     baseline_e2e_time = max(gpu_time["baseline"].values()) # No sync so no CPU time for baseline
     
     # eg_comm
-    eg_comm = unoverlapped_comm / e2e_time
+    eg_comm = max(unoverlapped_comm / e2e_time, 0) # eg_comm can't be negative
 
     # Sync all the processes
     if ext_dist.my_size > 1:
