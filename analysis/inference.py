@@ -960,8 +960,14 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
 
                     stream = infer_multi_stream(node)
                     for idx, l in enumerate(launches):
-                        t4 = overheads["t4"][l][0] # Kernel launches
-                        t5 = overheads["t5"][node.name][shapes][0] # Avg overhead between
+                        # Kernel launches like cudaStreamSynchronize do not have actual kernel calls.
+                        # Also, overhead stats only record [[maximum kernel calls ever occured]] e.g. a2a might have had > 30 calls while in reality it might have only 4.
+                        if idx >= len(t):
+                            break
+                        
+                        # Kernel launches and avg overhead between
+                        t4 = overheads["t4"][l][0]
+                        t5 = overheads["t5"][node.name][shapes][0]
 
                         # Non-collective kernels under collective ops are on COMPUTE_STREAM
                         if (is_all2all_parent(node) or is_allreduce_parent(node)) and idx != len(launches) - 1:
@@ -972,28 +978,26 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                         # Contribution of CPU overheads on GPU idle time
                         gpu_time["prediction"][stream] = max(gpu_time["prediction"][stream] + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
 
-                        # Kernel launches like cudaStreamSynchronize do not have actual kernel calls
-                        if idx < len(t):
-                            # Unoverlapped communication for eg_comm
-                            if stream == COMMUNICATION_STREAM:
-                                gpu_time["prediction"][stream] = max(gpu_time["prediction"][COMPUTE_STREAM] + 1, gpu_time["prediction"][stream]) # Another quick sync
-                                unoverlapped_comm += t[idx] - max(gpu_all_streams_front - gpu_time["prediction"][stream], 0) # Kernel time minus time overlapped by another stream
-                            elif last_comm_op is not None: # A comm kernel is running
-                                # (If communication leads) either fully overlapped or the compute stream becomes the front next
-                                if gpu_time["prediction"][COMPUTE_STREAM] < gpu_time["prediction"][COMMUNICATION_STREAM]:
-                                    unoverlapped_comm -= t[idx] - max(gpu_time["prediction"][COMPUTE_STREAM] + t[idx] - gpu_time["prediction"][COMMUNICATION_STREAM], 0)
+                        # Unoverlapped communication for eg_comm
+                        if stream == COMMUNICATION_STREAM:
+                            gpu_time["prediction"][stream] = max(gpu_time["prediction"][COMPUTE_STREAM] + 1, gpu_time["prediction"][stream]) # Another quick sync
+                            unoverlapped_comm += t[idx] - max(gpu_all_streams_front - gpu_time["prediction"][stream], 0) # Kernel time minus time overlapped by another stream
+                        elif last_comm_op is not None: # A comm kernel is running
+                            # (If communication leads) either fully overlapped or the compute stream becomes the front next
+                            if gpu_time["prediction"][COMPUTE_STREAM] < gpu_time["prediction"][COMMUNICATION_STREAM]:
+                                unoverlapped_comm -= t[idx] - max(gpu_time["prediction"][COMPUTE_STREAM] + t[idx] - gpu_time["prediction"][COMMUNICATION_STREAM], 0)
 
-                            # GPU active time:
-                            # cases of max:   (stream front)   [     ]|  or  [     ]|
-                            #                 (current stream)   |[-]          |[-------]
-                            # cases of min:   current stream is the stream front
-                            gpu_time["active"] += min(max(gpu_time["prediction"][stream] + t[idx] - gpu_all_streams_front, 0), t[idx])
+                        # GPU active time:
+                        # cases of max:   (stream front)   [     ]|  or  [     ]|
+                        #                 (current stream)   |[-]          |[-------]
+                        # cases of min:   current stream is the stream front
+                        gpu_time["active"] += min(max(gpu_time["prediction"][stream] + t[idx] - gpu_all_streams_front, 0), t[idx])
 
-                            # Current stream
-                            gpu_time["prediction"][stream] += t[idx]
-                            gpu_time["baseline"][stream] += t[idx]
-                            if debug:
-                                print("    kernel: {:.2f}".format(t[idx]))
+                        # Current stream
+                        gpu_time["prediction"][stream] += t[idx]
+                        gpu_time["baseline"][stream] += t[idx]
+                        if debug:
+                            print("    kernel: {:.2f}".format(t[idx]))
 
                         if is_memcpy(node, strict=True) and len(node.children) == 0:
                             cpu_time += CPU_EVENT_OVERHEAD # Some aten::to doesn't have children
@@ -1001,7 +1005,7 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                             cpu_time += t4
 
                         # Num of T5 is num of T4 - 1
-                        if idx < len(launches) - 1:
+                        if idx < len(t) - 1:
                             cpu_time += t5
                             if debug:
                                 print("    t4: {:.2f}".format(t4))

@@ -1011,10 +1011,6 @@ def get_overheads(ops):
                 count = 0
 
         if len(launches) > 0:
-            # if 'Cpp' in name:
-            #     print([(x.name(), count) for x, count in launches])
-            #     print(str(op))
-            #     print()
             overheads[name][shapes]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
             trailing_sub_event_count = sub_event_count - sum([y+1 for _, y in launches]) # And kernel launches themselves
             overheads[name][shapes]['t3'].append(max(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD, 0)) # T3 has all overheads after the last launch

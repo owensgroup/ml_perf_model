@@ -58,7 +58,7 @@ GPU_COUNT, GPU_NAME = get_gpu_name()
 HW_PARAMS = {
     "A100": {
         "peak_throughput": 15026.615,
-        "peak_PCIe_BW": 16.0, # Roughly the per direction of PCIe 4.0 x16 (32 GB/s)
+        "peak_PCIe_BW": 8.1, # Roughly the per direction of PCIe 3.0 x16 (16 GB/s)
         "peak_DRAM_BW": 1391.103,
         "DRAM_BW_param": {
             "mul_factor": MUL_FACTOR_FUNCS["others"](1),
