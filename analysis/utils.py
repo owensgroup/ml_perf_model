@@ -71,16 +71,6 @@ HW_PARAMS = {
             "sigmoid_param": (2.20955621, 20.35203082, 0.62528837, 0.93242722),
         },
         "peak_L2_BW": 2270.919,
-        # "L2_BW_param": {
-        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-        #     "mem_ch": {
-        #         "ln_p": 0.0,
-        #         "sats_p": 40.0,
-        #         "max_bw": 2289.23,
-        #         "overhead": 1,
-        #     },
-        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        # }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 3773.812,
         "num_SM": 108,
         "DRAM_size": 40 * 1024 * 1024 * 1024,
@@ -102,16 +92,6 @@ HW_PARAMS = {
             "sigmoid_param": (1.9472268, 19.81699009, 0.55556443, 0.95523816),
         },
         "peak_L2_BW": 2847.457,
-        # "L2_BW_param": {
-        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-        #     "mem_ch": {
-        #         "ln_p": 0.0,
-        #         "sats_p": 40.0,
-        #         "max_bw": 2289.23,
-        #         "overhead": 1,
-        #     },
-        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        # }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
         "peak_SMEM_BW": 3918.911,
         "num_SM": 80,
         "DRAM_size": 16 * 1024 * 1024 * 1024,
@@ -133,16 +113,6 @@ HW_PARAMS = {
             "sigmoid_param": (2.56635526, 18.54562595, 0.4196576, 0.27275451),
         },
         "peak_L2_BW": 2466.657,
-        # "L2_BW_param": {
-        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-        #     "mem_ch": {
-        #         "ln_p": 0.0,
-        #         "sats_p": 40.0,
-        #         "max_bw": 2289.23,
-        #         "overhead": 1,
-        #     },
-        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        # }, # Fit from EL forward benchmark data. TODO: Redo this with a general benchmark.
         "peak_SMEM_BW": 3299.471,
         "num_SM": 80,
         "DRAM_size": 32 * 1024 * 1024 * 1024,
@@ -164,16 +134,6 @@ HW_PARAMS = {
             "sigmoid_param": (6.53478964, 11.78536754, 0.19557855, -3.4045424),
         }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_L2_BW": 1406.454,
-        # "L2_BW_param": {
-        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-        #     "mem_ch": {
-        #         "ln_p": 0.0,
-        #         "sats_p": 40.0,
-        #         "max_bw": 2289.23,
-        #         "overhead": 1,
-        #     },
-        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        # }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 1831.258,
         "num_SM": 30,
         "DRAM_size": 12 * 1024 * 1024 * 1024,
@@ -195,16 +155,6 @@ HW_PARAMS = {
             "sigmoid_param": (6.53478964, 11.78536754, 0.19557855, -3.4045424),
         }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_L2_BW": 1591.259,
-        # "L2_BW_param": {
-        #     "mul_factor": MUL_FACTOR_FUNCS["others"](1),
-        #     "mem_ch": {
-        #         "ln_p": 0.0,
-        #         "sats_p": 40.0,
-        #         "max_bw": 2289.23,
-        #         "overhead": 1,
-        #     },
-        #     "sigmoid_param": (0.80007547, 25.35998915, 0.72015376, 2.56152161),
-        # }, # Use V100 param as a placeholder. TODO: Fix this.
         "peak_SMEM_BW": 2384.979,
         "num_SM": 56,
         "DRAM_size": 16 * 1024 * 1024 * 1024,
@@ -263,7 +213,8 @@ CONSIDER = [
     "aten::add", "aten::add_", "aten::__and__", "aten::sub", "AddBackward", \
     "aten::mul", "aten::mul_", "MulBackward", "aten::div", "DivBackward", \
     "aten::tanh", "aten::pow", "TanhBackward", "PowBackward", \
-    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", "aten::copy_", "ViewBackward", \
+    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", "aten::copy_", \
+    "SplitBackward", "ViewBackward", \
     "torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
     "torch::autograd::AccumulateGrad", \
     "torch.distributed.ddp.reducer::copy_bucket_to_grad", \

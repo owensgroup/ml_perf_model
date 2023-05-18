@@ -524,6 +524,12 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         kernel_times.append(t2)
         # t = t1 + t2
         # print(" -- ", addmm_op.name, M, K, N, addmm_op.input_shapes, t)
+
+        # Sum
+        sum_op = op.get_child_by_name("sum")
+        s = np.prod(sum_op.input_shapes[0])
+        t = max(s / peak_throughput / 1000, s * 4 / peak_DRAM_BW / 1000)
+        kernel_times.append(t)
     elif op.name == "aten::matmul":
         for child in op.children:
             if child.name == "aten::reshape": # Equivalent to concat
@@ -769,8 +775,8 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         tensor_size = np.prod(collective_op.input_shapes[0]) * 4
         t = collective_predictor(collective_op.name, tensor_size=tensor_size)
         kernel_times.append(t)
-    elif op.name == "aten::cat":
-        sum_size = sum([np.prod(s) for s in op.input_shapes[0]])
+    elif op_name_in_list(op, ["aten::cat", "SplitBackward"]):
+        sum_size = sum([np.prod(s) for s in (op.input_shapes[0] if op.input_shapes else op.children[0].input_shapes[0])])
         t = concat_predictor(sum_size=sum_size)
         kernel_times.append(t)
     elif op.name == "aten::to":
@@ -970,6 +976,7 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                         if idx < len(t):
                             # Unoverlapped communication for eg_comm
                             if stream == COMMUNICATION_STREAM:
+                                gpu_time["prediction"][stream] = max(gpu_time["prediction"][COMPUTE_STREAM] + 1, gpu_time["prediction"][stream]) # Another quick sync
                                 unoverlapped_comm += t[idx] - max(gpu_all_streams_front - gpu_time["prediction"][stream], 0) # Kernel time minus time overlapped by another stream
                             elif last_comm_op is not None: # A comm kernel is running
                                 # (If communication leads) either fully overlapped or the compute stream becomes the front next
@@ -996,9 +1003,9 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                         # Num of T5 is num of T4 - 1
                         if idx < len(launches) - 1:
                             cpu_time += t5
-                        if debug:
-                            print("    t4: {:.2f}".format(t4))
-                            print("    t5: {:.2f}".format(t5))
+                            if debug:
+                                print("    t4: {:.2f}".format(t4))
+                                print("    t5: {:.2f}".format(t5))
 
                     if ext_dist.my_size > 1 and has_comm_collective(node): # Only sync after a multi-GPU collective
                         ipTensor = torch.tensor([gpu_time["prediction"][stream]], dtype=torch.float) # On the CPU
@@ -1071,24 +1078,32 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
         e2e_time = max([x.item() for x in opTensorList])
+        if debug:
+            print("e2e_time:", opTensorList)
 
         # Sync GPU active time
         ipTensor = torch.tensor([gpu_active_time], dtype=torch.float)
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
         gpu_active_time = max([x.item() for x in opTensorList])
+        if debug:
+            print("gpu_active_time:", opTensorList)
 
         # Sync baseline_total_time and take the max
         ipTensor = torch.tensor([baseline_e2e_time], dtype=torch.float)
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)]
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
         baseline_e2e_time = max([x.item() for x in opTensorList])
+        if debug:
+            print("baseline_e2e_time:", opTensorList)
 
         # Sync eg_comm
         ipTensor = torch.tensor([eg_comm], dtype=torch.float) # On the CPU
         opTensorList = [torch.empty([1]) for _ in range(ext_dist.my_size)] # On the CPU
         ext_dist.all_gather(opTensorList=opTensorList, ipTensor=ipTensor)
         eg_comm = min([x.item() for x in opTensorList])
+        if debug:
+            print("eg_comm:", opTensorList)
 
     return {
         "e2e_time": e2e_time,

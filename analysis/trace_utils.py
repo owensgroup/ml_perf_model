@@ -136,7 +136,7 @@ def trim_trace_by_num_iter(trace_path, trimmed_trace_path, iters=10, skip_iters=
                     marker_count += 1
             if end_idx != -1: # Matched
                 break
-        assert end_idx != -1, "Trace too short!"
+        assert end_idx != -1, "{}: Trace too short!".format(trace_path)
         trimmed_trace = [x for x in t if x['ts'] >= t[start_idx]["ts"] and x['ts'] < t[end_idx]["ts"]] # Don't include the last marker
 
         with open(trimmed_trace_path, 'w') as out_file:
@@ -1011,6 +1011,10 @@ def get_overheads(ops):
                 count = 0
 
         if len(launches) > 0:
+            # if 'Cpp' in name:
+            #     print([(x.name(), count) for x, count in launches])
+            #     print(str(op))
+            #     print()
             overheads[name][shapes]['t2'].append(launches[0][0].start_time() - op.start_time() - launches[0][1] * CPU_EVENT_OVERHEAD) # T2 has all overheads before the first launch
             trailing_sub_event_count = sub_event_count - sum([y+1 for _, y in launches]) # And kernel launches themselves
             overheads[name][shapes]['t3'].append(max(op.end_time() - launches[-1][0].end_time() - trailing_sub_event_count * CPU_EVENT_OVERHEAD, 0)) # T3 has all overheads after the last launch
