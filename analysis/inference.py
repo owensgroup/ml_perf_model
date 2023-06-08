@@ -1011,17 +1011,17 @@ def get_e2e_time_for_each_iter(graph, overheads, ls=None, embedding_rfs=None, mo
                         # Also, overhead stats only record [[maximum kernel calls ever occured]] e.g. a2a might have had > 30 calls while in reality it might have only 4.
                         if idx >= len(t):
                             break
-                        
+
                         # Kernel launches and avg overhead between
                         t4 = overheads["t4"][l][0]
                         t5 = overheads["t5"][node.name][shapes][0]
 
                         # Non-collective kernels under collective ops are on COMPUTE_STREAM
-                        if (is_all2all_parent(node) or is_allreduce_parent(node)) and idx != len(launches) - 1:
+                        if (is_all2all_parent(node) or is_allreduce_parent(node)) and idx != len(t) - 1:
                             stream = COMPUTE_STREAM
                         else:
                             stream = infer_multi_stream(node)
-                        
+
                         # Contribution of CPU overheads on GPU idle time
                         gpu_time["prediction"][stream] = max(gpu_time["prediction"][stream] + 1, cpu_time + t4) # Where the kernel starts: either launch right after last kernel, or at the end of the kernel launch
 
