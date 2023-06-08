@@ -194,18 +194,18 @@ if GPU_COUNT > 1:
 # TODO: Distinguish conv1d and conv2d for ConvolutionBackward
 CONSIDER = [
     "aten::linear", "aten::addmm", "AddmmBackward", \
-    "aten::bmm", "BmmBackward", \
+    "aten::bmm", "BmmBackward", "aten::einsum", \
     "aten::matmul", "MmBackward", \
     "aten::conv1d", "ConvolutionBackward", \
     "aten::conv2d", "CudnnConvolutionBackward", \
     "LookupFunction", "LookupFunctionBackward", \
     "aten::batch_norm", "CudnnBatchNormBackward", \
-    "aten::layer_norm", "LayerNormBackward", \
-    "aten::index", "IndexBackward", \
+    "aten::layer_norm", "NativeLayerNormBackward", \
+    "aten::index", "IndexBackward", "aten::index_select", "IndexSelectBackward", \
     "aten::relu", "aten::relu_", "ReluBackward", \
     "aten::gelu", "GeluBackward", \
     "aten::sigmoid", "SigmoidBackward", \
-    "aten::softmax", "aten::dropout", \
+    "aten::softmax", "SoftmaxBackward", "aten::dropout", "NativeDropoutBackward", \
     "aten::binary_cross_entropy", "BinaryCrossEntropyBackward", \
     "aten::mse_loss", "MseLossBackward", \
     "aten::avg_pool2d", "AvgPool2D", \
@@ -213,8 +213,9 @@ CONSIDER = [
     "aten::add", "aten::add_", "aten::__and__", "aten::sub", "AddBackward", \
     "aten::mul", "aten::mul_", "MulBackward", "aten::div", "DivBackward", \
     "aten::tanh", "aten::pow", "TanhBackward", "PowBackward", \
-    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", "aten::copy_", \
-    "SplitBackward", "ViewBackward", \
+    "aten::cat", "aten::sum", "aten::to", "aten::ones_like", "aten::zero_", \
+    "aten::copy_", "aten::contiguous", "UnsqueezeBackward", \
+    "SplitBackward", "ViewBackward", "TBackward", \
     "torch::autograd::CppNode<SplitLookupFunction_sgd_Op>", \
     "torch::autograd::AccumulateGrad", \
     "torch.distributed.ddp.reducer::copy_bucket_to_grad", \

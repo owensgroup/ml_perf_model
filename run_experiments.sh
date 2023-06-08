@@ -54,7 +54,7 @@ cd benchmark
 num_gpus="$( nvidia-smi --query-gpu=name --format=csv,noheader | wc -l )"
 
 # Benchmark and trace analysis
-for batch_size in 8 16 32 64;
+for batch_size in 4 8 16 32 64;
 do
     for ngpus in 1 2 4 8;
     do
@@ -66,6 +66,12 @@ do
 
         for model in DLRM_open_source DLRM_default DLRM_MLPerf DLRM_DDP
         do
+            # Skip 4
+            if [ "$batch_size" == 4 ];
+            then
+                continue
+            fi
+
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
@@ -99,10 +105,10 @@ do
             fi
         done
 
-        for model in bert gpt2;
+        for model in bert gpt2 xlnet;
         do
             # OOM
-            if [ "$batch_size" == 64 ] && [ "$model" == "bert" ];
+            if [ "$batch_size" -ge 32 ] && ([ "$model" == "bert" ] || [ "$model" == "xlnet" ]);
             then
                 continue
             fi
@@ -150,7 +156,7 @@ python create_shared_overheads.py --iters $trimmed_iters
 
 
 # Run prediction
-for batch_size in 8 16 32 64;
+for batch_size in 4 8 16 32 64;
 do
     for ngpus in 1 2 4 8;
     do
@@ -162,6 +168,12 @@ do
 
         for model in DLRM_open_source DLRM_default DLRM_MLPerf DLRM_DDP
         do
+            # Skip 4
+            if [ "$batch_size" == 4 ];
+            then
+                continue
+            fi
+
             # Multi-GPU?
             if [ "$ngpus" -gt "1" ];
             then
@@ -184,19 +196,19 @@ do
                     ${options}"
 
             # Strong scaling
-            eval "$cmd -b $((batch_size*64))" < /dev/null
+            eval "$cmd -b $((batch_size*128))" < /dev/null
 
             # Weak scaling
-            if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 64 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
+            if [ "$num_gpus" -gt 1 ] && (( "$( echo "$batch_size * 128 * $ngpus > $dlrm_max_batch_size" | bc -l )" )) ;
             then
-                eval "$cmd -b $((batch_size*64*ngpus))" < /dev/null
+                eval "$cmd -b $((batch_size*128*ngpus))" < /dev/null
             fi
         done
 
-        for model in bert gpt2;
+        for model in bert gpt2 xlnet;
         do
             # OOM
-            if [ "$batch_size" == 64 ] && [ "$model" == "bert" ];
+            if [ "$batch_size" -ge 32 ] && ([ "$model" == "bert" ] || [ "$model" == "xlnet" ]);
             then
                 continue
             fi
@@ -228,12 +240,12 @@ do
 
     for model in resnet50 inception_v3;
     do
-        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*2))
+        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*4))
     done
 
     for model in ncf deepfm;
     do
-        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*64))
+        python e2e.py -m ${model} -i ${trimmed_iters} -b $((batch_size*128))
     done
 done
 

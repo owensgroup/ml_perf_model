@@ -549,14 +549,26 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         # print(op.name, batch_size, M, K, N, op.input_shapes, t)
     elif "BmmBackward" in op.name:
         bmm_op = op.get_child_by_name("BmmBackward0")
-        batch_size, M, N, K = bmm_op.input_shapes[0][0], bmm_op.input_shapes[0][1], bmm_op.input_shapes[0][2], bmm_op.output_shapes[0][2]
+        batch_size, M, N = bmm_op.input_shapes[0]
+        K = bmm_op.output_shapes[0][2] if bmm_op.output_shapes[0] else bmm_op.output_shapes[1][2]
         m1, k1, n1 = K, M, N
         m2, k2, n2 = M, N, K
         t1 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=m1, N=n1, K=k1)
         t2 = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=m2, N=n2, K=k2)
         kernel_times.append(t1)
         kernel_times.append(t2)
-        t = t1 + t2
+    elif op.name == "aten::einsum":
+        clone_op = op.get_child_by_name("clone")
+        if clone_op:
+            s = np.prod(clone_op.input_shapes[0])
+            t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
+            kernel_times.append(t)
+
+        bmm_op = op.get_child_by_name("aten::bmm")
+        if bmm_op:
+            batch_size, M, K, N = bmm_op.input_shapes[0][0], bmm_op.input_shapes[0][1], bmm_op.input_shapes[0][2], bmm_op.input_shapes[1][2]
+            t = mlp_predictor_kwargs("fully_connected", backward=False, batch_size=batch_size, M=M, N=N, K=K)
+            kernel_times.append(t)
     elif op.name == "aten::conv2d":
         batch_size, IC, IH, _ = op.input_shapes[0]
         OC, FH, FW = op.input_shapes[1][0], op.input_shapes[1][2], op.input_shapes[1][3]
@@ -671,32 +683,32 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         )
         kernel_times.append(t)
     elif op.name == "aten::batch_norm":
-        if len(op.input_shapes[0]) == 4:
-            batch_size, OC, H, _ = op.input_shapes[0] # BN 2D
-        elif len(op.input_shapes[0]) == 3:
-            batch_size, OC, H = op.input_shapes[0] # BN 1D with 3D input
-        else:
+        if len(op.input_shapes[0]) == 2:
             batch_size, OC = op.input_shapes[0] # BN 1D with 2D input
             H = 1
+        elif len(op.input_shapes[0]) == 3:
+            batch_size, OC, H = op.input_shapes[0] # BN 1D with 3D input
+        else: # 4
+            batch_size, OC, H, _ = op.input_shapes[0] # BN 2D
         t = mlp_predictor_kwargs("bn", backward=False, batch_size=batch_size, H=H, OC=OC)
         kernel_times.append(t)
     elif "CudnnBatchNormBackward" in op.name:
         bn_op = op.get_child_by_name("CudnnBatchNormBackward0")
-        if len(bn_op.output_shapes[0]) == 4:
-            batch_size, OC, H, _ = bn_op.output_shapes[0] # BN 2D
-        elif len(bn_op.output_shapes[0]) == 3:
-            batch_size, OC, H = bn_op.output_shapes[0] # BN 1D with 3D input
-        else:
+        if len(bn_op.output_shapes[0]) == 2:
             batch_size, OC = bn_op.output_shapes[0] # BN 1D with 2D input
             H = 1
+        elif len(bn_op.output_shapes[0]) == 3:
+            batch_size, OC, H = bn_op.output_shapes[0] # BN 1D with 3D input
+        else: # 4
+            batch_size, OC, H, _ = bn_op.output_shapes[0] # BN 2D
         t = mlp_predictor_kwargs("bn", backward=True, batch_size=batch_size, H=H, OC=OC)
         kernel_times.append(t)
     elif op.name == "aten::layer_norm":
         batch_size, M, N = op.input_shapes[0]
         t = mlp_predictor_kwargs("ln", backward=False, batch_size=batch_size, M=M, N=N)
         kernel_times.append(t)
-    elif "LayerNormBackward" in op.name:
-        batch_size, M, N = op.input_shapes[0]
+    elif "NativeLayerNormBackward" in op.name:
+        batch_size, M, N = op.children[0].output_shapes[0]
         t = mlp_predictor_kwargs("ln", backward=True, batch_size=batch_size, M=M, N=N)
         kernel_times.append(t)
     elif op.name == "aten::index":
@@ -790,27 +802,41 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         kernel_times.append(0) # T is handled under addmm
     elif op_name_in_list(op, ["aten::relu", "ReluBackward"]):
         s = np.prod(op.input_shapes[0] if op.input_shapes else op.children[0].input_shapes[0])
-        t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # One read one write
+        t = max(s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000)       # One read one write
         kernel_times.append(t)
     elif op.name == "aten::sigmoid":
         s = np.prod(op.input_shapes[0])
-        t = max(4 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per sigmoid (exp as one); one read one write
+        t = max(4 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000)   # 4 flops per sigmoid (exp as one); one read one write
         kernel_times.append(t)
     elif "SigmoidBackward" in op.name:
         s = np.prod(op.children[0].input_shapes[0])
-        t = max(2 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # 2 flops per sigmoid backward (f' = f*(1-f)); one read one write
+        t = max(2 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000)   # 2 flops per sigmoid backward (f' = f*(1-f)); one read one write
         kernel_times.append(t)
     elif op.name == "aten::binary_cross_entropy":
         s = np.prod(op.input_shapes[0])
-        t = max(7 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 7 flops per bce (log as one); two read one write
+        t = max(7 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000)   # 7 flops per bce (log as one); two read one write
         kernel_times.append(t)
     elif "BinaryCrossEntropyBackward" in op.name:
         s = np.prod(op.children[0].input_shapes[0])
-        t = max(4 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 4 flops per bce backward (E' = (y-t)/y/(1-y)); two read one write
+        t = max(4 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000)   # 4 flops per bce backward (E' = (y-t)/y/(1-y)); two read one write
         kernel_times.append(t)
     elif op.name == "aten::mse_loss":
         s = np.prod(op.input_shapes[0])
-        t = max(3 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 3 flops per mse; two read one write
+        t = max(3 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000)   # 3 flops per mse; two read one write
+        kernel_times.append(t)
+    elif op.name == "aten::index_select":
+        s = np.prod(op.input_shapes[0]) + np.prod(op.output_shapes[0])
+        t = s * 4 / peak_DRAM_BW / 1000                                            # Read input write output
+        kernel_times.append(t)
+    elif "IndexSelectBackward" in op.name:
+        index_add_op = op.get_child_by_name("index_add_")
+        s1 = np.prod(index_add_op.input_shapes[0])
+        s2 = np.prod(index_add_op.input_shapes[-2])
+        t = max(s2 / peak_throughput / 1000, (2*s1 + s2) * 4 / peak_DRAM_BW / 1000)# 1 flop per add; two read one write
+        kernel_times.append(t)
+    elif op.name == "aten::contiguous":
+        s = np.prod(op.output_shapes[0])
+        t = 2 * s * 4 / peak_DRAM_BW / 1000                                        # One read one write
         kernel_times.append(t)
     elif op.name == "aten::gelu":
         s = np.prod(op.input_shapes[0])
@@ -824,6 +850,10 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         s = np.prod(op.input_shapes[0])
         t = max(174 * s / peak_throughput / 1000, 2 * s * 4 / peak_DRAM_BW / 1000) # Roughly 174 flops per element; one read one write
         kernel_times.append(t)
+    elif "SoftmaxBackward" in op.name:
+        s = np.prod(op.children[0].input_shapes[0])
+        t = max(2 * s / peak_throughput / 1000, 4 * s * 4 / peak_DRAM_BW / 1000)   # 2 flops per softmax bw (1 mul 1 sub); three read one write
+        kernel_times.append(t)
     elif op.name == "aten::dropout":
         if len(op.input_shapes[0]) == 4:
             batch_size, M1, M2, N = op.input_shapes[0]
@@ -836,24 +866,41 @@ def get_kernel_time(op, ls=None, embedding_rfs=None):
         p = op.inputs[-2]
         t = mlp_predictor_kwargs("dropout", backward=False, batch_size=batch_size, M=M, N=N, p=p)
         kernel_times.append(t)
+    elif "DropoutBackward" in op.name:
+        s = np.prod(op.children[0].input_shapes[0])
+        t = max(2 * s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000)   # 2 muls per dropout backward (grad * mask * scale); two read one write
+        kernel_times.append(t)
     elif op_name_in_list(op, [
             "aten::add", "aten::add_", "aten::__and__", "aten::sub", "AddBackward", \
             "aten::mul", "MulBackward", "aten::div", "DivBackward", "MseLossBackward" \
         ]):
         s = np.prod(op.input_shapes[0] if op.input_shapes else op.children[0].input_shapes[0])
-        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000) # 1 flops per mse backward (M' = y-t); two read one write
+        t = max(s / peak_throughput / 1000, 3 * s * 4 / peak_DRAM_BW / 1000)       # 1 flops per mse backward (M' = y-t); two read one write
         kernel_times.append(t)
     elif op.name == "aten::sum":
         s = np.prod(op.input_shapes[0])
-        t = max(s / peak_throughput / 1000, s * 4 / peak_DRAM_BW / 1000) # One reads
+        t = max(s / peak_throughput / 1000, s * 4 / peak_DRAM_BW / 1000)           # One reads
         kernel_times.append(t)
-    elif op_name_in_list(op, ["aten::ones_like", "aten::zero_", "ViewBackward"]):
+    elif op_name_in_list(op, [
+            "aten::ones_like", "aten::zero_", "ViewBackward", "UnsqueezeBackward",
+        ]):
         s = np.prod(op.children[0].input_shapes[0])
-        t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
+        t = 2 * s * 4 / peak_DRAM_BW / 1000                                        # One read one write
+        kernel_times.append(t)
+    elif "TBackward" in op.name:
+        t_op = op.get_child_by_name("aten::transpose")
+        assert t_op.inputs[1] == 0 and t_op.inputs[2] == 1, "Transpose type not supported!"
+        if len(t_op.input_shapes[0]) == 2:
+            batch_size, M, N = 1, t_op.input_shapes[0][-2], t_op.input_shapes[0][-1]
+        elif len(t_op.input_shapes[0]) == 3:
+            batch_size, M, N = t_op.input_shapes[0]
+        else: # >= 4
+            batch_size, M, N = np.prod(t_op.input_shapes[0][:-2]), t_op.input_shapes[0][-2], t_op.input_shapes[0][-1]
+        t = mlp_predictor_kwargs("transpose", backward=False, batch_size=batch_size, M=M, N=N)
         kernel_times.append(t)
     elif op.name == "aten::copy_":
         s = np.prod(op.input_shapes[0])
-        t = 2 * s * 4 / peak_DRAM_BW / 1000 # One read one write
+        t = 2 * s * 4 / peak_DRAM_BW / 1000                                        # One read one write
         kernel_times.append(t)
     elif op_name_in_list(op, ["aten::tanh", "aten::pow"]):
         s = np.prod(op.input_shapes[0])

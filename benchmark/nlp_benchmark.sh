@@ -48,13 +48,17 @@ do
     esac
 done
 
-model_list="bert gpt2"
+model_list="bert gpt2 xlnet"
 if [[ $model_list =~ (^|[[:space:]])$model_name($|[[:space:]]) ]];
 then
     :;
 else
     echo "Model name not supported!"
     exit
+fi
+if [ $model_name == "xlnet" ];
+then
+    num_batches=120 # Less iters for XLNet
 fi
 
 CORES=`lscpu | grep "Core(s)" | awk '{print $4}'`
@@ -72,17 +76,6 @@ echo "GPU Benchmarking - ${model_name} running on $ngpus GPUs"
 echo "--------------------------------------------"
 rm -f /tmp/pytorch_execution_graph*
 _gpus=$(seq -s, 0 $((ngpus-1)))
-nlp_pt_bin="accelerate launch --num_processes ${ngpus}"
-if [ ${ngpus} -eq 1 ];
-then
-  graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
-  outf="${folder}/${ngpus}_${mb_size}.log"
-else
-  nlp_pt_bin="${nlp_pt_bin} --multi_gpu"
-  graph_filename_pattern="${ngpus}_${mb_size}_distributed_[0-$((ngpus-1))]_graph.json"
-  outf="${folder}/${ngpus}_${mb_size}_distributed.log"
-fi
-nlp_pt_bin="${nlp_pt_bin} nlp_transformers.py"
 cuda_arg="CUDA_VISIBLE_DEVICES=$_gpus"
 echo "-------------------"
 echo "Using GPUS: $_gpus, batch size: $mb_size"
@@ -105,6 +98,17 @@ then
   folder="${folder}/${bucket_size_mb}"
 fi
 mkdir -p "${folder}"
+nlp_pt_bin="accelerate launch --num_processes ${ngpus}"
+if [ ${ngpus} -eq 1 ];
+then
+  graph_filename_pattern="${ngpus}_${mb_size}_graph.json"
+  outf="${folder}/${ngpus}_${mb_size}.log"
+else
+  nlp_pt_bin="${nlp_pt_bin} --multi_gpu"
+  graph_filename_pattern="${ngpus}_${mb_size}_distributed_[0-$((ngpus-1))]_graph.json"
+  outf="${folder}/${ngpus}_${mb_size}_distributed.log"
+fi
+nlp_pt_bin="${nlp_pt_bin} nlp_transformers.py"
 cmd="$cuda_arg $nlp_pt_bin --model-name ${model_name} --batch-size=${mb_size} "
 if [[ ${ngpus} != `ls ${folder} | grep -e $graph_filename_pattern | wc -l` ]];
 then

@@ -2,19 +2,22 @@ import torch
 import tempfile
 import argparse
 import os
+from itertools import chain
 from torch.utils.data import DataLoader
 from torch.profiler import ExecutionGraphObserver
 from torch.optim import AdamW
 from torch.autograd.profiler import record_function
 from datasets import ClassLabel, load_dataset
-from accelerate import Accelerator
+from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.utils import set_seed
 from transformers import (
     AutoConfig,
     AutoModelForTokenClassification,
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    XLNetLMHeadModel,
     DataCollatorForTokenClassification,
+    DataCollatorForPermutationLanguageModeling,
     PretrainedConfig,
     get_scheduler,
 )
@@ -187,9 +190,87 @@ def getBERTModelDatasetOptimizer(accelerator, args):
     return model, train_dataloader, optimizer
 
 
+def getXLNetModelDatasetOptimizer(accelerator, args):
+    # Dataset
+    raw_datasets = load_dataset("wikitext", "wikitext-2-raw-v1")
+    column_names = raw_datasets["train"].column_names
+    text_column_name = "text" if "text" in column_names else column_names[0]
+
+    # Tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("xlnet-base-cased", use_fast=True)
+    max_seq_length = min(512, tokenizer.model_max_length)
+
+    # Model
+    config = AutoConfig.from_pretrained("xlnet-base-cased")
+    model = XLNetLMHeadModel.from_pretrained("xlnet-base-cased", config=config)
+    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
+    # on a small vocab and want a smaller embedding size, remove this test.
+    embedding_size = model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        model.resize_token_embeddings(len(tokenizer))
+
+    # Otherwise, we tokenize every text, then concatenate them together before splitting them in smaller parts.
+    def tokenize_function(examples):
+        return tokenizer(examples[text_column_name])
+
+    with accelerator.main_process_first():
+        tokenized_datasets = raw_datasets.map(
+            tokenize_function,
+            batched=True,
+            remove_columns=column_names,
+        )
+
+    # Main data processing function that will concatenate all texts from our dataset and generate chunks of
+    # max_seq_length.
+    def group_texts(examples):
+        # Concatenate all texts.
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
+        # customize this part to your needs.
+        if total_length >= max_seq_length:
+            total_length = (total_length // max_seq_length) * max_seq_length
+        # Split by chunks of max_len.
+        result = {
+            k: [t[i : i + max_seq_length] for i in range(0, total_length, max_seq_length)]
+            for k, t in concatenated_examples.items()
+        }
+        return result
+
+    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a
+    # remainder for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value
+    # might be slower to preprocess.
+    #
+    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
+    # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
+
+    with accelerator.main_process_first():
+        tokenized_datasets = tokenized_datasets.map(
+            group_texts,
+            batched=True,
+        )
+    train_dataset = tokenized_datasets["train"]
+
+    # DataLoader
+    data_collator = DataCollatorForPermutationLanguageModeling(
+        tokenizer=tokenizer,
+        plm_probability=1/6,
+        max_span_length=5,
+    )
+    train_dataloader = DataLoader(
+        train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.batch_size
+    )
+    
+    # Optimizer
+    optimizer = AdamW(model.parameters(), lr=5e-5)
+
+    return model, train_dataloader, optimizer
+
+
 MODEL_DATASET_OPTIMIZER = {
     "gpt2": getGPT2ModelDatasetOptimizer,
     "bert": getBERTModelDatasetOptimizer,
+    "xlnet": getXLNetModelDatasetOptimizer,
 }
 
 
@@ -199,7 +280,7 @@ def main():
                         help='enable autograd profiler')
     parser.add_argument("--profile-out-dir", type=str, default="profiles/tmp")
     parser.add_argument('--model-name',  action='store', default='bert',
-                        choices=['bert', 'gpt2'],
+                        choices=['bert', 'gpt2', 'xlnet'],
                         help='model name can be specified. bert is default.')
     parser.add_argument('--collect-execution-graph', action='store_true', default=False,
                         help='collect execution graph')
@@ -218,7 +299,9 @@ def main():
     parser.add_argument("--print-freq", type=int, default=5,
                         help='print frequency')
     args = parser.parse_args()
-    accelerator = Accelerator()
+
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    accelerator = Accelerator(kwargs_handlers=[ddp_kwargs])
 
     # Set seed before initializing model.
     set_seed(42)
@@ -300,13 +383,15 @@ def main():
                     total_time += start_event.elapsed_time(end_event)
                     if should_print:
                         time_per_it = total_time / (completed_steps - args.num_warmup_iters) # ms
-                        print("Finished step {}/{}, {:.2f} ms/it".format(
-                            completed_steps - args.num_warmup_iters, args.num_batches, time_per_it
-                        ))
+                        if accelerator.is_main_process:
+                            print("Finished step {}/{}, {:.2f} ms/it".format(
+                                completed_steps - args.num_warmup_iters, args.num_batches, time_per_it
+                            ))
 
-    print("Overall per-batch training time: {:.2f} ms".format(
-        total_time / (completed_steps - args.num_warmup_iters)
-    )) # ms
+    if accelerator.is_main_process:
+        print("Overall per-batch training time: {:.2f} ms".format(
+            total_time / (completed_steps - args.num_warmup_iters)
+        )) # ms
 
     if args.enable_profiling:
         if accelerator.num_processes > 1: # Multiple trace files for distributed training
