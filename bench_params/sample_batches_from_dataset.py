@@ -48,7 +48,7 @@ def process_data(args):
         B = np.random.choice(args.batch_sizes, 1).item()
 
         # Number of tables
-        T = np.random.randint(2, args.per_gpu_table_limit)
+        T = np.random.randint(2, args.per_gpu_table_limit + 1)
 
         # Table IDs
         TIDs = []
@@ -105,8 +105,8 @@ if __name__ == "__main__":
     parser.add_argument('--per-gpu-memory', type=int, default=-1)
     parser.add_argument('--dataset-path', type=str, default="/nvme/deep-learning/dlrm_datasets/embedding_bag")
     parser.add_argument('--num-samples', type=int, default=10000)
-    parser.add_argument('--per-gpu-table-limit', type=int, default=20)
-    parser.add_argument('--batch-sizes', type=str, default="512,1024,2048,4096,8192")
+    parser.add_argument('--per-gpu-table-limit', type=int, default=30)
+    parser.add_argument('--batch-sizes', type=str, default="512,1024,2048,4096")
     args = parser.parse_args()
     np.random.seed(args.seed + (42 if args.is_test else 0))
     args.batch_sizes = list(map(int, args.batch_sizes.split(",")))
