@@ -1,6 +1,48 @@
-A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) models on single-GPU and multi-GPU platforms.
+A performance model for predicting the training time of ML (DLRM, CV, NLP, etc) models on single-GPU and multi-GPU platforms. This is also the code repo for the following two papers:
 
-The execution graph observer has been integrated into Pytorch since [d76af8f41c](https://github.com/pytorch/pytorch/tree/d76af8f41c6404b090b13ab9a868a71423d6d298) (nightly build at 2022/05/31).
+(**TPDS 2024**) *Towards Universal Performance Modeling for Machine Learning Training on Multi-GPU Platforms. Zhongyi Lin, Ning Sun, Pallab Bhattacharya, Xizhou Feng, Louis Feng, John D. Owens.*
+
+Bib:
+```bibtex
+@article{Lin:2024:TUP,
+  author = {Zhongyi Lin and Ning Sun and Pallab Bhattacharya and
+                  Xizhou Feng and Louis Feng and John D. Owens},
+  title = {Towards Universal Performance Modeling for Machine
+                  Learning Training on Multi-{GPU} Platforms},
+  journal = {Transactions on Parallel and Distributed Systems},
+  year = 2024,
+  month = nov,
+  code = {https://github.com/owensgroup/ml_perf_model},
+  publisher = {IEEE},
+  doi = {10.1109/TPDS.2024.3507814},
+  url = {http://escholarship.org/uc/item/5mv1s1gg}
+}
+```
+
+(**HiPC 2022**) *Building a Performance Model for Deep Learning Recommendation Model Training on GPUs. Zhongyi Lin, Louis Feng, Ehsan K. Ardestani, Jaewon Lee, John Lundell, Changkyu Kim, Arun Kejariwal, and John D. Owens.*
+
+Bib:
+```bibtex
+@inproceedings{Lin:2022:BAP,
+  author = {Zhongyi Lin and Louis Feng and Ehsan K. Ardestani
+                  and Jaewon Lee and John Lundell and Changkyu Kim and
+                  Arun Kejariwal and John D. Owens},
+  title = {Building a Performance Model for Deep Learning
+                  Recommendation Model Training on {GPU}s},
+  booktitle = {2022 IEEE 29th International Conference on High
+                  Performance Computing, Data, and Analytics},
+  series = {HiPC 2022},
+  year = 2022,
+  month = dec,
+  pages = {48--58},
+  doi = {10.1109/hipc56025.2022.00019},
+  url = {https://escholarship.org/uc/item/6rt535s6},
+  publisher = {IEEE},
+  eprint_ = {2201.07821v1},
+  acceptance = {35/131 (26.7\%)},
+  ucdcite = {a148}
+}
+```
 
 ### Prerequisites and Installation
 ```bash
