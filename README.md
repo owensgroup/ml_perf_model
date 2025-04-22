@@ -44,6 +44,11 @@ Bib:
 }
 ```
 
+### Initialization
+```bash
+source ./init_vars.sh # Turn off turbo, turn on performance, lock frequency, etc.
+```
+
 ### Prerequisites and Installation
 ```bash
 ./prereq.sh

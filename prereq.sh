@@ -32,9 +32,8 @@
 
 pip install h5py tqdm scikit-learn matplotlib tensorboard tensorboardX torchviz onnx gputil pandas scikit-build pydot mpi4py # General dependencies
 pip install transformers accelerate datasets # Transformers
-git clone --recursive https://github.com/owensgroup/ml_perf_model.git
 
-cd ml_perf_model/3rdparty/bench_params
+cd bench_params
 ./generate_benchmark_parameters.sh # Generate benchmark parameters.
 cd ../sparse-ads-baselines
 python setup.py install # Install table batched embedding lookup kernel.
@@ -43,7 +42,6 @@ python setup.py install # Install MLPerf logging for DLRM
 cd ../param/train/comms/pt
 ./init.sh # Initialization for PARAM
 cd ../../../../../
-source ./init_vars.sh # Turn off turbo, turn on performance, lock frequency, etc.
 
 # Torchvision for ConvNet benchmark
 cd ..

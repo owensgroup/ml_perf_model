@@ -31,6 +31,8 @@
 
 
 # Run PARAM benchmark for communication collectives (a2a, all_reduce)
+export OMPI_ALLOW_RUN_AS_ROOT=1
+export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
 cd ${PM_HOME}/3rdparty/param/train/comms/pt/
 source ./init.sh
 num_gpus="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)"
